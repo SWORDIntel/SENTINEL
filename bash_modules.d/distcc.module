@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
-# SENTINEL Module: distcc
-# Configure environment for distributed compilation with Distcc and Ccache
+### BEGIN MODULE INFO
+# Name:                  SENTINEL Module: distcc
+# Short-Description:     Setup for distributed compilation with Distcc and Ccache
+# Description:           This SENTINEL module configures environment variables,
+#                        directories, and runtime paths for distributed builds
+#                        using Distcc and Ccache. Intended for environments
+#                        requiring performance and reproducibility in CI/CD
+#                        or large-scale compilation workflows.
+# Author:                John
+# Email:                 intel@swordintelligence.airforce
+# URL:                   hhttps://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  compilation, distcc, ccache, distributed, optimization
+# Provides:              sentinel_distcc_environment
+# Requires:              distcc, ccache
+# Conflicts:             restricted_build_envs
+### END MODULE INFO
 
 # Module metadata
 SENTINEL_MODULE_VERSION="1.0.0"
