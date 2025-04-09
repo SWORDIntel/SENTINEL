@@ -1,158 +1,278 @@
 #!/usr/bin/env bash
-### BEGIN MODULE INFO
-# Name:                  SENTINEL Module: secure_logout
-# Short-Description:     Secure logout cleanup for interactive shell sessions
-# Description:           This SENTINEL module securely clears temporary data,
-#                        including bash history, cached files, browser artifacts,
-#                        clipboard contents, and workspace-specific artifacts
-#                        during user logout. It’s designed to reduce digital
-#                        residue on shared or monitored systems.
-# Author:                John
-# Email:                 intel@swordintelligence.airforce
-# URL:                   https://github.com/SWORDIntel/SENTINEL/
-# Version:               1.0.0
-# Stability:             stable
-# Tags:                  security, privacy, logout, cleanup, forensic-resistance
-# Provides:              sentinel_secure_logout
-# Requires:              coreutils, find, bash, optional:xclip,xsel,shred
-# Conflicts:             persistent_shell_sessions
-### END MODULE INFO
+### SENTINEL Secure Logout Module - Combined Version
+### =================================================
+### This module provides configuration management (with persistent options)
+### as well as secure cleanup functions for interactive shell sessions.
+###
+### It securely deletes sensitive data such as bash history, cache directories,
+### browser artifacts, clipboard content, and more.
+###
+### Author: John / SWORD Intel Team
+### Email: intel@swordintelligence.airforce
+### URL: https://github.com/SWORDIntel/SENTINEL/
+### Version: 1.0.0
+### Tags: security, privacy, logout, cleanup
+### Requirements: coreutils, bash, find, [optional: xclip, xsel, shred]
+### =================================================
 
-# Only run in interactive shells
+# Ensure the script is sourced and not executed directly.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "This script is meant to be sourced, not executed directly."
+    exit 1
+fi
+
+# Only run in interactive shells.
 case $- in
-  *i*) ;;
+    *i*) ;;  # interactive: do nothing
     *) return;;
 esac
 
-echo "SENTINEL: Starting secure cleanup..."
+# -------------------------------
+# Configuration Defaults
+# -------------------------------
+# These can be overridden by setting variables in ~/.bashrc.postcustom.
+export SENTINEL_SECURE_BASH_HISTORY="${SENTINEL_SECURE_BASH_HISTORY:-1}"
+export SENTINEL_SECURE_SSH_KNOWN_HOSTS="${SENTINEL_SECURE_SSH_KNOWN_HOSTS:-0}"
+export SENTINEL_SECURE_CLEAN_CACHE="${SENTINEL_SECURE_CLEAN_CACHE:-1}"
+export SENTINEL_SECURE_BROWSER_CACHE="${SENTINEL_SECURE_BROWSER_CACHE:-0}"
+export SENTINEL_SECURE_RECENT="${SENTINEL_SECURE_RECENT:-1}"
+export SENTINEL_SECURE_VIM_UNDO="${SENTINEL_SECURE_VIM_UNDO:-1}"
+export SENTINEL_SECURE_CLIPBOARD="${SENTINEL_SECURE_CLIPBOARD:-1}"
+export SENTINEL_SECURE_CLEAR_SCREEN="${SENTINEL_SECURE_CLEAR_SCREEN:-1}"
+export SENTINEL_SECURE_DIRS="${SENTINEL_SECURE_DIRS:-}"
+export SENTINEL_WORKSPACE_TEMP="${SENTINEL_WORKSPACE_TEMP:-}"
 
-# Function for secure deletion using existing _secure_shred
+# -------------------------------
+# Configuration Helper Functions
+# -------------------------------
+
+# Show the current configuration for secure logout options.
+secure_logout_config() {
+    cat << 'EOF'
+SENTINEL Secure Logout Configuration
+=====================================
+The following items will be securely deleted on logout:
+
+[ ] Bash history         : (SENTINEL_SECURE_BASH_HISTORY)
+[ ] SSH known hosts      : (SENTINEL_SECURE_SSH_KNOWN_HOSTS)
+[ ] Cache directory      : (SENTINEL_SECURE_CLEAN_CACHE)
+[ ] Browser cache/cookies: (SENTINEL_SECURE_BROWSER_CACHE)
+[ ] Recently used files  : (SENTINEL_SECURE_RECENT)
+[ ] Vim undo history     : (SENTINEL_SECURE_VIM_UNDO)
+[ ] Clipboard contents   : (SENTINEL_SECURE_CLIPBOARD)
+[ ] Clear screen on exit : (SENTINEL_SECURE_CLEAR_SCREEN)
+
+Additional directories to clean:
+  SENTINEL_SECURE_DIRS=${SENTINEL_SECURE_DIRS:-"(none)"}
+
+Workspace temporary directory:
+  SENTINEL_WORKSPACE_TEMP=${SENTINEL_WORKSPACE_TEMP:-"(none)"}
+
+To change these settings, edit your ~/.bashrc.postcustom file or use the secure_logout_set function.
+EOF
+}
+
+# Update a configuration option and persist the change.
+secure_logout_set() {
+    local option="$1"
+    local value="$2"
+
+    if [[ -z "$option" || -z "$value" ]]; then
+        echo "Usage: secure_logout_set OPTION VALUE"
+        echo "Example: secure_logout_set SENTINEL_SECURE_BROWSER_CACHE 1"
+        return 1
+    fi
+
+    # Validate option naming.
+    if [[ ! "$option" =~ ^SENTINEL_SECURE_ ]]; then
+        echo "Invalid option: $option. Options must start with SENTINEL_SECURE_"
+        return 1
+    fi
+
+    # Update or create the persistent configuration in ~/.bashrc.postcustom.
+    if [[ -f "$HOME/.bashrc.postcustom" ]]; then
+        if grep -q "^export $option=" "$HOME/.bashrc.postcustom"; then
+            sed -i "s|^export $option=.*$|export $option=\"$value\"|" "$HOME/.bashrc.postcustom"
+        else
+            echo "export $option=\"$value\"" >> "$HOME/.bashrc.postcustom"
+        fi
+    else
+        echo "#!/usr/bin/env bash" > "$HOME/.bashrc.postcustom"
+        echo "# SENTINEL custom configuration" >> "$HOME/.bashrc.postcustom"
+        echo "export $option=\"$value\"" >> "$HOME/.bashrc.postcustom"
+    fi
+
+    # Update the current session.
+    export "$option"="$value"
+    echo "Updated $option to $value. Changes take effect immediately and will persist across sessions."
+}
+
+# Add a directory to the secure cleanup list.
+secure_logout_add_dir() {
+    local dir="$1"
+
+    if [[ -z "$dir" ]]; then
+        echo "Usage: secure_logout_add_dir DIRECTORY"
+        return 1
+    fi
+
+    # Resolve the absolute path.
+    dir=$(readlink -f "$dir")
+    if [[ ! -d "$dir" ]]; then
+        echo "Directory does not exist: $dir"
+        return 1
+    fi
+
+    # Add to SENTINEL_SECURE_DIRS if not already included.
+    if [[ -z "$SENTINEL_SECURE_DIRS" ]]; then
+        secure_logout_set "SENTINEL_SECURE_DIRS" "$dir"
+    else
+        if [[ ":$SENTINEL_SECURE_DIRS:" == *":$dir:"* ]]; then
+            echo "Directory already in secure cleanup list: $dir"
+            return 0
+        fi
+        secure_logout_set "SENTINEL_SECURE_DIRS" "${SENTINEL_SECURE_DIRS}:$dir"
+    fi
+
+    echo "Added $dir to secure cleanup list."
+}
+
+# -------------------------------
+# Secure Deletion & Cleanup Functions
+# -------------------------------
+
+# Securely delete a file, using _secure_shred if available, falling back to shred or manual overwrite.
 _secure_logout_deletion() {
     local file_path="$1"
     local desc="$2"
 
     if [[ -e "$file_path" ]]; then
         echo "SENTINEL: Securely erasing $desc..."
-        
-        # Check if our secure shredding function is available
         if type _secure_shred &>/dev/null; then
-            # Use our custom secure deletion function
             _secure_shred "$file_path" "-f" >/dev/null 2>&1
         elif command -v shred &>/dev/null; then
-            # Use shred if available
             shred -fuz "$file_path" >/dev/null 2>&1
         else
-            # Fallback method
-            local filesize=$(stat -c %s "$file_path" 2>/dev/null || stat -f %z "$file_path" 2>/dev/null)
+            # Fallback: overwrite with random data and remove.
+            local filesize
+            filesize=$(stat -c %s "$file_path" 2>/dev/null || stat -f %z "$file_path" 2>/dev/null)
             local blocksize=1024
-            
-            # Overwrite with random data
-            dd if=/dev/urandom of="$file_path" bs=$blocksize count=$((filesize/blocksize+1)) conv=notrunc >/dev/null 2>&1
-            
-            # Remove the file
+            dd if=/dev/urandom of="$file_path" bs=$blocksize count=$((filesize / blocksize + 1)) conv=notrunc >/dev/null 2>&1
             rm -f "$file_path" >/dev/null 2>&1
         fi
     fi
 }
 
-# Function to securely clean directory
+# Securely clean all files in a specified directory matching a given pattern.
 _secure_clean_dir() {
     local dir_path="$1"
     local desc="$2"
-    local pattern="${3:-.*}"  # Default pattern matches all files
-    
+    local pattern="${3:-.*}"  # Default: match all files.
+
     if [[ -d "$dir_path" ]]; then
-        echo "SENTINEL: Cleaning $desc..."
-        
-        # Find files matching pattern in directory
-        find "$dir_path" -type f -name "$pattern" -print0 2>/dev/null | 
-        while IFS= read -r -d '' file; do
+        echo "SENTINEL: Cleaning $desc in $dir_path..."
+        # Use find to iterate over matching files securely.
+        find "$dir_path" -type f -name "$pattern" -print0 2>/dev/null | while IFS= read -r -d '' file; do
             _secure_logout_deletion "$file" "$(basename "$file") in $desc"
         done
     fi
 }
 
-# Clear Bash history
-if [[ "${SENTINEL_SECURE_BASH_HISTORY:-1}" == "1" ]]; then
-    echo "SENTINEL: Clearing bash history..."
-    history -c
-    _secure_logout_deletion ~/.bash_history "bash history"
-fi
+# -------------------------------
+# Main Cleanup Function
+# -------------------------------
 
-# Clear SSH known hosts if configured
-if [[ "${SENTINEL_SECURE_SSH_KNOWN_HOSTS:-0}" == "1" ]]; then
-    _secure_logout_deletion ~/.ssh/known_hosts "SSH known hosts"
-fi
+secure_logout_cleanup() {
+    echo "SENTINEL: Starting secure cleanup..."
 
-# Clean temporary directories
-# Clean /tmp files created by current user
-_secure_clean_dir "/tmp" "temporary files owned by current user" "*"
-
-# Clean ~/.cache directory
-if [[ "${SENTINEL_SECURE_CLEAN_CACHE:-1}" == "1" ]]; then
-    _secure_clean_dir "$HOME/.cache" "cache directory"
-fi
-
-# Clean browser cache if specified
-if [[ "${SENTINEL_SECURE_BROWSER_CACHE:-0}" == "1" ]]; then
-    # Firefox
-    if [[ -d "$HOME/.mozilla/firefox" ]]; then
-        _secure_clean_dir "$HOME/.mozilla/firefox" "Firefox cache" "*.sqlite"
-        _secure_clean_dir "$HOME/.mozilla/firefox" "Firefox cookies" "cookies.sqlite*"
+    # Clear bash history if enabled.
+    if [[ "${SENTINEL_SECURE_BASH_HISTORY}" == "1" ]]; then
+        echo "SENTINEL: Clearing bash history..."
+        history -c
+        _secure_logout_deletion "$HOME/.bash_history" "bash history"
     fi
-    
-    # Chrome/Chromium
-    if [[ -d "$HOME/.config/google-chrome" ]]; then
-        _secure_clean_dir "$HOME/.config/google-chrome/Default" "Chrome cache" "Cookies*"
+
+    # Clear SSH known hosts if enabled.
+    if [[ "${SENTINEL_SECURE_SSH_KNOWN_HOSTS}" == "1" ]]; then
+        _secure_logout_deletion "$HOME/.ssh/known_hosts" "SSH known hosts"
     fi
-    if [[ -d "$HOME/.config/chromium" ]]; then
-        _secure_clean_dir "$HOME/.config/chromium/Default" "Chromium cache" "Cookies*"
+
+    # Clean temporary files from /tmp owned by the current user.
+    _secure_clean_dir "/tmp" "temporary files owned by current user" "*"
+
+    # Clean the cache directory if enabled.
+    if [[ "${SENTINEL_SECURE_CLEAN_CACHE}" == "1" ]]; then
+        _secure_clean_dir "$HOME/.cache" "cache directory"
     fi
-fi
 
-# Clean recently-used files list
-if [[ "${SENTINEL_SECURE_RECENT:-1}" == "1" ]]; then
-    _secure_logout_deletion "$HOME/.local/share/recently-used.xbel" "recently used files list"
-    _secure_logout_deletion "$HOME/.recently-used" "recently used files list (old format)"
-fi
-
-# Clean vim undo history if enabled
-if [[ "${SENTINEL_SECURE_VIM_UNDO:-1}" == "1" ]]; then
-    if [[ -d "$HOME/.vim/undo" ]]; then
-        _secure_clean_dir "$HOME/.vim/undo" "Vim undo history"
-    fi
-fi
-
-# Clean any workspace-specific temp files
-if [[ -n "${SENTINEL_WORKSPACE_TEMP}" && -d "${SENTINEL_WORKSPACE_TEMP}" ]]; then
-    _secure_clean_dir "${SENTINEL_WORKSPACE_TEMP}" "workspace temporary files"
-fi
-
-# Special handling for secure data directories (if defined)
-if [[ -n "${SENTINEL_SECURE_DIRS}" ]]; then
-    IFS=':' read -ra DIRS <<< "${SENTINEL_SECURE_DIRS}"
-    for dir in "${DIRS[@]}"; do
-        if [[ -d "$dir" ]]; then
-            _secure_clean_dir "$dir" "secure data in $dir"
+    # Clean browser cache and cookie files if enabled.
+    if [[ "${SENTINEL_SECURE_BROWSER_CACHE}" == "1" ]]; then
+        if [[ -d "$HOME/.mozilla/firefox" ]]; then
+            _secure_clean_dir "$HOME/.mozilla/firefox" "Firefox cache" "*.sqlite"
+            _secure_clean_dir "$HOME/.mozilla/firefox" "Firefox cookies" "cookies.sqlite*"
         fi
-    done
-fi
-
-# Clear clipboard (if xsel is available)
-if [[ "${SENTINEL_SECURE_CLIPBOARD:-1}" == "1" ]]; then
-    if command -v xsel &>/dev/null; then
-        echo "SENTINEL: Clearing clipboard..."
-        echo -n | xsel --clipboard --input
-    elif command -v xclip &>/dev/null; then
-        echo "SENTINEL: Clearing clipboard..."
-        echo -n | xclip -selection clipboard
+        if [[ -d "$HOME/.config/google-chrome" ]]; then
+            _secure_clean_dir "$HOME/.config/google-chrome/Default" "Chrome cache" "Cookies*"
+        fi
+        if [[ -d "$HOME/.config/chromium" ]]; then
+            _secure_clean_dir "$HOME/.config/chromium/Default" "Chromium cache" "Cookies*"
+        fi
     fi
-fi
 
-echo "SENTINEL: Secure cleanup complete."
+    # Clean recently used files list if enabled.
+    if [[ "${SENTINEL_SECURE_RECENT}" == "1" ]]; then
+        _secure_logout_deletion "$HOME/.local/share/recently-used.xbel" "recently used files list"
+        _secure_logout_deletion "$HOME/.recently-used" "recently used files list (old format)"
+    fi
 
-# Clear the screen for added privacy
-if [[ "${SENTINEL_SECURE_CLEAR_SCREEN:-1}" == "1" ]]; then
-    clear
-    echo "Terminal session ended and secured."
-fi
+    # Clean Vim undo history if enabled.
+    if [[ "${SENTINEL_SECURE_VIM_UNDO}" == "1" ]]; then
+        if [[ -d "$HOME/.vim/undo" ]]; then
+            _secure_clean_dir "$HOME/.vim/undo" "Vim undo history"
+        fi
+    fi
+
+    # Clean workspace-specific temporary files if defined.
+    if [[ -n "${SENTINEL_WORKSPACE_TEMP}" && -d "${SENTINEL_WORKSPACE_TEMP}" ]]; then
+        _secure_clean_dir "${SENTINEL_WORKSPACE_TEMP}" "workspace temporary files"
+    fi
+
+    # Clean additional directories specified in SENTINEL_SECURE_DIRS.
+    if [[ -n "${SENTINEL_SECURE_DIRS}" ]]; then
+        IFS=':' read -ra DIRS <<< "${SENTINEL_SECURE_DIRS}"
+        for dir in "${DIRS[@]}"; do
+            if [[ -d "$dir" ]]; then
+                _secure_clean_dir "$dir" "secure data in $dir"
+            fi
+        done
+    fi
+
+    # Clear the clipboard (if xsel or xclip is installed) if enabled.
+    if [[ "${SENTINEL_SECURE_CLIPBOARD}" == "1" ]]; then
+        echo "SENTINEL: Clearing clipboard..."
+        if command -v xsel &>/dev/null; then
+            echo -n | xsel --clipboard --input
+        elif command -v xclip &>/dev/null; then
+            echo -n | xclip -selection clipboard
+        fi
+    fi
+
+    # Clear the screen for added privacy if enabled.
+    if [[ "${SENTINEL_SECURE_CLEAR_SCREEN}" == "1" ]]; then
+        clear
+        echo "Terminal session ended and secured."
+    fi
+
+    echo "SENTINEL: Secure cleanup complete."
+}
+
+# -------------------------------
+# Aliases for Convenience
+# -------------------------------
+alias secure-logout-config='secure_logout_config'
+alias secure-logout-set='secure_logout_set'
+alias secure-logout-add-dir='secure_logout_add_dir'
+alias secure-logout-cleanup='secure_logout_cleanup'
+
+# Initial load message.
+echo "SENTINEL: Secure logout module loaded. Type 'secure-logout-config' to view your settings."
