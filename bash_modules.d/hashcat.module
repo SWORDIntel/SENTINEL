@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
-# SENTINEL Module: hashcat
-# Advanced hashcat wrapper with hash type detection and automated cracking workflows
+### BEGIN MODULE INFO
+# Name:                  SENTINEL Module: hashcat
+# Short-Description:     Hashcat wrapper with auto-detection and cracking workflows
+# Description:           Provides an advanced hashcat interface with hash type detection,
+#                        rule and wordlist management, and streamlined workflows for 
+#                        targeted and thorough password cracking operations.
+# Author:                John
+# Email:                 intel@swordintelligence.airforce
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  cracking, hashcat, automation, password-recovery, opsec
+# Provides:              sentinel_hashcat_interface
+# Requires:              hashcat, find, grep, head, awk, optional:wget,curl,7z
+# Conflicts:             none
+### END MODULE INFO
+
 
 # Module metadata
 SENTINEL_MODULE_VERSION="1.0"
