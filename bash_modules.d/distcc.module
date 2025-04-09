@@ -9,7 +9,7 @@
 #                        or large-scale compilation workflows.
 # Author:                John
 # Email:                 intel@swordintelligence.airforce
-# URL:                   hhttps://github.com/SWORDIntel/SENTINEL/
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
 # Version:               1.0.0
 # Stability:             stable
 # Tags:                  compilation, distcc, ccache, distributed, optimization
