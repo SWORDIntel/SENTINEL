@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 ### BEGIN MODULE INFO
-# Name:                  SENTINEL Security Enhanced Logout Script
-# Short-Description:     Securely cleans up temporary files and bash history on logout
-# Description:           Provides a configurable shell cleanup mechanism upon logout.
-#                       This script securely removes temp files, clears bash history,
-#                       and ensures sensitive data is shredded.
-# Author:                intel@swordintelligence.airforce
-# URL:
-# Version:               1.0
-# Stability:            stable
-# Tags:                  security
-# Provides:              sentinel_logout_module
-# Requires:
-# Conflicts:
+# Name:                  SENTINEL Module: secure_logout
+# Short-Description:     Secure logout cleanup for interactive shell sessions
+# Description:           This SENTINEL module securely clears temporary data,
+#                        including bash history, cached files, browser artifacts,
+#                        clipboard contents, and workspace-specific artifacts
+#                        during user logout. It’s designed to reduce digital
+#                        residue on shared or monitored systems.
+# Author:                John
+# Email:                 intel@swordintelligence.airforce
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  security, privacy, logout, cleanup, forensic-resistance
+# Provides:              sentinel_secure_logout
+# Requires:              coreutils, find, bash, optional:xclip,xsel,shred
+# Conflicts:             persistent_shell_sessions
 ### END MODULE INFO
 
 # Only run in interactive shells
