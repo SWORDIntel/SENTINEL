@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
-# SENTINEL Module: obfuscate
-# File obfuscation techniques for evading signature-based detection
+### BEGIN MODULE INFO
+# Name:                  SENTINEL Module: obfuscate
+# Short-Description:     File and string obfuscation for red teaming and evasion
+# Description:           This module provides a wide array of file and string obfuscation techniques
+#                        used in red teaming, malware simulation, and defensive bypass testing.
+#                        Supports script wrapping, binary hiding, and encoding strategies.
+# Author:                John
+# Email:                 intel@swordintelligence.airforce
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  obfuscation, redteam, encoding, evasion, post-exploitation
+# Provides:              sentinel_obfuscate_framework
+# Requires:              bash, base64, xxd, file, hexdump, awk, sed, python3, optional:upx,node,iconv
+# Conflicts:             minimal_shell_envs
+### END MODULE INFO
+
 
 # Module metadata
 SENTINEL_MODULE_VERSION="1.0.0"
