@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# SENTINEL Module: distcc
+# Configure environment for distributed compilation with Distcc and Ccache
+
+# Module metadata
+SENTINEL_MODULE_VERSION="1.0.0"
+SENTINEL_MODULE_DESCRIPTION="Configure environment for distributed compilation with Distcc and Ccache"
+SENTINEL_MODULE_AUTHOR="John"
+SENTINEL_MODULE_DEPENDENCIES=""
+
+# Check if we're being sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "This script is meant to be sourced, not executed directly."
+    exit 1
+fi
+
+# Configuration
+DISTCC_DIR="${DISTCC_DIR:-$HOME/.distcc}"
+CCACHE_DIR="${CCACHE_DIR:-$HOME/.ccache}"
+DISTCC_HOSTS="${DISTCC_HOSTS:-localhost}"
+DISTCC_LOG="${DISTCC_LOG:-$HOME/.distcc/distcc.log}"
+DISTCC_VERBOSE="${DISTCC_VERBOSE:-0}"
+DISTCC_FALLBACK="${DISTCC_FALLBACK:-1}"
+CCACHE_SIZE="${CCACHE_SIZE:-5G}"
+
+# Create necessary directories
+mkdir -p "$DISTCC_DIR" 2>/dev/null
+mkdir -p "$CCACHE_DIR" 2>/dev/null
+mkdir -p "$(dirname "$DISTCC_LOG")" 2>/dev/null
+
+# Function to check for distcc and ccache installations
+distcc_check_installation() {
+    local missing=""
+    
+    # Check for distcc
+    if ! command -v distcc &>/dev/null; then
+        missing+="distcc "
+    fi
+    
+    # Check for ccache
+    if ! command -v ccache &>/dev/null; then
+        missing+="ccache "
+    fi
+    
+    if [[ -n "$missing" ]]; then
+        echo -e "${YELLOW}Warning: The following tools are not installed: ${missing}${NC}"
+        echo -e "You can install them with:"
+        echo -e "  ${BLUE}sudo apt install $missing${NC}  # Debian/Ubuntu"
+        echo -e "  ${BLUE}sudo dnf install $missing${NC}  # Fedora/RHEL"
+        echo -e "  ${BLUE}sudo pacman -S $missing${NC}    # Arch Linux"
+        
+        return 1
+    else
+        return 0
+    fi
+}
+
+# Function to setup distcc environment
+distcc_setup() {
+    # Configure distcc
+    export DISTCC_DIR
+    export DISTCC_HOSTS
+    export DISTCC_LOG
+    export DISTCC_VERBOSE
+    export DISTCC_FALLBACK
+    
+    # Configure ccache
+    export CCACHE_DIR
+    
+    # Set ccache size if not already configured
+    if ! ccache -s | grep -q "max cache size.*$CCACHE_SIZE"; then
+        ccache -M "$CCACHE_SIZE" >/dev/null
+    fi
+    
+    # Add distcc and ccache to PATH
+    local distcc_bin_paths=(
+        "/usr/lib/distcc/bin"
+        "/usr/lib64/distcc/bin"
+        "/usr/local/lib/distcc/bin"
+        "/opt/local/lib/distcc/bin"
+    )
+    
+    local ccache_bin_paths=(
+        "/usr/lib/ccache/bin"
+        "/usr/lib64/ccache/bin"
+        "/usr/local/lib/ccache/bin"
+        "/opt/local/lib/ccache/bin"
+    )
+    
+    # Find existing paths and add to PATH
+    for p in "${distcc_bin_paths[@]}"; do
+        if [[ -d "$p" && ":$PATH:" != *":$p:"* ]]; then
+            export PATH="$p:$PATH"
+            break
+        fi
+    done
+    
+    for p in "${ccache_bin_paths[@]}"; do
+        if [[ -d "$p" && ":$PATH:" != *":$p:"* ]]; then
+            export PATH="$p:$PATH"
+            break
+        fi
+    done
+    
+    # Verify PATH updates
+    if echo "$PATH" | grep -q "distcc\|ccache"; then
+        echo -e "${GREEN}Distcc and Ccache added to PATH:${NC} $PATH"
+    else
+        echo -e "${YELLOW}Warning: Could not find distcc or ccache bin directories${NC}"
+        echo -e "Standard paths were not found. You may need to manually set your PATH."
+    fi
+    
+    echo -e "${GREEN}Distcc configured with hosts:${NC} $DISTCC_HOSTS"
+}
+
+# Function to configure distcc hosts
+distcc_set_hosts() {
+    if [[ -z "$1" ]]; then
+        echo "Current DISTCC_HOSTS: $DISTCC_HOSTS"
+        echo "Usage: distcc_set_hosts <host1> [host2] [host3] ..."
+        echo "Examples:"
+        echo "  distcc_set_hosts localhost"
+        echo "  distcc_set_hosts 192.168.1.100 192.168.1.101"
+        echo "  distcc_set_hosts localhost/4 192.168.1.100/8"
+        return 0
+    fi
+    
+    # Join all arguments with spaces
+    DISTCC_HOSTS="$*"
+    export DISTCC_HOSTS
+    
+    echo -e "${GREEN}DISTCC_HOSTS set to:${NC} $DISTCC_HOSTS"
+    
+    # Save to configuration
+    if [[ -f "$HOME/.bashrc.postcustom" ]]; then
+        if grep -q "export DISTCC_HOSTS=" "$HOME/.bashrc.postcustom"; then
+            sed -i "s/export DISTCC_HOSTS=.*/export DISTCC_HOSTS=\"$DISTCC_HOSTS\"/" "$HOME/.bashrc.postcustom"
+        else
+            echo "export DISTCC_HOSTS=\"$DISTCC_HOSTS\"" >> "$HOME/.bashrc.postcustom"
+        fi
+    fi
+}
+
+# Function to check distcc status
+distcc_status() {
+    echo -e "${BLUE}Distcc Configuration:${NC}"
+    echo -e "DISTCC_DIR:      $DISTCC_DIR"
+    echo -e "DISTCC_HOSTS:    $DISTCC_HOSTS"
+    echo -e "DISTCC_LOG:      $DISTCC_LOG"
+    echo -e "DISTCC_VERBOSE:  $DISTCC_VERBOSE"
+    echo -e "DISTCC_FALLBACK: $DISTCC_FALLBACK"
+    
+    echo -e "\n${BLUE}Ccache Configuration:${NC}"
+    echo -e "CCACHE_DIR:      $CCACHE_DIR"
+    ccache -s
+    
+    echo -e "\n${BLUE}System PATH:${NC}"
+    echo "$PATH" | tr ':' '\n' | grep -E 'distcc|ccache'
+}
+
+# Function to show compile example
+distcc_example() {
+    cat << 'EOF'
+Distcc and Ccache Usage Examples:
+---------------------------------
+
+Basic compilation with distcc:
+  $ CC="distcc gcc" ./configure
+  $ make -j$(distcc -j)
+
+Automake/Autoconf with distcc:
+  $ export CC="distcc gcc"
+  $ export CXX="distcc g++"
+  $ ./configure
+  $ make -j$(distcc -j)
+
+CMake with distcc:
+  $ cmake -DCMAKE_C_COMPILER_LAUNCHER=distcc -DCMAKE_CXX_COMPILER_LAUNCHER=distcc ..
+  $ make -j$(distcc -j)
+
+Check if distcc is being used:
+  $ DISTCC_VERBOSE=1 make -j$(distcc -j)
+
+Monitor distcc activity:
+  $ distccmon-text        # Text-based monitor
+  $ distccmon-gnome       # GUI monitor (if installed)
+EOF
+}
+
+# Function to create monitor alias
+distcc_monitor() {
+    local type="${1:-text}"
+    
+    case "$type" in
+        text)
+            if command -v distccmon-text &>/dev/null; then
+                distccmon-text 1
+            else
+                echo "distccmon-text not found. Install distcc-client package."
+            fi
+            ;;
+        gui|gnome)
+            if command -v distccmon-gnome &>/dev/null; then
+                distccmon-gnome &
+            else
+                echo "distccmon-gnome not found. Install distcc-client package."
+            fi
+            ;;
+        *)
+            echo "Unknown monitor type. Use 'text' or 'gui'."
+            ;;
+    esac
+}
+
+# Function to display help information
+distcc_help() {
+    cat << EOF
+${GREEN}SENTINEL Distcc Module Help${NC}
+==============================
+
+${BLUE}Available Commands:${NC}
+  distcc_status       - Show distcc and ccache configuration
+  distcc_set_hosts    - Configure distcc hosts
+  distcc_monitor      - Monitor distcc activity
+  distcc_example      - Show usage examples
+
+${BLUE}Configuration Variables:${NC}
+  DISTCC_HOSTS        - Space-separated list of compilation hosts
+  DISTCC_DIR          - Directory for distcc files
+  CCACHE_DIR          - Directory for ccache files
+  CCACHE_SIZE         - Maximum size of ccache (default: 5G)
+  
+${BLUE}Example usage:${NC}
+  distcc_set_hosts localhost 192.168.1.100
+  distcc_monitor text
+  
+${BLUE}To use in build systems:${NC}
+  export CC="distcc gcc"
+  export CXX="distcc g++"
+  ./configure && make -j\$(distcc -j)
+  
+For more information about distcc:
+  man distcc
+EOF
+}
+
+# Function to create automake environment
+automake_env() {
+    local type="${1:-gnu}"
+    
+    local configure_flags=""
+    local num_jobs=$(distcc -j || echo 4)
+    
+    case "$type" in
+        gnu)
+            export CC="distcc gcc"
+            export CXX="distcc g++"
+            configure_flags="--prefix=/usr/local"
+            ;;
+        cmake)
+            export CMAKE_C_COMPILER_LAUNCHER="distcc"
+            export CMAKE_CXX_COMPILER_LAUNCHER="distcc"
+            ;;
+        *)
+            echo "Unknown build type. Use 'gnu' or 'cmake'."
+            return 1
+            ;;
+    esac
+    
+    echo -e "${GREEN}Automake environment set for $type builds${NC}"
+    echo -e "Compilers: CC=$CC CXX=$CXX"
+    echo -e "Configure flags: $configure_flags"
+    echo -e "Parallel jobs: $num_jobs"
+    
+    echo -e "\n${BLUE}Build commands:${NC}"
+    if [[ "$type" == "gnu" ]]; then
+        echo -e "  ./configure $configure_flags"
+        echo -e "  make -j$num_jobs"
+    else
+        echo -e "  mkdir -p build && cd build"
+        echo -e "  cmake .."
+        echo -e "  make -j$num_jobs"
+    fi
+}
+
+# Main setup
+if distcc_check_installation; then
+    distcc_setup
+fi
+
+# Create aliases for quick access
+alias distcc-status='distcc_status'
+alias distcc-monitor='distcc_monitor'
+alias distcc-help='distcc_help'
+alias distcc-example='distcc_example'
+alias automake-distcc='automake_env gnu'
+alias cmake-distcc='automake_env cmake'
+
+# Display module loaded message
+echo -e "${GREEN}[+]${NC} Distcc/Ccache module loaded. PATH configured for distributed compilation."
+echo -e "    Type ${CYAN}distcc-help${NC} to see available commands."

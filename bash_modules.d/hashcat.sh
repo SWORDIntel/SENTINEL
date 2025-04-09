@@ -1,0 +1,885 @@
+#!/usr/bin/env bash
+# SENTINEL Module: hashcat
+# Advanced hashcat wrapper with hash type detection and automated cracking workflows
+
+# Module metadata
+SENTINEL_MODULE_VERSION="1.0"
+SENTINEL_MODULE_DESCRIPTION="Advanced hashcat wrapper with hash type detection and automated cracking workflows"
+SENTINEL_MODULE_AUTHOR="John"
+SENTINEL_MODULE_DEPENDENCIES=""
+
+# Check if we're being sourced
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "This script is meant to be sourced, not executed directly."
+    exit 1
+fi
+
+# Configuration values with defaults
+# These can be overridden in ~/.bashrc.postcustom
+HASHCAT_BIN="${HASHCAT_BIN:-$(command -v hashcat)}"
+HASHCAT_WORDLISTS_DIR="${HASHCAT_WORDLISTS_DIR:-/usr/share/wordlists}"
+HASHCAT_RULES_DIR="${HASHCAT_RULES_DIR:-/usr/share/hashcat/rules}"
+HASHCAT_CUSTOM_WORDLISTS_DIR="${HASHCAT_CUSTOM_WORDLISTS_DIR:-${HOME}/.hashcat/wordlists}"
+HASHCAT_FAVORITE_WORDLISTS="${HASHCAT_FAVORITE_WORDLISTS:-rockyou.txt,10-million-password-list-top-1000000.txt,darkweb2017-top10000.txt}"
+HASHCAT_FAVORITE_RULES="${HASHCAT_FAVORITE_RULES:-best64.rule,rockyou-30000.rule,OneRuleToRuleThemAll.rule}"
+HASHCAT_OUTPUT_DIR="${HASHCAT_OUTPUT_DIR:-${HOME}/.hashcat/cracked}"
+
+# Create required directories
+mkdir -p "${HASHCAT_OUTPUT_DIR}" 2>/dev/null
+mkdir -p "${HASHCAT_CUSTOM_WORDLISTS_DIR}" 2>/dev/null
+
+# Check if hashcat is installed
+if [[ -z "${HASHCAT_BIN}" ]]; then
+    echo -e "${RED}Error: Hashcat not found.${NC}"
+    echo "Please install hashcat: sudo apt install hashcat"
+    return 1
+fi
+
+# Function to detect hash type
+detect_hash_type() {
+    local hash="$1"
+    local detect_output
+    local hash_type_id
+    
+    # Check if input is a file
+    if [[ -f "$hash" ]]; then
+        # Get the first line from file
+        hash=$(head -n 1 "$hash" | tr -d '\r\n')
+    fi
+    
+    # Clean the hash (remove any salt indicators like $1$ or similar)
+    local clean_hash="${hash#*\$}"
+    clean_hash="${clean_hash#*\$}"
+    clean_hash="${clean_hash%%\$*}"
+    
+    # Basic length-based detection for common hashes
+    local hash_length=${#hash}
+    local clean_hash_length=${#clean_hash}
+    
+    # Define common hash types by their characteristics
+    case "$hash" in
+        '$1$'*) 
+            echo "MD5 Crypt (id: 500)"
+            return 0
+            ;;
+        '$2a$'* | '$2y$'*)
+            echo "Bcrypt (id: 3200)"
+            return 0
+            ;;
+        '$5$'*)
+            echo "SHA256 Crypt (id: 7400)"
+            return 0
+            ;;
+        '$6$'*)
+            echo "SHA512 Crypt (id: 1800)"
+            return 0
+            ;;
+        '$apr1$'*)
+            echo "Apache APR1 MD5 (id: 1600)"
+            return 0
+            ;;
+        '$P$'* | '$H$'*)
+            echo "PHPass (id: 400)"
+            return 0
+            ;;
+        '$sha1$'*)
+            echo "SHA1 Crypt (id: 101)"
+            return 0
+            ;;
+        'sha256$'*)
+            echo "Django SHA256 (id: 10000)"
+            return 0
+            ;;
+        'sha1$'*)
+            echo "Django SHA1 (id: 124)"
+            return 0
+            ;;
+        'pbkdf2_sha256$'*)
+            echo "Django PBKDF2-HMAC-SHA256 (id: 10000)"
+            return 0
+            ;;
+        *)
+            # Analyze by length
+            case "$hash_length" in
+                32)
+                    # Could be MD5, NTLM, etc.
+                    if [[ "$hash" =~ ^[0-9a-f]{32}$ ]]; then
+                        echo "MD5 / NTLM (id: 0 or 1000)"
+                    fi
+                    ;;
+                40)
+                    # Could be SHA1, etc.
+                    if [[ "$hash" =~ ^[0-9a-f]{40}$ ]]; then
+                        echo "SHA1 (id: 100)"
+                    fi
+                    ;;
+                64)
+                    # Could be SHA256, etc.
+                    if [[ "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+                        echo "SHA256 (id: 1400)"
+                    fi
+                    ;;
+                128)
+                    # Could be SHA512, etc.
+                    if [[ "$hash" =~ ^[0-9a-f]{128}$ ]]; then
+                        echo "SHA512 (id: 1700)"
+                    fi
+                    ;;
+                *)
+                    # Use hashcat's built-in detection as a fallback
+                    detect_output=$(${HASHCAT_BIN} --quiet --identify "$hash" 2>/dev/null)
+                    if [[ -n "$detect_output" ]]; then
+                        hash_type_id=$(echo "$detect_output" | grep -oE 'Hash\.Mode\s*:\s*[0-9]+' | grep -oE '[0-9]+')
+                        printf "Detected hash type: %s (id: %s)\n" "$(hashcat --help | grep -A1 "Hash modes" | tail -n1 | grep -oE "\- ${hash_type_id} \| [^,]+" | cut -d'|' -f2)" "$hash_type_id"
+                        return 0
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+    
+    # If we can't determine the hash type
+    echo "Unknown hash type. Please specify with --hash-type or -m"
+    return 1
+}
+
+# Function to extract hash ID from detection output
+extract_hash_id() {
+    local detection_output="$1"
+    local hash_id
+    
+    if [[ "$detection_output" =~ \(id:\ ([0-9]+)\) ]]; then
+        hash_id="${BASH_REMATCH[1]}"
+        echo "$hash_id"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Function to list available wordlists
+list_wordlists() {
+    local dirs=()
+    local exclude_patterns="\.txt\.gz$|\.dict\.gz$"
+    
+    # Add system wordlists directory if it exists
+    if [[ -d "${HASHCAT_WORDLISTS_DIR}" ]]; then
+        dirs+=("${HASHCAT_WORDLISTS_DIR}")
+    fi
+    
+    # Add custom wordlists directory if it exists
+    if [[ -d "${HASHCAT_CUSTOM_WORDLISTS_DIR}" ]]; then
+        dirs+=("${HASHCAT_CUSTOM_WORDLISTS_DIR}")
+    fi
+    
+    echo -e "${GREEN}Available Wordlists:${NC}"
+    echo "======================="
+    
+    # List all wordlists from the directories
+    local count=0
+    for dir in "${dirs[@]}"; do
+        if [[ -d "$dir" ]]; then
+            find "$dir" -type f -name "*.txt" -o -name "*.dict" | grep -v -E "$exclude_patterns" | sort | while IFS= read -r wordlist; do
+                local size=$(du -h "$wordlist" | cut -f1)
+                local word_count=$(wc -l < "$wordlist")
+                local basename=$(basename "$wordlist")
+                local favorite=""
+                
+                # Check if this is a favorite wordlist
+                if [[ "$HASHCAT_FAVORITE_WORDLISTS" == *"$basename"* ]]; then
+                    favorite=" ${YELLOW}[★]${NC}"
+                fi
+                
+                echo -e "${CYAN}$((++count)). ${NC}${basename}${favorite} (${size}, ${word_count} words)"
+                echo "   Path: $wordlist"
+            done
+        fi
+    done
+    
+    echo -e "\nUse ${CYAN}wordlist <number>${NC} to select a wordlist for cracking."
+}
+
+# Function to list available rules
+list_rules() {
+    local dirs=()
+    
+    # Add system rules directory if it exists
+    if [[ -d "${HASHCAT_RULES_DIR}" ]]; then
+        dirs+=("${HASHCAT_RULES_DIR}")
+    fi
+    
+    # Add hashcat default rules directory if different
+    if [[ -d "/usr/share/hashcat/rules" && "${HASHCAT_RULES_DIR}" != "/usr/share/hashcat/rules" ]]; then
+        dirs+=("/usr/share/hashcat/rules")
+    fi
+    
+    echo -e "${GREEN}Available Rules:${NC}"
+    echo "================="
+    
+    # List all rules from the directories
+    local count=0
+    for dir in "${dirs[@]}"; do
+        if [[ -d "$dir" ]]; then
+            find "$dir" -type f -name "*.rule" | sort | while IFS= read -r rule; do
+                local size=$(du -h "$rule" | cut -f1)
+                local rule_count=$(wc -l < "$rule")
+                local basename=$(basename "$rule")
+                local favorite=""
+                
+                # Check if this is a favorite rule
+                if [[ "$HASHCAT_FAVORITE_RULES" == *"$basename"* ]]; then
+                    favorite=" ${YELLOW}[★]${NC}"
+                fi
+                
+                echo -e "${CYAN}$((++count)). ${NC}${basename}${favorite} (${size}, ${rule_count} rules)"
+                echo "   Path: $rule"
+            done
+        fi
+    done
+    
+    echo -e "\nUse ${CYAN}rule <number>${NC} to select a rule for cracking."
+}
+
+# Function to find a wordlist by number or name
+find_wordlist() {
+    local search="$1"
+    local dirs=()
+    local found_wordlist=""
+    
+    # Add system wordlists directory if it exists
+    if [[ -d "${HASHCAT_WORDLISTS_DIR}" ]]; then
+        dirs+=("${HASHCAT_WORDLISTS_DIR}")
+    fi
+    
+    # Add custom wordlists directory if it exists
+    if [[ -d "${HASHCAT_CUSTOM_WORDLISTS_DIR}" ]]; then
+        dirs+=("${HASHCAT_CUSTOM_WORDLISTS_DIR}")
+    fi
+    
+    # If search is a number, find that numbered wordlist
+    if [[ "$search" =~ ^[0-9]+$ ]]; then
+        local count=0
+        for dir in "${dirs[@]}"; do
+            if [[ -d "$dir" ]]; then
+                while IFS= read -r wordlist; do
+                    count=$((count + 1))
+                    if [[ "$count" -eq "$search" ]]; then
+                        found_wordlist="$wordlist"
+                        break 2
+                    fi
+                done < <(find "$dir" -type f -name "*.txt" -o -name "*.dict" | sort)
+            fi
+        done
+    # If search is a name, find by filename
+    else
+        for dir in "${dirs[@]}"; do
+            if [[ -d "$dir" ]]; then
+                local matches=$(find "$dir" -name "$search" -o -name "${search}.txt" -o -name "${search}.dict" | head -1)
+                if [[ -n "$matches" ]]; then
+                    found_wordlist="$matches"
+                    break
+                fi
+            fi
+        done
+    fi
+    
+    # Output the result
+    if [[ -n "$found_wordlist" ]]; then
+        echo "$found_wordlist"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to find a rule by number or name
+find_rule() {
+    local search="$1"
+    local dirs=()
+    local found_rule=""
+    
+    # Add system rules directory if it exists
+    if [[ -d "${HASHCAT_RULES_DIR}" ]]; then
+        dirs+=("${HASHCAT_RULES_DIR}")
+    fi
+    
+    # Add hashcat default rules directory if different
+    if [[ -d "/usr/share/hashcat/rules" && "${HASHCAT_RULES_DIR}" != "/usr/share/hashcat/rules" ]]; then
+        dirs+=("/usr/share/hashcat/rules")
+    fi
+    
+    # If search is a number, find that numbered rule
+    if [[ "$search" =~ ^[0-9]+$ ]]; then
+        local count=0
+        for dir in "${dirs[@]}"; do
+            if [[ -d "$dir" ]]; then
+                while IFS= read -r rule; do
+                    count=$((count + 1))
+                    if [[ "$count" -eq "$search" ]]; then
+                        found_rule="$rule"
+                        break 2
+                    fi
+                done < <(find "$dir" -type f -name "*.rule" | sort)
+            fi
+        done
+    # If search is a name, find by filename
+    else
+        for dir in "${dirs[@]}"; do
+            if [[ -d "$dir" ]]; then
+                local matches=$(find "$dir" -name "$search" -o -name "${search}.rule" | head -1)
+                if [[ -n "$matches" ]]; then
+                    found_rule="$matches"
+                    break
+                fi
+            fi
+        done
+    fi
+    
+    # Output the result
+    if [[ -n "$found_rule" ]]; then
+        echo "$found_rule"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to show hashcat usage and module-specific commands
+hash_help() {
+    echo -e "${GREEN}SENTINEL Hashcat Module${NC} - Version ${SENTINEL_MODULE_VERSION}"
+    echo "==========================================="
+    echo -e "${CYAN}Hash Detection:${NC}"
+    echo "  hashdetect <hash or file>    - Detect hash type and suggest hashcat mode"
+    echo ""
+    echo -e "${CYAN}Wordlist and Rule Management:${NC}"
+    echo "  wordlists                    - List available wordlists"
+    echo "  rules                        - List available rules"
+    echo "  wordlist <number/name>       - Select a wordlist for cracking"
+    echo "  rule <number/name>           - Select a rule for cracking"
+    echo "  download_wordlist <url>      - Download a wordlist to custom directory"
+    echo ""
+    echo -e "${CYAN}Cracking Commands:${NC}"
+    echo "  hashcrack <hash/file> [options] - Auto-detect and crack a hash"
+    echo "  hashcrack_targeted <hash/file>  - Automatic targeted cracking workflow"
+    echo "  hashcrack_thorough <hash/file>  - Thorough automated cracking (long-running)"
+    echo ""
+    echo -e "${CYAN}Options for hashcrack:${NC}"
+    echo "  -w, --wordlist <file>        - Specify wordlist to use"
+    echo "  -r, --rule <file>            - Specify rule to use"
+    echo "  -m, --hash-type <id>         - Specify hash type ID (overrides autodetection)"
+    echo "  -a, --attack-mode <mode>     - Attack mode (0=dict, 1=combo, 3=mask, etc.)"
+    echo "  -o, --output <file>          - Output file for cracked hashes"
+    echo "  --show                       - Show already cracked hashes"
+    echo ""
+    echo -e "${CYAN}Example Usage:${NC}"
+    echo "  hashdetect '5f4dcc3b5aa765d61d8327deb882cf99'"
+    echo "  hashcrack '5f4dcc3b5aa765d61d8327deb882cf99' -w rockyou.txt"
+    echo "  hashcrack_targeted hashes.txt"
+}
+
+# Function to download a wordlist
+download_wordlist() {
+    local url="$1"
+    local filename=$(basename "$url")
+    local output_path="${HASHCAT_CUSTOM_WORDLISTS_DIR}/${filename}"
+    
+    echo -e "${GREEN}Downloading wordlist from:${NC} $url"
+    echo -e "${GREEN}Output path:${NC} $output_path"
+    
+    # Create directory if it doesn't exist
+    mkdir -p "${HASHCAT_CUSTOM_WORDLISTS_DIR}"
+    
+    # Download the file with progress bar
+    if command -v wget >/dev/null 2>&1; then
+        wget -c --show-progress -O "$output_path" "$url"
+    elif command -v curl >/dev/null 2>&1; then
+        curl -L --progress-bar -o "$output_path" "$url"
+    else
+        echo -e "${RED}Error: Neither wget nor curl is available.${NC}"
+        return 1
+    fi
+    
+    # Check if download was successful
+    if [[ $? -ne 0 ]]; then
+        echo -e "${RED}Error downloading wordlist.${NC}"
+        return 1
+    fi
+    
+    # Handle compressed files
+    if [[ "$filename" == *.gz ]]; then
+        echo "Decompressing gzipped file..."
+        gunzip -f "$output_path"
+        output_path="${output_path%.gz}"
+        echo -e "${GREEN}Decompressed to:${NC} $output_path"
+    elif [[ "$filename" == *.zip ]]; then
+        echo "Extracting ZIP file..."
+        unzip -o "$output_path" -d "${HASHCAT_CUSTOM_WORDLISTS_DIR}"
+        echo -e "${GREEN}Extracted to:${NC} ${HASHCAT_CUSTOM_WORDLISTS_DIR}"
+    elif [[ "$filename" == *.7z ]]; then
+        echo "Extracting 7z file..."
+        7z x "$output_path" -o"${HASHCAT_CUSTOM_WORDLISTS_DIR}"
+        echo -e "${GREEN}Extracted to:${NC} ${HASHCAT_CUSTOM_WORDLISTS_DIR}"
+    fi
+    
+    echo -e "${GREEN}Wordlist downloaded successfully.${NC}"
+    echo "Word count: $(wc -l < "$output_path") lines"
+    echo "File size: $(du -h "$output_path" | cut -f1)"
+}
+
+# Main hashcat auto detection and cracking function
+hashcrack() {
+    local hash=""
+    local wordlist=""
+    local rule=""
+    local hash_type=""
+    local attack_mode="0"
+    local output_file="${HASHCAT_OUTPUT_DIR}/cracked_$(date +%Y%m%d_%H%M%S).txt"
+    local skip_detection=false
+    local show_cracked=false
+    local additional_options=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -w|--wordlist)
+                wordlist=$(find_wordlist "$2")
+                if [[ -z "$wordlist" ]]; then
+                    echo -e "${RED}Error: Wordlist not found: $2${NC}"
+                    return 1
+                fi
+                shift 2
+                ;;
+            -r|--rule)
+                rule=$(find_rule "$2")
+                if [[ -z "$rule" ]]; then
+                    echo -e "${RED}Error: Rule not found: $2${NC}"
+                    return 1
+                fi
+                shift 2
+                ;;
+            -m|--hash-type)
+                hash_type="$2"
+                skip_detection=true
+                shift 2
+                ;;
+            -a|--attack-mode)
+                attack_mode="$2"
+                shift 2
+                ;;
+            -o|--output)
+                output_file="$2"
+                shift 2
+                ;;
+            --show)
+                show_cracked=true
+                shift
+                ;;
+            *)
+                if [[ -z "$hash" ]]; then
+                    hash="$1"
+                else
+                    additional_options+=" $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # Check if hash is provided
+    if [[ -z "$hash" ]]; then
+        echo -e "${RED}Error: No hash provided.${NC}"
+        echo "Usage: hashcrack <hash or hash file> [options]"
+        return 1
+    fi
+    
+    # Check if hash is a file
+    if [[ -f "$hash" ]]; then
+        local hash_file="$hash"
+        hash=$(head -n 1 "$hash_file")  # For detection, use first line
+    fi
+    
+    # Auto-detect hash type if not specified
+    if [[ -z "$hash_type" && "$skip_detection" == "false" && "$show_cracked" == "false" ]]; then
+        echo -e "${GREEN}Detecting hash type...${NC}"
+        local detection=$(detect_hash_type "$hash")
+        echo "$detection"
+        
+        # Extract hash ID from detection
+        hash_type=$(extract_hash_id "$detection")
+        
+        if [[ -z "$hash_type" ]]; then
+            echo -e "${YELLOW}Warning: Could not auto-detect hash type.${NC}"
+            read -p "Enter hash type ID manually or press Enter to abort: " hash_type
+            if [[ -z "$hash_type" ]]; then
+                echo -e "${RED}Aborting.${NC}"
+                return 1
+            fi
+        fi
+    fi
+    
+    # If no wordlist specified, use rockyou.txt or the first available wordlist
+    if [[ -z "$wordlist" && "$show_cracked" == "false" ]]; then
+        # Try to find the rockyou.txt wordlist
+        wordlist=$(find_wordlist "rockyou.txt")
+        
+        # If rockyou.txt not found, use the first available wordlist
+        if [[ -z "$wordlist" ]]; then
+            local first_wordlist=""
+            if [[ -d "${HASHCAT_WORDLISTS_DIR}" ]]; then
+                first_wordlist=$(find "${HASHCAT_WORDLISTS_DIR}" -type f -name "*.txt" | head -1)
+            fi
+            if [[ -z "$first_wordlist" && -d "${HASHCAT_CUSTOM_WORDLISTS_DIR}" ]]; then
+                first_wordlist=$(find "${HASHCAT_CUSTOM_WORDLISTS_DIR}" -type f -name "*.txt" | head -1)
+            fi
+            
+            if [[ -n "$first_wordlist" ]]; then
+                wordlist="$first_wordlist"
+                echo -e "${YELLOW}Using wordlist:${NC} $(basename "$wordlist")"
+            else
+                echo -e "${RED}Error: No wordlists found!${NC}"
+                return 1
+            fi
+        else
+            echo -e "${GREEN}Using wordlist:${NC} rockyou.txt"
+        fi
+    fi
+    
+    # Prepare command
+    local hashcat_cmd="${HASHCAT_BIN}"
+    
+    # Add hash file or hash string
+    if [[ -f "$hash" ]]; then
+        hashcat_cmd+=" \"$hash\""
+    else
+        hashcat_cmd+=" \"$hash\""
+    fi
+    
+    # Show already cracked
+    if [[ "$show_cracked" == "true" ]]; then
+        hashcat_cmd+=" --show"
+        
+        # Add hash type if specified
+        if [[ -n "$hash_type" ]]; then
+            hashcat_cmd+=" -m $hash_type"
+        fi
+        
+        # Execute
+        echo -e "${GREEN}Executing:${NC} $hashcat_cmd"
+        eval "$hashcat_cmd"
+        return $?
+    fi
+    
+    # Add wordlist
+    hashcat_cmd+=" \"$wordlist\""
+    
+    # Add rule if specified
+    if [[ -n "$rule" ]]; then
+        hashcat_cmd+=" -r \"$rule\""
+        echo -e "${GREEN}Using rule:${NC} $(basename "$rule")"
+    fi
+    
+    # Add hash type
+    hashcat_cmd+=" -m $hash_type"
+    
+    # Add attack mode
+    hashcat_cmd+=" -a $attack_mode"
+    
+    # Add output file
+    hashcat_cmd+=" -o \"$output_file\""
+    
+    # Add standard options for better usability
+    hashcat_cmd+=" --status --status-timer=10 --outfile-format=3"
+    
+    # Add any additional options
+    if [[ -n "$additional_options" ]]; then
+        hashcat_cmd+=" $additional_options"
+    fi
+    
+    # Execute
+    echo -e "${GREEN}Starting hashcat with the following parameters:${NC}"
+    echo -e "  ${CYAN}Hash:${NC}      $(if [[ -f "$hash" ]]; then echo "File: $hash"; else echo "$hash"; fi)"
+    echo -e "  ${CYAN}Hash type:${NC} $hash_type"
+    echo -e "  ${CYAN}Wordlist:${NC}  $wordlist"
+    if [[ -n "$rule" ]]; then
+        echo -e "  ${CYAN}Rule:${NC}      $rule"
+    fi
+    echo -e "  ${CYAN}Output:${NC}    $output_file"
+    echo ""
+    echo -e "${GREEN}Executing:${NC} $hashcat_cmd"
+    echo ""
+    
+    # Execute the command
+    eval "$hashcat_cmd"
+    local result=$?
+    
+    # Check results
+    if [[ -f "$output_file" && -s "$output_file" ]]; then
+        echo -e "\n${GREEN}Cracked hashes saved to:${NC} $output_file"
+        echo -e "${GREEN}Cracked hash format:${NC} hash:password"
+        echo "Preview:"
+        head -5 "$output_file"
+    elif [[ "$result" -eq 0 ]]; then
+        echo -e "\n${YELLOW}No hashes were cracked.${NC}"
+    else
+        echo -e "\n${RED}Hashcat encountered an error (code: $result).${NC}"
+    fi
+    
+    return $result
+}
+
+# Function for targeted hash cracking with an optimized workflow
+hashcrack_targeted() {
+    local hash="$1"
+    shift
+    
+    if [[ -z "$hash" ]]; then
+        echo -e "${RED}Error: No hash provided.${NC}"
+        echo "Usage: hashcrack_targeted <hash or hash file> [additional options]"
+        return 1
+    fi
+    
+    # Output file based on input name or timestamp
+    local output_base=""
+    if [[ -f "$hash" ]]; then
+        output_base="${HASHCAT_OUTPUT_DIR}/$(basename "$hash" | sed 's/\.[^.]*$//')"
+    else
+        output_base="${HASHCAT_OUTPUT_DIR}/targeted_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    echo -e "${GREEN}Starting targeted cracking workflow for${NC} $(if [[ -f "$hash" ]]; then echo "file: $hash"; else echo "hash: $hash"; fi)"
+    
+    # Detect hash type
+    local hash_type=""
+    if [[ -f "$hash" ]]; then
+        local first_hash=$(head -n 1 "$hash")
+        local detection=$(detect_hash_type "$first_hash")
+        hash_type=$(extract_hash_id "$detection")
+    else
+        local detection=$(detect_hash_type "$hash")
+        hash_type=$(extract_hash_id "$detection")
+    fi
+    
+    if [[ -z "$hash_type" ]]; then
+        echo -e "${YELLOW}Could not auto-detect hash type.${NC}"
+        read -p "Enter hash type ID manually or press Enter to abort: " hash_type
+        if [[ -z "$hash_type" ]]; then
+            echo -e "${RED}Aborting.${NC}"
+            return 1
+        fi
+    else
+        echo -e "${GREEN}Detected hash type:${NC} $hash_type"
+    fi
+    
+    echo -e "\n${CYAN}=== Phase 1: Common Passwords ===${NC}"
+    
+    # Try with top 10k passwords first (quick win)
+    local wordlist_10k=$(find_wordlist "darkweb2017-top10000.txt" || find_wordlist "10k-most-common.txt")
+    if [[ -n "$wordlist_10k" ]]; then
+        echo -e "${GREEN}Trying top 10,000 common passwords...${NC}"
+        hashcrack "$hash" -m "$hash_type" -w "$wordlist_10k" -o "${output_base}_phase1.txt" "$@"
+    else
+        echo -e "${YELLOW}No top 10k wordlist found, skipping phase 1.${NC}"
+    fi
+    
+    echo -e "\n${CYAN}=== Phase 2: RockYou + Best64 Rules ===${NC}"
+    
+    # Try rockyou with best64 rules
+    local wordlist_rockyou=$(find_wordlist "rockyou.txt")
+    local rule_best64=$(find_rule "best64.rule")
+    if [[ -n "$wordlist_rockyou" && -n "$rule_best64" ]]; then
+        echo -e "${GREEN}Trying rockyou.txt with best64 rules...${NC}"
+        hashcrack "$hash" -m "$hash_type" -w "$wordlist_rockyou" -r "$rule_best64" -o "${output_base}_phase2.txt" "$@"
+    else
+        echo -e "${YELLOW}Missing wordlist or rules for phase 2, skipping.${NC}"
+    fi
+    
+    echo -e "\n${CYAN}=== Phase 3: Targeted Mask Attack ===${NC}"
+    
+    # Try some targeted mask attacks for common password patterns
+    echo -e "${GREEN}Trying targeted mask attacks...${NC}"
+    
+    # Common patterns: 8 chars with upper, lower, digit
+    hashcrack "$hash" -m "$hash_type" -a 3 --increment --increment-min=6 --increment-max=8 -o "${output_base}_phase3a.txt" "?u?l?l?l?l?d?d?d" "$@"
+    
+    # Year patterns: word + year
+    local wordlist_100=$(find_wordlist "100-common-passwords.txt" || find_wordlist "top100.txt")
+    if [[ -n "$wordlist_100" ]]; then
+        echo -e "${GREEN}Trying common words with years...${NC}"
+        # Create temporary wordlist with years
+        local temp_wordlist=$(mktemp)
+        while read -r word; do
+            for year in $(seq 2000 2023); do
+                echo "${word}${year}"
+            done
+        done < "$wordlist_100" > "$temp_wordlist"
+        
+        hashcrack "$hash" -m "$hash_type" -w "$temp_wordlist" -o "${output_base}_phase3b.txt" "$@"
+        rm -f "$temp_wordlist"
+    fi
+    
+    # Consolidate results
+    echo -e "\n${CYAN}=== Results Summary ===${NC}"
+    
+    # Combine all results into one file
+    cat "${output_base}"_phase*.txt 2>/dev/null | sort | uniq > "${output_base}_all_cracked.txt"
+    
+    # Count results
+    local total_cracked=$(wc -l < "${output_base}_all_cracked.txt" 2>/dev/null || echo 0)
+    
+    if [[ "$total_cracked" -gt 0 ]]; then
+        echo -e "${GREEN}Successfully cracked $total_cracked hashes!${NC}"
+        echo -e "All cracked hashes saved to: ${output_base}_all_cracked.txt"
+        echo "Preview:"
+        head -5 "${output_base}_all_cracked.txt"
+    else
+        echo -e "${YELLOW}No hashes were cracked during the targeted workflow.${NC}"
+        echo -e "Consider trying the ${CYAN}hashcrack_thorough${NC} command for a more comprehensive approach."
+    fi
+}
+
+# Function for thorough hash cracking (longer-running)
+hashcrack_thorough() {
+    local hash="$1"
+    shift
+    
+    if [[ -z "$hash" ]]; then
+        echo -e "${RED}Error: No hash provided.${NC}"
+        echo "Usage: hashcrack_thorough <hash or hash file> [additional options]"
+        return 1
+    fi
+    
+    echo -e "${YELLOW}Warning: This is a thorough cracking process that may take a long time.${NC}"
+    read -p "Do you want to continue? (y/n): " confirm
+    if [[ "$confirm" != [yY]* ]]; then
+        echo "Aborting."
+        return 0
+    fi
+    
+    # Output file based on input name or timestamp
+    local output_base=""
+    if [[ -f "$hash" ]]; then
+        output_base="${HASHCAT_OUTPUT_DIR}/$(basename "$hash" | sed 's/\.[^.]*$//')"
+    else
+        output_base="${HASHCAT_OUTPUT_DIR}/thorough_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    echo -e "${GREEN}Starting thorough cracking workflow for${NC} $(if [[ -f "$hash" ]]; then echo "file: $hash"; else echo "hash: $hash"; fi)"
+    
+    # Detect hash type
+    local hash_type=""
+    if [[ -f "$hash" ]]; then
+        local first_hash=$(head -n 1 "$hash")
+        local detection=$(detect_hash_type "$first_hash")
+        hash_type=$(extract_hash_id "$detection")
+    else
+        local detection=$(detect_hash_type "$hash")
+        hash_type=$(extract_hash_id "$detection")
+    fi
+    
+    if [[ -z "$hash_type" ]]; then
+        echo -e "${YELLOW}Could not auto-detect hash type.${NC}"
+        read -p "Enter hash type ID manually or press Enter to abort: " hash_type
+        if [[ -z "$hash_type" ]]; then
+            echo -e "${RED}Aborting.${NC}"
+            return 1
+        fi
+    else
+        echo -e "${GREEN}Detected hash type:${NC} $hash_type"
+    fi
+    
+    # First run the targeted workflow
+    echo -e "\n${CYAN}=== Phase 1-3: Running Targeted Workflow ===${NC}"
+    hashcrack_targeted "$hash" -m "$hash_type" "$@"
+    
+    echo -e "\n${CYAN}=== Phase 4: Comprehensive Wordlist Attack ===${NC}"
+    
+    # Try larger wordlists
+    local wordlist_large=$(find_wordlist "rockyou.txt")
+    local rule_comprehensive=$(find_rule "OneRuleToRuleThemAll.rule" || find_rule "rockyou-30000.rule")
+    
+    if [[ -n "$wordlist_large" && -n "$rule_comprehensive" ]]; then
+        echo -e "${GREEN}Trying comprehensive dictionary attack...${NC}"
+        hashcrack "$hash" -m "$hash_type" -w "$wordlist_large" -r "$rule_comprehensive" -o "${output_base}_phase4.txt" "$@"
+    fi
+    
+    echo -e "\n${CYAN}=== Phase 5: Advanced Mask Attacks ===${NC}"
+    
+    # Try more complex mask attacks
+    echo -e "${GREEN}Trying advanced mask attacks...${NC}"
+    
+    # Common formats: 8-10 chars with upper, lower, digit, special
+    local masks=(
+        "?u?l?l?l?l?d?d?d" 
+        "?u?l?l?l?l?l?d?d"
+        "?l?l?l?l?l?l?d?d"
+        "?d?d?d?d?l?l?l?l"
+        "?l?l?l?l?l?l?l?s"
+        "?d?d?l?l?l?l?l?l?l"
+        "?d?d?d?d?l?l?l?l?l?l"
+    )
+    
+    for mask in "${masks[@]}"; do
+        echo -e "${GREEN}Trying mask:${NC} $mask"
+        hashcrack "$hash" -m "$hash_type" -a 3 -o "${output_base}_phase5_$(echo $mask | tr '?' '_').txt" "$mask" "$@"
+    done
+    
+    echo -e "\n${CYAN}=== Phase 6: Combination Attack ===${NC}"
+    
+    # Try combination attacks if we have multiple wordlists
+    local wordlist_names=("names.txt" "first-names.txt" "lastnames.txt")
+    local wordlist_common=("common.txt" "100-common-passwords.txt" "500-worst-passwords.txt")
+    
+    local wordlist_name=""
+    local wordlist_common_found=""
+    
+    # Find a name wordlist
+    for name in "${wordlist_names[@]}"; do
+        wordlist_name=$(find_wordlist "$name")
+        if [[ -n "$wordlist_name" ]]; then
+            break
+        fi
+    done
+    
+    # Find a common wordlist
+    for common in "${wordlist_common[@]}"; do
+        wordlist_common_found=$(find_wordlist "$common")
+        if [[ -n "$wordlist_common_found" ]]; then
+            break
+        fi
+    done
+    
+    if [[ -n "$wordlist_name" && -n "$wordlist_common_found" ]]; then
+        echo -e "${GREEN}Trying combination attack with names and common words...${NC}"
+        hashcrack "$hash" -m "$hash_type" -a 1 -o "${output_base}_phase6.txt" "$wordlist_name" "$wordlist_common_found" "$@"
+    fi
+    
+    # Consolidate results
+    echo -e "\n${CYAN}=== Final Results ===${NC}"
+    
+    # Combine all results into one file
+    cat "${output_base}"_phase*.txt 2>/dev/null | sort | uniq > "${output_base}_all_cracked.txt"
+    
+    # Count results
+    local total_cracked=$(wc -l < "${output_base}_all_cracked.txt" 2>/dev/null || echo 0)
+    
+    if [[ "$total_cracked" -gt 0 ]]; then
+        echo -e "${GREEN}Successfully cracked $total_cracked hashes!${NC}"
+        echo -e "All cracked hashes saved to: ${output_base}_all_cracked.txt"
+        echo "Preview:"
+        head -5 "${output_base}_all_cracked.txt"
+    else
+        echo -e "${YELLOW}No hashes were cracked during the thorough workflow.${NC}"
+    fi
+}
+
+# Create command aliases
+alias hashdetect='detect_hash_type'
+alias wordlists='list_wordlists'
+alias rules='list_rules'
+alias wordlist='find_wordlist'
+alias rule='find_rule'
+alias hchelp='hash_help'
+
+# Display module loaded message
+echo -e "${GREEN}[+]${NC} Hashcat module loaded with auto-detection and cracking workflows."
+echo -e "    Type ${CYAN}hchelp${NC} to see available commands."

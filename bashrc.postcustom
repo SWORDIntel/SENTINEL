@@ -1,0 +1,13 @@
+# ~/bashrc.postcustom
+# Last Edit: 06/04/2013
+#
+# This file is included very last after running bashrc. 
+# You can use this to change things like environment variables set
+# earlier. The idea is you can edit this file and it's companion
+# file bashrc.precustom to change the behavior of bashrc without
+# needing to edit the distributed version
+
+
+# Example: setting your own PROMPT instead of using the one set
+# by bashrc
+# export PS1=

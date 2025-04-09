@@ -1,0 +1,7 @@
+#loadRcDir ${HOME}/.bash_completion.d
+
+for bashcomp in ${HOME}/.bash_completion.d/*; do
+	source $bashcomp
+done
+
+unset bashcomp

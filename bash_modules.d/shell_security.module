@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+### BEGIN MODULE INFO
+# Name:			shell_security
+# Short-Description:	Protects against unwanted shell use
+# Description:		Configurable security module to help protect a shell
+#			account from being abused by unauthorized users. This
+#			IS NOT for creating a restricted shell, it's for keeping
+#			people from abusing YOUR shell.
+# Author:		iadnah@uplinklounge.com
+# URL:
+# Version:		0.0
+# Stability:		alpha
+# Tags:			security
+# Provides:		security_module
+# Requires:
+# Conflicts:
+### END MODULE INFO

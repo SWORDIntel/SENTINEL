@@ -1,0 +1,32 @@
+## Modules Subsystem
+The modules subsystem is designed to provide modules which can be dynamically loaded
+to alter the bash environment based on the task at hand. For example, a module could
+be created that alters the prompt, aliases, etc. for working with 
+
+
+### Module Format / Requirements
+Modules use regular bash syntax, but must meet certain requirements:
+ 
+ * Modules must end in .module
+ * Modules must be include a header like the one below:
+
+```sh
+#!/bin/bash
+### BEGIN MODULE INFO
+# Name:			shell_security
+# Short-Description:	Protects against unwanted shell use
+# Description:		Configurable security module to help protect a shell
+#			account from being abused by unauthorized users. This
+#			IS NOT for creating a restricted shell, it's for keeping
+#			people from abusing YOUR shell.
+# Author:		iadnah@uplinklounge.com
+# URL:
+# Version:		0.0
+# Stability:		alpha
+# Tags:			security
+# Provides:		security_module
+# Requires:
+# Conflicts:
+### END MODULE INFO
+```
+

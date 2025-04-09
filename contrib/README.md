@@ -255,39 +255,14 @@ For each module, there is typically a help command available:
 - `secure_rm_help`: Help for secure deletion
 - `secure-logout-config`: Shows configuration for secure logout
 
-
-Key Additions for Distcc Integration
-I've made the following enhancements to support the Distcc module in the installation script:
-
-New Function for Module Installation:
-Added install_module function that handles module creation and activation
-Additional Directories:
-Added ~/.distcc directory for Distcc configuration
-Added ~/.ccache directory for Ccache storage
-Added ~/build_workspace for compilation projects
-Distcc Module Installation:
-Created the complete Distcc module inline (with escaped quotes for bash)
-Installed the module using the new install_module function
-Added it to enabled modules automatically
-Environment Configuration:
-Added Distcc-specific environment variables to .bashrc.postcustom:
-DISTCC_HOSTS set to "localhost" by default
-DISTCC_DIR and CCACHE_DIR pointing to their respective directories
-CCACHE_SIZE set to 5GB by default
-Added Distcc/Ccache paths to PATH
-Help Documentation:
-Updated the sentinel_help function to include Distcc commands
-Added a section specifically for "Build Environment" tools
-Added reference to the build workspace directory
-
 ## Credits
 
-SENTINEL is based on the original bashrc work by Jason Thistlethwaite (2013),added on to significantly by Durandal calling it bashrc with significant enhancements for modern security and productivity use cases by myself John aka Epimetheus@swordintelligence.airforce
-
-nb:not with the USAF
+SENTINEL is based on the original bashrc work by Jason Thistlethwaite (2013), with significant enhancements for modern security and productivity use cases.
 
 ## License
 
 Licensed under GNU GPL v2 or later.
 
 ---
+
+For more information, visit [GitHub Repository](https://github.com/yourusername/sentinel).

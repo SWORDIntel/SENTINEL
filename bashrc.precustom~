@@ -1,0 +1,42 @@
+# ~/bashrc.precustom
+# Last Edit: 07/13/2013
+# This file is loaded early in bashrc and can be used to configure the behavior
+# of bashrc
+
+## Default options
+# These options control the behavior of bashrc. Uncomment them to change them
+# Read the source to see exactly what these do. Most of these are BOOLEAN, 0 or 1
+#
+
+# Sets the default title for the terminal window
+#export U_DEFAULT_TITLE="$BASH"
+
+# Turn this on to enable tracing/debugging (this is for devs)
+#export U_DEBUG=0
+
+# Whether or not to load the contents of ~/bashrc.postcustom after the rest of
+# bashrc and whatever it includes has run
+#export U_POSTCUSTOM=1
+
+# Whether or not to include ~/bin and ~/.bin in $PATH
+#export U_BINS=1
+
+# Whether or not to load ~/.bash_functions and ~/.bash_functions.d/*
+#export U_FUNCS=1
+
+# Whether or not to load ~/.bash_aliases and ~/.bash_aliases.d/*
+#export U_ALIASES=1
+
+# Whether or not to enable authentication agent helpers
+#export U_AGENTS=1
+
+# If enabled the title of your terminal will automatically be set to the running command
+#export U_UPDATETITLE=1
+
+# Whether or not enable lesspipe. This enables the 'less' command to read some non-text
+# files.
+#export ENABLE_LESSPIPE=1
+
+# If enabled the (experimental) modules system will be enabled. It is disabled by
+# by default in the master branch.
+#export U_MODULES_ENABLE=0
