@@ -39,4 +39,4 @@
 
 # If enabled the (experimental) modules system will be enabled. It is disabled by
 # by default in the master branch.
-#export U_MODULES_ENABLE=0
+#export U_MODULES_ENABLE=1
