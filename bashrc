@@ -280,7 +280,7 @@ if [[ "${CONFIG[LAZY_LOAD]}" == "1" ]]; then
       if [[ -f \"$env_init_file\" ]]; then
         source \"$env_init_file\"
       elif [[ -n \"$env_init_command\" ]]; then
-        eval \"\$($env_init_command)\"
+        eval "$($env_init_command)"
       fi
       
       # Call the command with the original arguments
