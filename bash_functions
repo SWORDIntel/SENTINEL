@@ -1356,7 +1356,7 @@ todo() {
 # Simple timer function
 timer() {
     local duration="$1"
-    local message="${2:-Time's up!}"
+    local message="${2:-Time is up!}"
     
     if [ -z "$duration" ]; then
         echo "Usage: timer <duration> [message]"

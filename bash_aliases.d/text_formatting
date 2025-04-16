@@ -13,10 +13,11 @@ alias dcsv='sed -e "s/,/ /g" -e "s/\"//g"'
 alias csvview='column -s, -t'
 
 # Format CSV with headers preserved and colored
-alias csvsmart='awk -F, "NR==1 {print \"\\033[1;32m\" \$0 \"\\033[0m\"; next} {print}" | column -s, -t'
+alias csvsmart='awk -F, "NR==1 {print \"\033[1;32m\" \$0 \"\033[0m\"; next} {print}" | column -s, -t'
 
 # Format CSV with alternating row colors for readability
-alias csvcolor='awk -F, "{if(NR%2==0) printf \"\\033[48;5;236m\"; printf \$0 \"\\033[0m\n\"}"|column -t -s,'
+# Note: Using safer quoting via '\'' to encapsulate the awk script.
+alias csvcolor='awk -F, '\''{if(NR%2==0) printf "\033[48;5;236m"; printf $0 "\033[0m\n"}'\'' | column -t -s,'
 
 # Text Transformations
 # -------------------

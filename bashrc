@@ -1090,9 +1090,9 @@ if [[ "${CONFIG[USER_FUNCS]}" == "1" ]]; then
   }
   
   # Search for files with pattern
-  ff() {
-    find . -name "$1" 2>/dev/null
-  }
+  #ff() {
+  #  find . -name "$1" 2>/dev/null
+  #}
   
   # Search content of files
   fif() {
