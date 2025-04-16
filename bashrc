@@ -11,7 +11,7 @@
 #
 # Licensed under GNU GPL v2 or later
 ################################################################################
-
+[ -n "$BASH_VERSION" ] || return
 # Fast exit for non-interactive shells
 case $- in
   *i*) ;;
