@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# SENTINEL Filesystem Search Functions
+# Enhanced search capabilities for finding large files and directories
+# Last Update: 2023-10-15
+
+# Find large files in a directory
+# Searches for files larger than the specified size in MB
+# Usage: findlarge [dir] [size in MB]
+findlarge() {
+    # Validate input parameters
+    if [ -z "$1" ]; then
+        echo "Usage: findlarge [dir] [size in MB]"
+        echo "Example: findlarge /home 100"
+        return 1
+    fi
+    
+    local dir="${1:-.}"
+    local size="${2:-100}"
+    
+    # Show progress indication
+    echo "Searching for files larger than ${size}MB in ${dir}..."
+    echo "This may take some time depending on the directory size..."
+    
+    # Use secure temporary file for progress tracking
+    local tmp_file=$(mktemp)
+    trap "rm -f $tmp_file" EXIT
+    
+    # Implementation with progress indication
+    {
+        find "${dir}" -type f -size +"${size}"M -exec ls -lh {} \; 2>/dev/null | 
+        sort -rn -k 5 | 
+        awk '{printf "%-10s %s\n", $5, $9}'
+    } > "$tmp_file" &
+    
+    local pid=$!
+    
+    # Show spinner while searching
+    local spin='-\|/'
+    local i=0
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) % 4 ))
+        printf "\r[%c] Searching..." "${spin:$i:1}"
+        sleep 0.1
+    done
+    
+    # Display results with size in human-readable format
+    printf "\r\033[K" # Clear the spinner line
+    
+    if [ -s "$tmp_file" ]; then
+        echo "Found $(wc -l < "$tmp_file") files larger than ${size}MB:"
+        echo "------------------------------------------"
+        echo "Size      File Path"
+        echo "------------------------------------------"
+        cat "$tmp_file"
+    else
+        echo "No files larger than ${size}MB found in ${dir}"
+    fi
+    
+    # Clean up
+    rm -f "$tmp_file"
+}
+
+# Find directories consuming the most disk space
+# Lists top N directories by disk usage
+# Usage: find_big_dirs [dir] [top_n]
+find_big_dirs() {
+    local dir="${1:-.}"
+    local top_n="${2:-10}"
+    
+    echo "Finding top ${top_n} largest directories in ${dir}..."
+    echo "This may take some time for large directory structures..."
+    
+    # Implementation with progress tracking
+    {
+        du -h --max-depth=2 "${dir}" 2>/dev/null | 
+        grep -v "^0" | 
+        sort -rh | 
+        head -n "${top_n}"
+    } &
+    
+    local pid=$!
+    
+    # Show spinner while processing
+    local spin='-\|/'
+    local i=0
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) % 4 ))
+        printf "\r[%c] Analyzing disk usage..." "${spin:$i:1}"
+        sleep 0.1
+    done
+    
+    printf "\r\033[K" # Clear the spinner line
+}
+
+# Find files modified within the last N days
+# Usage: find_recent [dir] [days]
+find_recent() {
+    local dir="${1:-.}"
+    local days="${2:-7}"
+    
+    echo "Finding files modified in the last ${days} days in ${dir}..."
+    
+    find "${dir}" -type f -mtime -"${days}" -ls 2>/dev/null | 
+    sort -k 11 | 
+    awk '{printf "%s %s %s\n", $8, $9, $11}'
+}
+
+# Find files by extension and size
+# Usage: find_by_ext [dir] [extension] [min_size_kb]
+find_by_ext() {
+    local dir="${1:-.}"
+    local ext="${2:-log}"
+    local min_size="${3:-100}"
+    
+    echo "Finding ${ext} files larger than ${min_size}KB in ${dir}..."
+    
+    find "${dir}" -type f -name "*.${ext}" -size +"${min_size}"k -exec ls -lhS {} \; 2>/dev/null | 
+    awk '{printf "%-10s %s\n", $5, $9}'
+} 
