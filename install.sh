@@ -137,7 +137,7 @@ install_directory_contents() {
 install_module() {
     local module_name="$1"
     local module_content="$2"
-    local module_file="${HOME}/.bash_modules.d/${module_name}.sh"
+    local module_file="${HOME}/.bash_modules.d/${module_name}.module"
     
     echo -e "${GREEN}Installing ${module_name} module...${NC}"
     
@@ -236,10 +236,12 @@ echo -e "\n${BLUE}${BOLD}Step 8: Installing special modules${NC}"
 
 # Create the obfuscate module
 echo -e "${GREEN}Installing obfuscation module...${NC}"
-OBFUSCATE_MODULE="${HOME}/.bash_modules.d/obfuscate.sh"
+OBFUSCATE_MODULE="${HOME}/.bash_modules.d/obfuscate.module"
 if [ ! -f "$OBFUSCATE_MODULE" ]; then
     if [ -f "./modules/obfuscate.sh" ]; then
         cp -v "./modules/obfuscate.sh" "$OBFUSCATE_MODULE"
+    elif [ -f "./modules/obfuscate.module" ]; then
+        cp -v "./modules/obfuscate.module" "$OBFUSCATE_MODULE"
     else
         echo -e "${YELLOW}Obfuscation module not found in ./modules directory${NC}"
         echo -e "${YELLOW}You'll need to install it manually later${NC}"
@@ -660,7 +662,7 @@ fi
 echo -e "${GREEN}Installing suggestion module files...${NC}"
 if [ -d "./bash_modules.d/suggestions" ]; then
     cp -rv "./bash_modules.d/suggestions/"* "${HOME}/.bash_modules.d/suggestions/"
-    find "${HOME}/.bash_modules.d/suggestions" -type f -name "*.sh" -exec chmod 700 {} \;
+    find "${HOME}/.bash_modules.d/suggestions" -type f -name "*.sh" -o -name "*.module" -exec chmod 700 {} \;
     echo -e "${GREEN}Installed suggestions module files${NC}"
 fi
 
@@ -724,14 +726,14 @@ fi
 echo -e "${GREEN}Installing sentchat module files...${NC}"
 if [ -d "./bash_modules.d/sentchat" ]; then
     cp -rv "./bash_modules.d/sentchat/"* "${HOME}/.bash_modules.d/sentchat/"
-    find "${HOME}/.bash_modules.d/sentchat" -type f -name "*.sh" -exec chmod 700 {} \;
+    find "${HOME}/.bash_modules.d/sentchat" -type f -name "*.sh" -o -name "*.module" -exec chmod 700 {} \;
     echo -e "${GREEN}Installed sentchat module files${NC}"
 fi
 
 # Fix permissions for any Python scripts
 echo -e "${GREEN}Fixing permissions for Python scripts...${NC}"
 find "${HOME}/.sentinel" -type f -name "*.py" -exec chmod 700 {} \;
-find "${HOME}/.bash_modules.d" -type f -name "*.sh" -exec chmod 700 {} \;
+find "${HOME}/.bash_modules.d" -type f -name "*.sh" -o -name "*.module" -exec chmod 700 {} \;
 
 # Create a sentinel help command
 echo -e "${GREEN}Creating sentinel help command...${NC}"

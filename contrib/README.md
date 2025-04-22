@@ -40,7 +40,7 @@ cp sentinel/bash_functions ~/.bash_functions
 cp sentinel/bash_aliases ~/.bash_aliases
 cp sentinel/bashrc ~/.bashrc
 # Ensure executable permissions
-chmod +x ~/.bash_modules.d/*.sh
+chmod +x ~/.bash_modules.d/*.sh ~/.bash_modules.d/*.module
 ```
 
 ## Core Components
@@ -237,7 +237,7 @@ SENTINEL can be configured through several methods:
 ### Common Issues
 
 1. **Module not loading:**
-   - Check permissions: `chmod +x ~/.bash_modules.d/module_name.sh`
+   - Check permissions: `chmod +x ~/.bash_modules.d/module_name.sh` or `chmod +x ~/.bash_modules.d/module_name.module`
    - Ensure it's in modules list: `cat ~/.bash_modules`
 
 2. **Secure deletion is slow:**

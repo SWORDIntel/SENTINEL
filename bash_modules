@@ -23,7 +23,14 @@ module_enable() {
     local module_name="$1"
     local force="${2:-0}"
     local called_by="${3:-direct}"
-    local module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
+    local module_file=""
+    
+    # Check for both .sh and .module extensions
+    if [[ -f "$SENTINEL_MODULES_PATH/$module_name.sh" ]]; then
+        module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
+    elif [[ -f "$SENTINEL_MODULES_PATH/$module_name.module" ]]; then
+        module_file="$SENTINEL_MODULES_PATH/$module_name.module"
+    fi
     
     # Check if module is already loaded
     if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]] && [[ "$force" != "1" ]]; then
@@ -32,12 +39,12 @@ module_enable() {
     fi
     
     # Check if module file exists
-    if [[ ! -f "$module_file" ]]; then
+    if [[ -z "$module_file" || ! -f "$module_file" ]]; then
         if [[ "$called_by" == "direct" ]]; then
-            eerror "Module '$module_name' not found at $module_file"
+            eerror "Module '$module_name' not found."
             
             # Check for similar modules as suggestion
-            local suggestions=$(find "$SENTINEL_MODULES_PATH" -name "*.sh" -exec basename {} .sh \; | grep -i "$module_name" || echo "")
+            local suggestions=$(find "$SENTINEL_MODULES_PATH" -name "*.sh" -o -name "*.module" | xargs -n1 basename | sed 's/\.sh$//' | sed 's/\.module$//' | grep -i "$module_name" || echo "")
             if [[ -n "$suggestions" ]]; then
                 echo "Did you mean one of these?"
                 echo "$suggestions" | while IFS= read -r suggestion; do
@@ -133,8 +140,8 @@ module_list() {
     local enabled_modules=0
     local loaded_modules=0
     
-    # Get list of module files
-    local module_files=$(find "$SENTINEL_MODULES_PATH" -name "*.sh" -type f | sort)
+    # Get list of module files (both .sh and .module)
+    local module_files=$(find "$SENTINEL_MODULES_PATH" -name "*.sh" -o -name "*.module" | sort)
     
     echo -e "\nAvailable modules:"
     echo "-----------------"
@@ -143,7 +150,8 @@ module_list() {
     while IFS= read -r module_file; do
         [[ -z "$module_file" ]] && continue
         
-        local module_name=$(basename "$module_file" .sh)
+        # Extract module name without extension (both .sh and .module)
+        local module_name=$(basename "$module_file" | sed 's/\.sh$//' | sed 's/\.module$//')
         total_modules=$((total_modules + 1))
         
         # Get module description
@@ -195,9 +203,16 @@ module_list() {
 # Get detailed information about a module
 module_info() {
     local module_name="$1"
-    local module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
+    local module_file=""
     
-    if [[ ! -f "$module_file" ]]; then
+    # Check for both .sh and .module extensions
+    if [[ -f "$SENTINEL_MODULES_PATH/$module_name.sh" ]]; then
+        module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
+    elif [[ -f "$SENTINEL_MODULES_PATH/$module_name.module" ]]; then
+        module_file="$SENTINEL_MODULES_PATH/$module_name.module"
+    fi
+    
+    if [[ -z "$module_file" || ! -f "$module_file" ]]; then
         eerror "Module '$module_name' not found."
         return 1
     fi

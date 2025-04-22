@@ -1,101 +1,128 @@
-# Line Ending Management for SENTINEL
+# SENTINEL Line Endings Fix Guide
 
-This document describes how to maintain proper line endings when developing SENTINEL across different operating systems.
+## The Problem
 
-## Problem
+If you're seeing errors like these when running Bash scripts or sourcing `.bashrc`:
 
-SENTINEL is designed to work on Linux/Unix systems where line endings are LF (Line Feed, `\n`). However, Windows uses CRLF (Carriage Return + Line Feed, `\r\n`) as line endings, which can cause syntax errors when bash scripts with Windows line endings are run on Linux systems.
-
-Common error messages include:
 ```
--bash: /root/.bashrc: line 1182: syntax error near unexpected token `('
--bash: /root/.bashrc: line 1182: `  findlarge() {'
+-bash: /path/to/file: line X: syntax error near unexpected token `$'{\r''
+-bash: /path/to/file: line X: `function() {
 ```
 
-## Solution
+This is caused by **Windows-style line endings (CRLF)** in files that Linux expects to have **Unix-style line endings (LF)**.
 
-### On Linux Systems
+Windows uses Carriage Return + Line Feed (`\r\n` or CRLF) as line endings, while Linux and macOS use just Line Feed (`\n` or LF). When Bash tries to interpret files with Windows line endings, it sees the `\r` character (Carriage Return) as part of the text rather than a line ending marker, causing syntax errors.
 
-Use the following command to convert all relevant files from CRLF to LF:
+## Quick Fix
 
+We've provided several tools to fix this issue:
+
+### On Windows (Before transferring to Linux)
+
+1. **Using PowerShell**:
+   ```powershell
+   cd \path\to\SENTINEL
+   contrib\fix_line_endings.ps1
+   ```
+
+2. **Using Python directly**:
+   ```powershell
+   cd \path\to\SENTINEL
+   python contrib\fix_line_endings.py --verbose --all
+   ```
+
+### On Linux (After seeing the error)
+
+1. **Using the Bash script**:
+   ```bash
+   cd /path/to/SENTINEL
+   bash contrib/fix_line_endings.sh
+   ```
+
+2. **Using Python directly**:
+   ```bash
+   cd /path/to/SENTINEL
+   python3 contrib/fix_line_endings.py --verbose --all
+   ```
+
+3. **Manual fix with dos2unix** (if available):
+   ```bash
+   # Install dos2unix if not already installed
+   sudo apt-get install dos2unix  # Debian/Ubuntu
+   sudo dnf install dos2unix      # Fedora
+   sudo pacman -S dos2unix        # Arch Linux
+   
+   # Fix line endings in all shell scripts
+   find . -type f -name "*.sh" -exec dos2unix {} \;
+   find . -name ".bash*" -exec dos2unix {} \;
+   find . -name "bash_*" -exec dos2unix {} \;
+   find ./bash_completion.d/ -type f -exec dos2unix {} \;
+   ```
+
+After fixing the line endings, source your .bashrc again:
 ```bash
-find . -type f -name "*.sh" -o -name "bash*" -o -name "*_*" | xargs -I{} bash -c 'tr -d "\r" < "{}" > "{}.fixed" && mv "{}.fixed" "{}"'
+source ~/.bashrc
 ```
 
-### On Windows Systems
+## How to Prevent This Issue
 
-#### Using PowerShell
+### Git Configuration
 
-1. Run the following PowerShell command to convert line endings:
-
-```powershell
-Get-ChildItem -Recurse -Include *.sh,bash*,*_*,*.d/* | 
-Where-Object { !$_.PSIsContainer } | 
-ForEach-Object { 
-    $content = [System.IO.File]::ReadAllText($_.FullName)
-    $content = $content -replace "`r`n", "`n"
-    [System.IO.File]::WriteAllText($_.FullName, $content)
-    Write-Host "Converted: $($_.FullName)"
-}
-```
-
-#### Using Text Editors
-
-- **VS Code**: Set `files.eol` to `\n` in your settings.json
-- **Notepad++**: Edit > EOL Conversion > Unix (LF)
-- **Sublime Text**: View > Line Endings > Unix
-
-## Git Configuration
-
-Configure Git to handle line endings appropriately:
-
-### Global Git Configuration
+You can configure Git to automatically handle line endings:
 
 ```bash
 # Configure Git to convert CRLF to LF on commit
 git config --global core.autocrlf input
+
+# Configure Git to reject files with CRLF line endings
+git config --global core.safecrlf true
 ```
 
-### Repository-specific configuration
+### Editor Configuration
 
-SENTINEL includes a `.gitattributes` file that enforces LF line endings:
+Most code editors can be configured to use LF line endings for shell scripts:
+
+- **VS Code**: Add to settings.json:
+  ```json
+  "files.eol": "\n",
+  "[shellscript]": {
+    "files.eol": "\n"
+  }
+  ```
+
+- **Notepad++**: Settings → Preferences → New Document → Format → Unix (LF)
+
+- **Vim**: Add to .vimrc:
+  ```
+  set fileformat=unix
+  ```
+
+## Technical Details
+
+The conversion scripts in the `contrib/` directory:
+
+1. Search for shell script files with Windows line endings
+2. Create backups of affected files with `.bak-winformat` extension
+3. Convert CRLF (`\r\n`) to LF (`\n`) line endings
+4. Log all changes to `bash_line_endings_fix.log`
+
+The scripts use different methods depending on the environment:
+- Windows uses a Python script for the conversion
+- Linux tries to use `dos2unix` first, and falls back to Python if not available
+
+## Additional Information
+
+`.gitattributes` file can be used to enforce line endings on a per-file basis:
 
 ```
-# Enforce LF line endings
-* text=auto eol=lf
+# Set default behavior to automatically normalize line endings
+* text=auto
 
-# Binary files should not be modified
-*.png binary
-*.jpg binary
-*.gif binary
+# Explicitly declare text files you want to always be normalized and converted
+# to native line endings on checkout
+*.sh text eol=lf
+.bash* text eol=lf
+bash_* text eol=lf
 ```
 
-## Verifying Line Endings
-
-To check if a file has the correct line endings:
-
-### On Linux
-
-```bash
-file filename  # Should say "with LF line terminators"
-```
-
-### On Windows (PowerShell)
-
-```powershell
-$bytes = [System.IO.File]::ReadAllBytes("filename")
-$hasCR = $false
-foreach ($byte in $bytes) {
-    if ($byte -eq 0x0D) {
-        $hasCR = $true
-        break
-    }
-}
-if ($hasCR) { "Contains CR (CRLF)" } else { "LF only" }
-```
-
-## When Contributing to SENTINEL
-
-1. Always ensure your bash scripts have LF line endings before committing
-2. Run the appropriate conversion command if you're developing on Windows
-3. Verify that scripts are executable with `chmod +x filename` on Linux systems 
+This ensures that all shell scripts are always checked out with LF line endings regardless of the operating system. 

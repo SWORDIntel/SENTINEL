@@ -7,7 +7,7 @@ be created that alters the prompt, aliases, etc. for working with
 ### Module Format / Requirements
 Modules use regular bash syntax, but must meet certain requirements:
  
- * Modules must end in .module
+ * Modules must end in .module or .sh (with .module preferred)
  * Modules must be include a header like the one below:
 
 ```sh
