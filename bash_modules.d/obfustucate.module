@@ -1,21 +1,6 @@
 #!/usr/bin/env bash
-### BEGIN MODULE INFO
-# Name:                  SENTINEL Module: obfuscate
-# Short-Description:     File and string obfuscation for red teaming and evasion
-# Description:           This module provides a wide array of file and string obfuscation techniques
-#                        used in red teaming, malware simulation, and defensive bypass testing.
-#                        Supports script wrapping, binary hiding, and encoding strategies.
-# Author:                John
-# Email:                 intel@swordintelligence.airforce
-# URL:                   https://github.com/SWORDIntel/SENTINEL/
-# Version:               1.0.0
-# Stability:             stable
-# Tags:                  obfuscation, redteam, encoding, evasion, post-exploitation
-# Provides:              sentinel_obfuscate_framework
-# Requires:              bash, base64, xxd, file, hexdump, awk, sed, python3, optional:upx,node,iconv
-# Conflicts:             minimal_shell_envs
-### END MODULE INFO
-
+# SENTINEL Module: obfuscate
+# File obfuscation techniques for evading signature-based detection
 
 # Module metadata
 SENTINEL_MODULE_VERSION="1.0.0"
@@ -392,10 +377,12 @@ obfuscate_url() {
 # Bash script obfuscation
 obfuscate_bash() {
     local input_file="$1"
+    
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_bash <bash_script_file>"
         return 1
     fi
+    
     # Check if it's a bash script
     local file_type=$(file "$input_file")
     if ! echo "$file_type" | grep -i "shell" > /dev/null && ! echo "$file_type" | grep -i "bash" > /dev/null; then
@@ -403,70 +390,90 @@ obfuscate_bash() {
         read -p "Continue anyway? [y/N] " continue_anyway
         [[ "$continue_anyway" != [yY]* ]] && return 1
     fi
+    
     local base_name=$(basename "$input_file")
     local output_file="$OBFUSCATE_OUTPUT_DIR/${base_name%.sh}_obfuscated.sh"
+    
     echo -e "${GREEN}Obfuscating Bash script:${NC} $input_file"
     echo -e "${BLUE}Output file:${NC} $output_file"
+    
     # Create a temp file
     local temp_file="$OBFUSCATE_TEMP_DIR/temp_bash_$RANDOM.sh"
     cp "$input_file" "$temp_file"
+    
     # Obfuscation techniques
     echo -e "${BLUE}Applying obfuscation techniques...${NC}"
+    
     # 1. Variable name obfuscation - replace meaningful names
     echo -ne "  ${CYAN}Variable name obfuscation...${NC} "
     local var_count=0
     # Extract variable names first
     local variables=$(grep -oE '\$[a-zA-Z_][a-zA-Z0-9_]*' "$temp_file" | sort -u | sed 's/\$//' | grep -v '^[0-9]$')
+    
     # Replace each variable with a random name
     for var in $variables; do
         # Skip special variables
         if [[ "$var" =~ ^(BASH_REMATCH|BASH_SOURCE|FUNCNAME|RANDOM|SECONDS|LINENO|MACHTYPE|PIPESTATUS|PWD|HOME|PATH|SHELL|HOSTNAME|USER|UID)$ ]]; then
             continue
         fi
+        
         local new_var="_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8)"
+        
         # Replace variable definitions and uses
         sed -i "s/\<$var=/\$(echo $new_var)=/g" "$temp_file"
         sed -i "s/\$\<$var\>/\$\$(echo $new_var)/g" "$temp_file"
         sed -i "s/\${$var}/\${\$(echo $new_var)}/g" "$temp_file"
+        
         var_count=$((var_count+1))
     done
     echo -e "${GREEN}Done${NC} (obfuscated $var_count variables)"
+    
     # 2. Add junk variables and functions
     echo -ne "  ${CYAN}Adding junk code...${NC} "
     local junk_count=$((RANDOM % 5 + 3))
     local junk=""
+    
     for ((i=0; i<junk_count; i++)); do
         local junk_var="_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8)"
         local junk_value="$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c $((RANDOM % 20 + 5)))"
         junk+="$junk_var=\"$junk_value\"\n"
     done
+    
     # Add junk functions
     for ((i=0; i<junk_count; i++)); do
         local junk_func="_$(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 8)"
         junk+="function $junk_func() {\n  local _x=\"$RANDOM\"\n  local _y=\"$RANDOM\"\n  echo \"\$_x\$_y\" > /dev/null\n}\n"
     done
+    
     # Insert junk after shebang or at beginning
     sed -i "1a\\
 $junk" "$temp_file"
     echo -e "${GREEN}Done${NC} (added $junk_count junk items)"
+    
     # 3. String obfuscation
     echo -ne "  ${CYAN}String obfuscation...${NC} "
     local string_count=0
+    
     # Find strings in the script and obfuscate them
-    local strings=$(grep -oE '"[^"]+"|'"'"'[^'"'"']+'"'"'' "$temp_file" | grep -v '^"$' | grep -v "^'$")
+    strings=$(grep -oE '"[^"]+"|'"'"'[^'"'"']+'"'"'' "$temp_file" | grep -v '^"$' | grep -v "^'$")
+    
     for string in $strings; do
         # Skip if it's a command substitution
         [[ "$string" =~ \$\(.*\) ]] && continue
+        
         # Remove quotes
         string="${string#\'}"
         string="${string#\"}"
         string="${string%\'}"
         string="${string%\"}"
+        
         # Skip empty strings and strings with variables
         [[ -z "$string" || "$string" =~ \$ ]] && continue
+        
         # Choose a random encoding method
         local method=$((RANDOM % 3))
         local replace=""
+        
         case $method in
             0) # Base64
                 replace="\$(echo -n \"$(echo -n "$string" | base64)\" | base64 -d)"
@@ -483,6 +490,7 @@ $junk" "$temp_file"
                 replace+=")"
                 ;;
         esac
+        
         # Replace in the file - careful with escaping
         if [[ -n "$replace" ]]; then
             local escaped_string=$(echo "$string" | sed 's/[\/&\.\*]/\\&/g')
@@ -492,38 +500,51 @@ $junk" "$temp_file"
         fi
     done
     echo -e "${GREEN}Done${NC} (obfuscated $string_count strings)"
+    
     # 4. Add comment removal and code layout randomization
     echo -ne "  ${CYAN}Code layout randomization...${NC} "
+    
     # Remove comments
     sed -i 's/^[[:space:]]*#.*$//' "$temp_file"
+    
     # Random whitespace
     sed -i 's/^[[:space:]]*//g' "$temp_file" # Remove leading whitespace
     sed -i 's/[[:space:]]*$//g' "$temp_file" # Remove trailing whitespace
+    
     # Random line breaks between statements
     sed -i 's/;/;\n/g' "$temp_file"
+    
     echo -e "${GREEN}Done${NC}"
+    
     # 5. Final wrapper with eval
     echo -ne "  ${CYAN}Applying final wrapper...${NC} "
+    
     # Encode the entire script with Base64
     local encoded_script=$(cat "$temp_file" | base64 | tr -d '\n')
+    
     # Create the final obfuscated script with wrapper
     cat > "$output_file" << EOF
 #!/bin/bash
 # Obfuscated with SENTINEL Obfuscation Module
 # Original filename: $base_name
 # Generated: $(date)
+
 # Anti-debugging checks
 if [[ \$BASH_COMMAND == *"debug"* || \$- == *"x"* ]]; then
   echo "Error: Cannot execute in debug mode"
   exit 1
 fi
+
 # Execute the obfuscated code
 eval \$(echo '$encoded_script' | base64 -d)
 EOF
+    
     chmod +x "$output_file"
     echo -e "${GREEN}Done${NC}"
+    
     # Clean up
     rm "$temp_file" 2>/dev/null
+    
     echo -e "\n${GREEN}Bash script successfully obfuscated:${NC} $output_file"
 }
 

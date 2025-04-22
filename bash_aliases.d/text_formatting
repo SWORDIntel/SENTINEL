@@ -152,3 +152,6 @@ for cmd in shfmt pygmentize column xxd; do
         esac
     fi
 done
+
+# Remove carriage returns from all relevant files
+find . -type f -name "*.sh" -o -name "bash*" -o -name "*_*" | xargs -I{} bash -c 'tr -d "\r" < "{}" > "{}.fixed" && mv "{}.fixed" "{}"'
