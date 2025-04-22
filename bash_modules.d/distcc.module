@@ -18,14 +18,6 @@
 # Conflicts:             restricted_build_envs
 ### END MODULE INFO
 
-# Color definitions
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
 # Module metadata
 SENTINEL_MODULE_VERSION="1.0.0"
 SENTINEL_MODULE_DESCRIPTION="Configure environment for distributed compilation with Distcc and Ccache"
@@ -214,39 +206,24 @@ EOF
 # Function to create monitor alias
 distcc_monitor() {
     local type="${1:-text}"
-    local interval="${2:-1}"
-    
-    # Validate interval
-    if ! [[ "$interval" =~ ^[0-9]+$ ]]; then
-        echo "Error: Interval must be a positive number" >&2
-        return 1
-    fi
     
     case "$type" in
         text)
             if command -v distccmon-text &>/dev/null; then
-                distccmon-text "$interval"
+                distccmon-text 1
             else
-                echo "Error: distccmon-text not found. Install distcc-client package." >&2
-                return 1
+                echo "distccmon-text not found. Install distcc-client package."
             fi
             ;;
         gui|gnome)
             if command -v distccmon-gnome &>/dev/null; then
-                if [[ -n "$DISPLAY" ]]; then
-                    distccmon-gnome &
-                else
-                    echo "Error: No display available for GUI monitor." >&2
-                    return 1
-                fi
+                distccmon-gnome &
             else
-                echo "Error: distccmon-gnome not found. Install distcc-client package." >&2
-                return 1
+                echo "distccmon-gnome not found. Install distcc-client package."
             fi
             ;;
         *)
-            echo "Error: Unknown monitor type. Use 'text' or 'gui'" >&2
-            return 1
+            echo "Unknown monitor type. Use 'text' or 'gui'."
             ;;
     esac
 }
@@ -286,39 +263,22 @@ EOF
 # Function to create automake environment
 automake_env() {
     local type="${1:-gnu}"
-    local configure_flags=""
-    local num_jobs
     
-    # Get number of jobs safely
-    if command -v distcc &>/dev/null; then
-        num_jobs=$(distcc -j 2>/dev/null || echo 4)
-    else
-        num_jobs=4
-        echo "Warning: distcc not found, defaulting to $num_jobs jobs" >&2
-    fi
+    local configure_flags=""
+    local num_jobs=$(distcc -j || echo 4)
     
     case "$type" in
         gnu)
-            if command -v distcc &>/dev/null; then
-                export CC="distcc gcc"
-                export CXX="distcc g++"
-                configure_flags="--prefix=/usr/local"
-            else
-                echo "Error: distcc not found" >&2
-                return 1
-            fi
+            export CC="distcc gcc"
+            export CXX="distcc g++"
+            configure_flags="--prefix=/usr/local"
             ;;
         cmake)
-            if command -v distcc &>/dev/null; then
-                export CMAKE_C_COMPILER_LAUNCHER="distcc"
-                export CMAKE_CXX_COMPILER_LAUNCHER="distcc"
-            else
-                echo "Error: distcc not found" >&2
-                return 1
-            fi
+            export CMAKE_C_COMPILER_LAUNCHER="distcc"
+            export CMAKE_CXX_COMPILER_LAUNCHER="distcc"
             ;;
         *)
-            echo "Error: Unknown build type. Use 'gnu' or 'cmake'" >&2
+            echo "Unknown build type. Use 'gnu' or 'cmake'."
             return 1
             ;;
     esac

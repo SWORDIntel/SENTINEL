@@ -13,19 +13,6 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Add to beginning of script
-SENTINEL_VERSION="1.1.0"  # Current version
-SENTINEL_VERSION_FILE="${HOME}/.sentinel/version"
-
-# Check if existing installation
-if [ -f "$SENTINEL_VERSION_FILE" ]; then
-    OLD_VERSION=$(cat "$SENTINEL_VERSION_FILE")
-    echo -e "${BLUE}Upgrading from version $OLD_VERSION to $SENTINEL_VERSION${NC}"
-    # Version-specific upgrade logic here
-else
-    echo -e "${GREEN}Performing fresh installation of SENTINEL $SENTINEL_VERSION${NC}"
-fi
-
 # Print banner
 echo -e "${BLUE}${BOLD}"
 echo '  ██████ ▓█████  ███▄    █ ▄▄▄█████▓ ██▓ ███▄    █ ▓█████  ██▓    '
@@ -165,25 +152,6 @@ install_module() {
     fi
 }
 
-# Function to upgrade a module
-upgrade_module() {
-    local module_name="$1"
-    local module_content="$2"
-    local module_file="${HOME}/.bash_modules.d/${module_name}.sh"
-    
-    if [ -f "$module_file" ]; then
-        echo -e "${YELLOW}Upgrading existing ${module_name} module...${NC}"
-        # Backup existing module
-        cp "$module_file" "${module_file}.bak.$(date +%Y%m%d%H%M%S)"
-    else
-        echo -e "${GREEN}Installing new ${module_name} module...${NC}"
-    fi
-    
-    # Write new module
-    echo "$module_content" > "$module_file"
-    chmod 700 "$module_file"
-}
-
 # Main installation process
 echo -e "${BLUE}${BOLD}Step 1: Backing up existing files${NC}"
 for old in .bashrc .bash_aliases .bash_completion .bash_functions .bash_modules .bash_logout; do
@@ -247,11 +215,6 @@ for extra_dir in "${HOME}/.hashcat/wordlists" "${HOME}/.hashcat/cracked" "${HOME
                 "${HOME}/build_workspace"; do
     create_directory "$extra_dir"
 done
-
-# Check if secure_workspace exists but not new subdirectories
-if [ -d "${HOME}/secure_workspace" ] && [ ! -d "${HOME}/secure_workspace/obfuscation" ]; then
-    echo -e "${YELLOW}Upgrading secure_workspace with new subdirectories${NC}"
-fi
 
 # Final steps
 echo -e "\n${BLUE}${BOLD}Step 7: Finalizing installation${NC}"
@@ -608,10 +571,12 @@ POSTCUSTOM="${HOME}/.bashrc.postcustom"
 if [ -f "$POSTCUSTOM" ]; then
     # Only add if not already present
     if ! grep -q "OBFUSCATE_OUTPUT_DIR" "$POSTCUSTOM"; then
+        echo "" >> "$POSTCUSTOM"
+        echo "# SENTINEL security workspace configuration" >> "$POSTCUSTOM"
         echo "export OBFUSCATE_OUTPUT_DIR=\"\$HOME/secure_workspace/obfuscation\"" >> "$POSTCUSTOM"
-    else
-        # Don't overwrite existing setting
-        echo -e "${YELLOW}Keeping existing OBFUSCATE_OUTPUT_DIR setting${NC}"
+        echo "export OBFUSCATE_TEMP_DIR=\"\$HOME/.sentinel/temp\"" >> "$POSTCUSTOM"
+        echo "export SENTINEL_SECURE_DIRS=\"\$HOME/secure_workspace\"" >> "$POSTCUSTOM"
+        echo -e "${GREEN}Added secure environment variables to .bashrc.postcustom${NC}"
     fi
     
     # Add distcc configuration if not present
@@ -697,7 +662,3 @@ echo -e "  1. Start a new terminal session, or"
 echo -e "  2. Run: ${BLUE}source ~/.bashrc${NC}"
 echo -e "\nEnjoy your enhanced terminal environment!"
 echo -e "${YELLOW}For help and documentation, type: ${BLUE}sentinel_help${NC} after activation.\n"
-
-# Save version at end of script
-mkdir -p "$(dirname "$SENTINEL_VERSION_FILE")"
-echo "$SENTINEL_VERSION" > "$SENTINEL_VERSION_FILE"

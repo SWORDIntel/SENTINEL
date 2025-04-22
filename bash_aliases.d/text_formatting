@@ -7,48 +7,16 @@
 # CSV Processing
 # -------------
 # Format CSV data for human-readable display (removes quotes and replaces commas with spaces)
-function dcsv() {
-    if [ -p /dev/stdin ]; then
-        sed -e 's/,/ /g' -e 's/"//g'
-    else
-        echo "Error: No input provided. Use this function with a pipe." >&2
-        return 1
-    fi
-}
+alias dcsv='sed -e "s/,/ /g" -e "s/\"//g"'
 
-# Format CSV with proper column alignment
-function csvview() {
-    if [ -p /dev/stdin ]; then
-        if command -v pv >/dev/null 2>&1; then
-            pv -q | column -s, -t
-        else
-            column -s, -t
-        fi
-    else
-        echo "Error: No input provided. Use this function with a pipe." >&2
-        return 1
-    fi
-}
+# Format CSV with proper column alignment (requires column command)
+alias csvview='column -s, -t'
 
 # Format CSV with headers preserved and colored
-function csvsmart() {
-    if [ -p /dev/stdin ]; then
-        awk -F, 'NR==1 {print "\033[1;32m" $0 "\033[0m"; next} {print}' | column -s, -t
-    else
-        echo "Error: No input provided. Use this function with a pipe." >&2
-        return 1
-    fi
-}
+alias csvsmart='awk -F, "NR==1 {print \"\\033[1;32m\" \$0 \"\\033[0m\"; next} {print}" | column -s, -t'
 
 # Format CSV with alternating row colors for readability
-function csvcolor() {
-    if [ -p /dev/stdin ]; then
-        awk -F, '{if(NR%2==0) printf "\033[48;5;236m"; printf $0 "\033[0m\n"}' | column -t -s,
-    else
-        echo "Error: No input provided. Use this function with a pipe." >&2
-        return 1
-    fi
-}
+alias csvcolor='awk -F, "{if(NR%2==0) printf \"\\033[48;5;236m\"; printf \$0 \"\\033[0m\n\"}"|column -t -s,'
 
 # Text Transformations
 # -------------------
@@ -77,14 +45,7 @@ alias nocolor='sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g"'
 alias noempty='grep -v "^[[:space:]]*$"'
 
 # Remove duplicate lines while maintaining original order
-function uniqo() {
-    if [ -p /dev/stdin ]; then
-        awk '!seen[$0]++'
-    else
-        echo "Error: No input provided. Use this function with a pipe." >&2
-        return 1
-    fi
-}
+alias uniqo='awk "!seen[\$0]++"'
 
 # Remove lines with comments (# style)
 alias nocomments='grep -v "^[[:space:]]*#"'
@@ -134,46 +95,13 @@ alias bashfmt='shfmt -i 2 -bn -ci -sr -kp | pygmentize -l bash 2>/dev/null || sh
 # Usage: table_display "header1,header2,header3" "data1,data2,data3" "data4,data5,data6"
 function table_display() {
     local headers="$1"
-    local temp_file="/tmp/table_data_$$.csv"
-    local log_file="/tmp/table_display_$$.log"
-
-    # Input validation
-    if [ -z "$headers" ]; then
-        echo "Error: Headers are required" >&2
-        return 1
-    fi
-
-    # Logging setup
-    exec 3>&2 2>"$log_file"
-
-    # Create temporary file with proper cleanup
-    trap 'rm -f "$temp_file" "$log_file"' EXIT
-
-    echo "$headers" > "$temp_file"
     shift
-
-    # Process data rows
-    local row_count=0
+    echo "$headers" > /tmp/table_data_$$.csv
     for line in "$@"; do
-        echo "$line" >> "$temp_file"
-        ((row_count++))
-        echo "Processing row $row_count" >&2
+        echo "$line" >> /tmp/table_data_$$.csv
     done
-
-    # Check if we have any data
-    if [ "$row_count" -eq 0 ]; then
-        echo "Warning: No data rows provided" >&2
-    fi
-
-    # Display the table with progress indicator if available
-    if command -v pv >/dev/null 2>&1 && [ "$row_count" -gt 1000 ]; then
-        pv -q "$temp_file" | column -t -s,
-    else
-        column -t -s, < "$temp_file"
-    fi
-
-    # Restore stderr and cleanup
-    exec 2>&3
+    column -t -s, /tmp/table_data_$$.csv
+    rm /tmp/table_data_$$.csv
 }
 
 # Advanced Diff with Color
@@ -206,17 +134,20 @@ alias hexencode='xxd -p'
 # Hex decode a string
 alias hexdecode='xxd -p -r'
 
-# Check for recommended commands for enhanced functionality
-for cmd in pv tqdm; do
+# Check for required commands and provide installation instructions if missing
+for cmd in shfmt pygmentize column xxd; do
     if ! command -v $cmd >/dev/null 2>&1; then
-        echo "Note: $cmd is not installed. Some progress indicators will not be available."
+        echo "Warning: $cmd is not installed. Some text_formatting aliases may not work properly."
         case $cmd in
-            pv)
-                echo "  Install with: sudo apt install pv  # Debian/Ubuntu"
-                echo "  Install with: sudo yum install pv  # RHEL/CentOS"
+            shfmt)
+                echo "  Install with: go get -u mvdan.cc/sh/cmd/shfmt"
                 ;;
-            tqdm)
-                echo "  Install with: pip install tqdm"
+            pygmentize)
+                echo "  Install with: pip install pygments"
+                ;;
+            column)
+                echo "  Install with: sudo apt install bsdmainutils  # Debian/Ubuntu"
+                echo "  Install with: sudo yum install util-linux     # RHEL/CentOS"
                 ;;
         esac
     fi

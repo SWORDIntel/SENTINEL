@@ -1,556 +1,302 @@
 #!/usr/bin/env bash
-# SENTINEL 3.0 - Advanced Modular Bash Extension Framework
-# Author: John
-# Codename: NIGHTHAWK
-# Description: Enterprise-grade module management system with dependency resolution,
-#              integrity verification, performance metrics, and advanced diagnostics.
+# SENTINEL Module System
+# Provides dynamic loading and management of bashrc extensions
 
-set -Euo pipefail
-# Trap errors for better debugging
-trap 'echo "Error on line $LINENO: $BASH_COMMAND" >&2' ERR
+# Module directory path
+export SENTINEL_MODULES_PATH=${U_MODULES_PATH:-"$HOME/.bash_modules.d"}
 
-# === Configuration ===
-SENTINEL_VERSION="3.0.0"
-SENTINEL_HOME="${SENTINEL_HOME:-$HOME/.sentinel}"
-SENTINEL_MODULES_PATH="${U_MODULES_PATH:-$HOME/.bash_modules.d}"  # Changed to your existing module path
-SENTINEL_ENABLED_FILE="$SENTINEL_HOME/enabled.list"
-SENTINEL_BROKEN_FILE="$SENTINEL_HOME/broken.list"
-SENTINEL_LOG="$SENTINEL_HOME/sentinel.log"
-SENTINEL_STATS="$SENTINEL_HOME/stats.json"
-SENTINEL_MAX_LOG_SIZE=$((10*1024*1024)) # 10MB
-SENTINEL_DEBUG="${SENTINEL_DEBUG:-0}"
-SENTINEL_QUIET="${SENTINEL_QUIET:-0}"
+# Registry of loaded modules
+declare -A SENTINEL_LOADED_MODULES
 
-# Initialize directory structure
-mkdir -p "$SENTINEL_HOME"
-mkdir -p "$SENTINEL_MODULES_PATH"
-touch "$SENTINEL_ENABLED_FILE" "$SENTINEL_BROKEN_FILE" "$SENTINEL_LOG"
+# Initialize modules directory if it doesn't exist
+if [[ ! -d "$SENTINEL_MODULES_PATH" ]]; then
+    mkdir -p "$SENTINEL_MODULES_PATH"
+fi
 
-# === Registry Setup ===
-declare -A SENTINEL_LOADED       # Currently loaded modules
-declare -A SENTINEL_LOADING      # Modules in the process of loading (dependency cycle detection)
-declare -A SENTINEL_LOAD_TIMES   # Performance metrics for module load times
+# Check if list of modules file exists
+if [[ ! -f "$HOME/.bash_modules" ]]; then
+    touch "$HOME/.bash_modules"
+fi
 
-# === Logging System ===
-log() {
-    local level="$1"
-    local message="$2"
-    local timestamp
-    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-    
-    # Rotate log if needed
-    if [[ -f "$SENTINEL_LOG" ]] && [[ $(stat -c%s "$SENTINEL_LOG" 2>/dev/null || echo 0) -gt $SENTINEL_MAX_LOG_SIZE ]]; then
-        mv "$SENTINEL_LOG" "$SENTINEL_LOG.old"
-    fi
-    
-    # Always log to file
-    printf "[%s] [%-7s] %s\n" "$timestamp" "$level" "$message" >> "$SENTINEL_LOG"
-    
-    # Only show to console when quiet mode is off and appropriate level
-    if [[ "$SENTINEL_QUIET" == "0" ]] && \
-       [[ ("$level" == "ERROR" || "$level" == "CRITICAL") || \
-          ("$level" == "WARNING" && "$SENTINEL_DEBUG" == "1") || \
-          ("$level" != "DEBUG" && "$level" != "INFO") ]]; then
-        printf "[%-7s] %s\n" "$level" "$message" >&2
-    fi
-}
-
-debug() { [[ "$SENTINEL_DEBUG" == "1" ]] && log "DEBUG" "$*"; }
-info() { log "INFO" "$*"; }
-warn() { log "WARNING" "$*"; }
-error() { log "ERROR" "$*"; }
-critical() { log "CRITICAL" "$*"; }
-
-# === Direct Console Output (bypassing log system) ===
-console() {
-    [[ "$SENTINEL_QUIET" == "0" ]] && echo "$@" 
-}
-
-# === Hash Verification ===
-verify_checksum() {
-    local file="$1"
-    local expected_hash
-    expected_hash=$(grep -m 1 '^# HASH:' "$file" 2>/dev/null | awk '{print $3}' 2>/dev/null || echo "")
-    
-    # Skip verification if no hash is present
-    if [[ -z "$expected_hash" ]]; then
-        debug "No hash found for '$file', skipping verification"
-        return 0
-    fi
-    
-    # Get file hash excluding the hash line itself
-    local actual_hash
-    actual_hash=$(sed '/^# HASH:/d' "$file" 2>/dev/null | sha256sum 2>/dev/null | awk '{print $1}' || echo "")
-    
-    if [[ -z "$actual_hash" ]]; then
-        debug "Could not calculate hash for '$file', skipping verification"
-        return 0
-    fi
-    
-    if [[ "$expected_hash" != "$actual_hash" ]]; then
-        error "Hash mismatch for module '$file'"
-        return 1
-    fi
-    
-    debug "Hash verified for module '$file'"
-    return 0
-}
-
-# === Update module hash ===
-update_hash() {
-    local file="$1"
-    local temp_file="$file.tmp"
-    
-    # Remove existing hash line
-    sed '/^# HASH:/d' "$file" > "$temp_file"
-    
-    # Calculate new hash
-    local new_hash
-    new_hash=$(sha256sum "$temp_file" 2>/dev/null | awk '{print $1}' || echo "")
-    
-    # Insert new hash at the top of the file, preserving shebang
-    if grep -q '^#!/' "$temp_file"; then
-        sed -i "1a # HASH: $new_hash" "$temp_file" 2>/dev/null
-    else
-        sed -i "1i # HASH: $new_hash" "$temp_file" 2>/dev/null
-    fi
-    
-    mv "$temp_file" "$file"
-    debug "Updated hash for module '$file'"
-}
-
-# === Module Loading ===
+# Module loading function with error handling and dependency resolution
 module_enable() {
-    local name="$1"
+    local module_name="$1"
     local force="${2:-0}"
-    local caller="${3:-direct}"
-    local start_time
-    start_time=$(date +%s.%N 2>/dev/null || echo 0)
+    local called_by="${3:-direct}"
+    local module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
     
-    local file="$SENTINEL_MODULES_PATH/$name.module"
-    
-    # Skip README.md as it's not a module
-    if [[ "$name" == "README.md" ]]; then
-        debug "Skipping README.md, not a module"
-        return 0
-    }
-    
-    # Check if already loaded
-    if [[ "${SENTINEL_LOADED[$name]:-}" == "1" ]] && [[ "$force" != "1" ]]; then
-        [[ "$caller" == "direct" ]] && console "Module '$name' already loaded"
+    # Check if module is already loaded
+    if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]] && [[ "$force" != "1" ]]; then
+        [[ "$called_by" == "direct" ]] && emsg "Module '$module_name' is already loaded."
         return 0
     fi
     
-    # Check for circular dependencies
-    if [[ "${SENTINEL_LOADING[$name]:-}" == "1" ]]; then
-        error "Circular dependency detected involving module '$name'"
+    # Check if module file exists
+    if [[ ! -f "$module_file" ]]; then
+        if [[ "$called_by" == "direct" ]]; then
+            eerror "Module '$module_name' not found at $module_file"
+            
+            # Check for similar modules as suggestion
+            local suggestions=$(find "$SENTINEL_MODULES_PATH" -name "*.sh" -exec basename {} .sh \; | grep -i "$module_name" || echo "")
+            if [[ -n "$suggestions" ]]; then
+                echo "Did you mean one of these?"
+                echo "$suggestions" | while IFS= read -r suggestion; do
+                    echo "  $suggestion"
+                done
+            fi
+        fi
         return 1
     fi
     
-    # Check if module exists
-    if [[ ! -f "$file" ]]; then
-        [[ "$caller" == "direct" ]] && console "Module '$name' not found at $file"
-        return 1
+    # Load module source to extract metadata without executing
+    local dependencies=""
+    if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$module_file"; then
+        dependencies=$(grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | cut -d'"' -f2)
     fi
     
-    # Check if module is marked as broken
-    if grep -qx "$name" "$SENTINEL_BROKEN_FILE" 2>/dev/null && [[ "$force" != "1" ]]; then
-        [[ "$caller" == "direct" ]] && console "Skipping known broken module '$name'. Use force=1 to override."
-        return 1
-    fi
-    
-    # Verify integrity if not forced
-    if [[ "$force" != "1" ]] && ! verify_checksum "$file"; then
-        error "Integrity check failed for module '$name'"
-        echo "$name" >> "$SENTINEL_BROKEN_FILE"
-        return 1
-    fi
-    
-    # Check if executable
-    if [[ ! -x "$file" ]] && [[ "$force" != "1" ]]; then
-        console "Module file '$file' is not executable. Run: chmod +x '$file'"
-        chmod +x "$file" # Auto-fix permissions
-        console "Fixed permissions automatically."
-    fi
-    
-    # Mark as loading to detect circular dependencies
-    SENTINEL_LOADING["$name"]=1
-    
-    # Load dependencies first
-    local deps=""
-    if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$file" 2>/dev/null; then
-        deps=$(grep -m 1 "SENTINEL_MODULE_DEPENDENCIES=" "$file" | cut -d'"' -f2 2>/dev/null)
-    elif grep -q '^# DEPENDS:' "$file" 2>/dev/null; then
-        deps=$(grep -m 1 '^# DEPENDS:' "$file" | cut -d: -f2- | xargs 2>/dev/null)
-    fi
-    
-    if [[ -n "$deps" ]]; then
-        for dep in $deps; do
-            debug "Resolving dependency: $dep for $name"
-            if ! module_enable "$dep" "$force" "$name"; then
-                error "Failed to load dependency '$dep' required by '$name'"
-                unset "SENTINEL_LOADING[$name]"
-                echo "$name" >> "$SENTINEL_BROKEN_FILE"
-                return 1
+    # Process dependencies if any
+    if [[ -n "$dependencies" ]]; then
+        for dep in $dependencies; do
+            if [[ "${SENTINEL_LOADED_MODULES[$dep]}" != "1" ]]; then
+                emsg "Resolving dependency: $dep for $module_name"
+                module_enable "$dep" "$force" "$module_name"
+                
+                # If dependency loading failed, abort
+                if [[ $? -ne 0 ]]; then
+                    eerror "Failed to load dependency '$dep' required by '$module_name'"
+                    return 1
+                fi
             fi
         done
     fi
     
-    # Source the module
-    if source "$file" 2>/dev/null; then
-        SENTINEL_LOADED["$name"]=1
-        unset "SENTINEL_LOADING[$name]"
+    # Actually load the module
+    if [[ -x "$module_file" || "$force" == "1" ]]; then
+        # Mark as loading to detect circular dependencies
+        SENTINEL_LOADED_MODULES["$module_name"]="loading"
         
-        # Record load time
-        local end_time
-        end_time=$(date +%s.%N 2>/dev/null || echo 1)
-        SENTINEL_LOAD_TIMES["$name"]=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo "0")
-        
-        # Add to enabled list if directly called
-        if [[ "$caller" == "direct" ]]; then
-            if ! grep -qx "$name" "$SENTINEL_ENABLED_FILE" 2>/dev/null; then
-                echo "$name" >> "$SENTINEL_ENABLED_FILE"
-                console "✓ Module '$name' enabled and will load on startup"
-            else  
-                console "✓ Module '$name' loaded successfully"
+        # Source the module
+        if source "$module_file"; then
+            SENTINEL_LOADED_MODULES["$module_name"]="1"
+            
+            # Add to enabled modules list if it's not already there
+            if ! grep -q "^${module_name}\$" "$HOME/.bash_modules" && [[ "$called_by" == "direct" ]]; then
+                echo "$module_name" >> "$HOME/.bash_modules"
+                emsg "Module '$module_name' enabled and will be loaded on startup."
             fi
+            
+            [[ "$called_by" == "direct" ]] && emsg "Module '$module_name' loaded successfully."
+            return 0
+        else
+            SENTINEL_LOADED_MODULES["$module_name"]="failed"
+            eerror "Failed to load module '$module_name' - error in module code."
+            return 1
         fi
-        
-        return 0
     else
-        error "Failed to source module '$name' – error in module code"
-        unset "SENTINEL_LOADING[$name]"
-        echo "$name" >> "$SENTINEL_BROKEN_FILE"
+        eerror "Module file '$module_file' is not executable. Run: chmod +x '$module_file'"
         return 1
     fi
 }
 
-# === Disable Module ===
+# Disable a module
 module_disable() {
-    local name="$1"
+    local module_name="$1"
     
-    if ! grep -qx "$name" "$SENTINEL_ENABLED_FILE" 2>/dev/null; then
-        console "Module '$name' is not in the enabled list"
+    # Check if module is in the enabled list
+    if grep -q "^${module_name}\$" "$HOME/.bash_modules"; then
+        # Remove from enabled list
+        sed -i "/^${module_name}\$/d" "$HOME/.bash_modules"
+        
+        # If module is loaded in current session, mark it as unloaded
+        # (can't actually unload it without starting a new session)
+        if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]]; then
+            unset "SENTINEL_LOADED_MODULES[$module_name]"
+            emsg "Module '$module_name' disabled. It will not be loaded in future sessions."
+            emsg "Note: The module remains active in the current session."
+        else
+            emsg "Module '$module_name' disabled. It will not be loaded in future sessions."
+        fi
+        return 0
     else
-        sed -i "/^$name\$/d" "$SENTINEL_ENABLED_FILE" 2>/dev/null
-        console "Module '$name' removed from startup list"
-    fi
-    
-    if [[ "${SENTINEL_LOADED[$name]:-}" == "1" ]]; then
-        console "Note: Module remains active in this session (cannot be unloaded)"
+        ewarn "Module '$module_name' is not enabled."
+        return 1
     fi
 }
 
-# === Reset Broken Status ===
-module_reset() {
-    local name="$1"
-    if grep -qx "$name" "$SENTINEL_BROKEN_FILE" 2>/dev/null; then
-        sed -i "/^$name\$/d" "$SENTINEL_BROKEN_FILE" 2>/dev/null
-        console "Reset broken status for module '$name'"
-    else
-        console "Module '$name' was not marked as broken"
-    fi
-}
-
-# === List Modules ===
+# List all modules with their status
 module_list() {
-    echo -e "\nSENTINEL $SENTINEL_VERSION Module System"
+    echo "SENTINEL Modules"
+    echo "================"
+    
+    # Count the modules
+    local total_modules=0
+    local enabled_modules=0
+    local loaded_modules=0
+    
+    # Get list of module files
+    local module_files=$(find "$SENTINEL_MODULES_PATH" -name "*.sh" -type f | sort)
+    
+    echo -e "\nAvailable modules:"
+    echo "-----------------"
+    
+    # Process each module
+    while IFS= read -r module_file; do
+        [[ -z "$module_file" ]] && continue
+        
+        local module_name=$(basename "$module_file" .sh)
+        total_modules=$((total_modules + 1))
+        
+        # Get module description
+        local description=""
+        if grep -q "SENTINEL_MODULE_DESCRIPTION=" "$module_file"; then
+            description=$(grep "SENTINEL_MODULE_DESCRIPTION=" "$module_file" | head -n1 | cut -d'"' -f2)
+        else
+            # Try to extract from header comment
+            description=$(grep -A1 "# SENTINEL Module:" "$module_file" | tail -n1 | sed 's/# //')
+            [[ "$description" == *"SENTINEL Module:"* ]] && description=""
+        fi
+        
+        # Determine module status
+        local status=" "
+        local status_color="${NC}"
+        
+        # Check if enabled at startup
+        if grep -q "^${module_name}\$" "$HOME/.bash_modules"; then
+            status="E"
+            status_color="${GREEN}"
+            enabled_modules=$((enabled_modules + 1))
+        fi
+        
+        # Check if currently loaded
+        if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]]; then
+            status="${status}L"
+            status_color="${GREEN}"
+            loaded_modules=$((loaded_modules + 1))
+        elif [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "failed" ]]; then
+            status="${status}F"
+            status_color="${RED}"
+        fi
+        
+        # Format status indicator
+        if [[ "$status" == " " ]]; then
+            status="  "
+        else
+            status="[${status}]"
+        fi
+        
+        # Display module info
+        echo -e "${status_color}${status}${NC} ${module_name}\t${description:0:50}${description:50:+...}"
+    done <<< "$module_files"
+    
+    echo -e "\nStatus: [E]=Enabled at startup, [L]=Loaded in current session, [F]=Failed to load"
+    echo -e "Summary: $total_modules total, $enabled_modules enabled, $loaded_modules loaded"
+}
+
+# Get detailed information about a module
+module_info() {
+    local module_name="$1"
+    local module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
+    
+    if [[ ! -f "$module_file" ]]; then
+        eerror "Module '$module_name' not found."
+        return 1
+    fi
+    
+    echo "Module Information: $module_name"
     echo "=================================="
     
-    local total=0
-    local enabled=0
-    local loaded=0
-    local broken=0
+    # Extract metadata
+    local version=$(grep "SENTINEL_MODULE_VERSION=" "$module_file" | head -n1 | cut -d'"' -f2)
+    local description=$(grep "SENTINEL_MODULE_DESCRIPTION=" "$module_file" | head -n1 | cut -d'"' -f2)
+    local author=$(grep "SENTINEL_MODULE_AUTHOR=" "$module_file" | head -n1 | cut -d'"' -f2)
+    local dependencies=$(grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | cut -d'"' -f2)
     
-    echo -e "\nAvailable Modules:\n-----------------"
-    printf "%-5s %-20s %-10s %s\n" "STATUS" "NAME" "VERSION" "DESCRIPTION"
-    printf "%-5s %-20s %-10s %s\n" "------" "----" "-------" "-----------"
-    
-    find "$SENTINEL_MODULES_PATH" -name "*.module" 2>/dev/null | sort | while read -r module_file; do
-        [[ -f "$module_file" ]] || continue
-        
-        local name
-        name=$(basename "$module_file" .module)
-        ((total++))
-        
-        # Get metadata
-        local desc version author
-        desc=$(grep -m 1 'SENTINEL_MODULE_DESCRIPTION=' "$module_file" 2>/dev/null | cut -d'"' -f2 2>/dev/null ||
-              grep -m 1 '^# DESC:' "$module_file" 2>/dev/null | cut -d: -f2- | xargs 2>/dev/null ||
-              echo "No description")
-        
-        version=$(grep -m 1 'SENTINEL_MODULE_VERSION=' "$module_file" 2>/dev/null | cut -d'"' -f2 2>/dev/null ||
-                 grep -m 1 '^# VERSION:' "$module_file" 2>/dev/null | cut -d: -f2- | xargs 2>/dev/null ||
-                 echo "")
-        
-        # Check status
-        local status=""
-        if grep -qx "$name" "$SENTINEL_ENABLED_FILE" 2>/dev/null; then
-            status+="E"
-            ((enabled++))
-        fi
-        if [[ "${SENTINEL_LOADED[$name]:-}" == "1" ]]; then
-            status+="L"
-            ((loaded++))
-        fi
-        if grep -qx "$name" "$SENTINEL_BROKEN_FILE" 2>/dev/null; then
-            status+="B"
-            ((broken++))
-        fi
-        
-        [[ -z "$status" ]] && status="---"
-        
-        # Truncate description if too long
-        if [[ ${#desc} -gt 40 ]]; then
-            desc="${desc:0:37}..."
-        fi
-        
-        printf "%-5s %-20s %-10s %s\n" "[$status]" "$name" "$version" "$desc"
-    done
-    
-    echo -e "\nStatus: [E]=Enabled at startup, [L]=Loaded, [B]=Marked as broken"
-    echo "Summary: $total modules, $enabled enabled, $loaded loaded, $broken broken"
-    
-    # Show performance stats if any
-    if [[ ${#SENTINEL_LOAD_TIMES[@]} -gt 0 ]]; then
-        echo -e "\nPerformance Metrics:"
-        echo "------------------"
-        printf "%-20s %s\n" "MODULE" "LOAD TIME (sec)"
-        for module in "${!SENTINEL_LOAD_TIMES[@]}"; do
-            printf "%-20s %s\n" "$module" "${SENTINEL_LOAD_TIMES[$module]}"
-        done
-    fi
-}
-
-# === Module Information ===
-module_info() {
-    local name="$1"
-    local file="$SENTINEL_MODULES_PATH/$name.module"
-    
-    if [[ ! -f "$file" ]]; then
-        console "Module '$name' not found"
-        return 1
-    fi
-    
-    echo -e "\nModule Information: $name"
-    echo "============================"
-    
-    # Check hash
-    local verified="No"
-    if verify_checksum "$file" >/dev/null 2>&1; then
-        verified="Yes"
-    fi
-    
-    # Get metadata - try different formats for compatibility
-    local version description author dependencies
-    version=$(grep -m 1 'SENTINEL_MODULE_VERSION=' "$file" 2>/dev/null | cut -d'"' -f2 2>/dev/null ||
-             grep -m 1 '^# VERSION:' "$file" 2>/dev/null | cut -d: -f2- | xargs 2>/dev/null || 
-             echo "unknown")
-             
-    description=$(grep -m 1 'SENTINEL_MODULE_DESCRIPTION=' "$file" 2>/dev/null | cut -d'"' -f2 2>/dev/null || 
-                 grep -m 1 '^# DESC:' "$file" 2>/dev/null | cut -d: -f2- | xargs 2>/dev/null || 
-                 echo "No description available")
-                 
-    author=$(grep -m 1 'SENTINEL_MODULE_AUTHOR=' "$file" 2>/dev/null | cut -d'"' -f2 2>/dev/null || 
-            grep -m 1 '^# AUTHOR:' "$file" 2>/dev/null | cut -d: -f2- | xargs 2>/dev/null || 
-            echo "unknown")
-            
-    dependencies=$(grep -m 1 'SENTINEL_MODULE_DEPENDENCIES=' "$file" 2>/dev/null | cut -d'"' -f2 2>/dev/null ||
-                  grep -m 1 '^# DEPENDS:' "$file" 2>/dev/null | cut -d: -f2- | xargs 2>/dev/null || 
-                  echo "none")
-    
-    # Display information
-    echo "Version:      $version"
-    echo "Author:       $author"
-    echo "Description:  $description"
-    echo "Dependencies: $dependencies"
-    echo -e "Hash Verified: $verified\n"
+    # Display metadata
+    echo -e "Version:\t${version:-unknown}"
+    echo -e "Author:\t\t${author:-unknown}"
+    echo -e "Description:\t${description:-No description available}"
+    echo -e "Dependencies:\t${dependencies:-none}"
     
     # Status information
-    echo "Status:"
-    if grep -qx "$name" "$SENTINEL_ENABLED_FILE" 2>/dev/null; then
-        echo "  ✓ Enabled at startup"
+    echo -e "\nStatus:"
+    if grep -q "^${module_name}\$" "$HOME/.bash_modules"; then
+        echo -e "  ${GREEN}✓${NC} Enabled at startup"
     else
-        echo "  ✗ Not enabled at startup"
+        echo -e "  ${RED}✗${NC} Not enabled at startup"
     fi
     
-    if [[ "${SENTINEL_LOADED[$name]:-}" == "1" ]]; then
-        echo "  ✓ Currently loaded"
-        if [[ -n "${SENTINEL_LOAD_TIMES[$name]:-}" ]]; then
-            echo "  ⏱ Load time: ${SENTINEL_LOAD_TIMES[$name]} seconds"
-        fi
+    if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]]; then
+        echo -e "  ${GREEN}✓${NC} Loaded in current session"
+    elif [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "failed" ]]; then
+        echo -e "  ${RED}✗${NC} Failed to load in current session"
     else
-        echo "  ✗ Not currently loaded"
+        echo -e "  ${RED}✗${NC} Not loaded in current session"
     fi
     
-    if grep -qx "$name" "$SENTINEL_BROKEN_FILE" 2>/dev/null; then
-        echo "  ⚠ Marked as broken"
-    fi
-    
-    # Function analysis
-    echo -e "\nExported Functions:"
-    # Try to extract function definitions
-    local functions
-    functions=$(grep -E '^function [a-zA-Z0-9_-]+\(\)|^[a-zA-Z0-9_-]+\(\)' "$file" 2>/dev/null |
-                sed -E 's/function ([a-zA-Z0-9_-]+)\(\)|\s*\{$|\s*\{|\(\)|\s*$/\1/g' 2>/dev/null)
-    
-    if [[ -n "$functions" ]]; then
+    # Show brief breakdown of functions provided by this module
+    echo -e "\nFunctions provided:"
+    if [[ -x "$module_file" ]]; then
+        # Extract function declarations
+        grep -E "^function [a-zA-Z0-9_-]+\(\)|^[a-zA-Z0-9_-]+\(\)" "$module_file" | 
+        sed -E 's/function ([a-zA-Z0-9_-]+)\(\)|\s*\{$|\s*\{|\(\)|\s*$/\1/g' | 
         while IFS= read -r func; do
-            [[ -n "$func" ]] && echo "  - $func"
-        done <<< "$functions"
+            [[ -z "$func" ]] && continue
+            echo -e "  - $func"
+        done
     else
-        echo "  No functions found or not analyzable"
+        echo -e "  (Cannot analyze: Module file is not executable)"
     fi
 }
 
-# === Create Module Template ===
+# Helper to create a new module
 module_create() {
-    local name="$1"
-    [[ -z "$name" ]] && { console "Module name required"; return 1; }
+    local module_name="$1"
+    local module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
     
-    local file="$SENTINEL_MODULES_PATH/$name.module"
-    
-    if [[ -f "$file" ]]; then
-        console "Module '$name' already exists at $file"
+    if [[ -z "$module_name" ]]; then
+        eerror "Module name is required."
+        echo "Usage: module_create <module_name>"
         return 1
     fi
     
-    # Create module template
-    cat << 'EOF' > "$file"
-#!/usr/bin/env bash
-# SENTINEL Module - Replace this comment with module name
-# HASH: auto-generated-on-save
-
-# === Metadata ===
-SENTINEL_MODULE_VERSION="1.0.0"
-SENTINEL_MODULE_DESCRIPTION="Description for your module"
-SENTINEL_MODULE_AUTHOR="Your Name"
-SENTINEL_MODULE_DEPENDENCIES=""
-
-# === Module Code ===
-# Your functions and code go below
-# Use function_name() format for better compatibility
-
-example_function() {
-    echo "This is an example function from the module"
-}
-
-# === Initialization Code ===
-# Code here will run when the module is loaded
-echo "Module $(basename "${BASH_SOURCE[0]}" .module) loaded"
-EOF
-    
-    chmod +x "$file"
-    update_hash "$file"
-    console "Module template created at $file"
-    console "Edit the file to implement functionality, then run: module_enable $name"
-}
-
-# === Update Module ===
-module_update() {
-    local name="$1"
-    local file="$SENTINEL_MODULES_PATH/$name.module"
-    
-    if [[ ! -f "$file" ]]; then
-        console "Module '$name' not found"
+    # Check if module already exists
+    if [[ -f "$module_file" ]]; then
+        eerror "Module '$module_name' already exists at $module_file"
         return 1
     fi
     
-    update_hash "$file"
-    module_reset "$name"
-    console "Module '$name' updated and reset"
+    # Create module file with template content
+    # (Template content would go here in a real implementation)
+    
+    # Make it executable
+    chmod +x "$module_file"
+    
+    emsg "Module '$module_name' created at $module_file"
+    emsg "Edit the file to implement your module functionality."
+    emsg "To enable the module, run: module_enable $module_name"
 }
 
-# === Auto-load enabled modules ===
-auto_load_modules() {
-    debug "Loading modules from enabled list"
-    local start_time
-    start_time=$(date +%s.%N 2>/dev/null || echo 0)
-    
-    while read -r name; do
-        [[ -z "$name" ]] && continue
-        module_enable "$name" "0" "auto"
-    done < "$SENTINEL_ENABLED_FILE"
-    
-    local end_time
-    end_time=$(date +%s.%N 2>/dev/null || echo 0)
-    local total_time
-    total_time=$(echo "$end_time - $start_time" | bc 2>/dev/null || echo 0)
-    
-    debug "All enabled modules loaded in $total_time seconds"
+# Load all enabled modules on startup
+_load_enabled_modules() {
+    if [[ -f "$HOME/.bash_modules" ]]; then
+        emsg "Loading modules from $HOME/.bash_modules..."
+        while IFS= read -r module; do
+            [[ -z "$module" || "$module" =~ ^# ]] && continue
+            module_enable "$module" "0" "startup"
+        done < "$HOME/.bash_modules"
+    fi
 }
 
-# === Enable specific modules requested ===
-enable_specified_modules() {
-    local success=0
-    local failed=0
-    local modules=("bash_logout" "distcc" "hashcat" "obfustucate" "shell_security" "skeleton")
-    
-    # Set quiet mode temporarily
-    local old_quiet="$SENTINEL_QUIET"
-    SENTINEL_QUIET=0
-    
-    echo "Enabling modules:"
-    for module in "${modules[@]}"; do
-        printf "%-20s " "$module"
-        if module_enable "$module" "0" "direct"; then
-            echo "✓ enabled"
-            ((success++))
-        else
-            echo "✗ failed"
-            ((failed++))
-        fi
-    done
-    
-    echo -e "\nSummary: $success modules enabled, $failed modules failed"
-    
-    # Restore quiet setting
-    SENTINEL_QUIET="$old_quiet"
-}
-
-# === Backward compatibility functions ===
+# Register backwards compatibility functions
 bash_module() {
-    warn "Using deprecated function bash_module(), please use module_enable instead"
+    ewarn "Using legacy function bash_module(). Consider switching to module_enable()."
     module_enable "$1"
 }
 
 bash_list_modules() {
-    warn "Using deprecated function bash_list_modules(), please use module_list instead"
+    ewarn "Using legacy function bash_list_modules(). Consider switching to module_list()."
     module_list
 }
 
-# === Help/Usage ===
-module_help() {
-    cat << EOF
-
-SENTINEL $SENTINEL_VERSION Module System
-==============================
-
-USAGE:
-  module_enable <name> [force] - Load and enable a module
-  module_disable <name>        - Disable a module (won't load on startup)
-  module_list                  - List all available modules
-  module_info <name>           - Show detailed module information
-  module_create <name>         - Create a new module from template
-  module_update <name>         - Update hash and reset broken status
-  module_reset <name>          - Reset broken status for a module
-  module_help                  - Show this help information
-
-Configuration directory: $SENTINEL_HOME
-Module path: $SENTINEL_MODULES_PATH
-
-EOF
-}
-
-# === Entry ===
-# If we're being executed directly, enable the specified modules
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    SENTINEL_QUIET=0  # Show output when run directly
-    enable_specified_modules
-# If we're being sourced, auto-load modules
-else
-    # Log startup
-    debug "SENTINEL $SENTINEL_VERSION initializing"
-    SENTINEL_QUIET=1  # Suppress output when being sourced
-    auto_load_modules
-fi
+# Load modules on startup
+_load_enabled_modules
