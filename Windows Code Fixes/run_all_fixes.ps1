@@ -39,7 +39,7 @@ try {
     & "$scriptDir\fix_findlarge.ps1"
     Write-Host ""
     
-    # 5. Fix text formatting
+    # 5. Fix text formatting    
     Write-Host "STEP 5: Fixing text_formatting file..." -ForegroundColor Green
     & "$scriptDir\fix_text_formatting.ps1"
     Write-Host ""

@@ -592,6 +592,147 @@ if [ -f "$POSTCUSTOM" ]; then
     fi
 fi
 
+# Step 9: Install and set up Machine Learning features
+echo -e "\n${BLUE}${BOLD}Step 9: Setting up Machine Learning features${NC}"
+
+# Create sentinel_ml module directory
+create_directory "${HOME}/.bash_modules.d/sentchat"
+create_directory "${HOME}/.bash_modules.d/suggestions"
+create_directory "${HOME}/.sentinel/models"
+
+# Install Python dependencies
+echo -e "${GREEN}Checking for Python dependencies...${NC}"
+if command -v python3 &>/dev/null; then
+    INSTALL_DEPS=0
+    
+    # Check if ML dependencies are already installed
+    if ! python3 -c "import markovify" &>/dev/null || ! python3 -c "import numpy" &>/dev/null; then
+        INSTALL_DEPS=1
+    fi
+    
+    if [ $INSTALL_DEPS -eq 1 ]; then
+        echo -e "${YELLOW}Installing required Python packages for ML features...${NC}"
+        
+        # Install using provided script if available
+        if [ -f "./contrib/install_deps.py" ]; then
+            python3 ./contrib/install_deps.py --group ml
+        else
+            # Fall back to direct pip install
+            echo -e "${YELLOW}Installing markovify and numpy...${NC}"
+            python3 -m pip install --user markovify numpy
+        fi
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}ML dependencies installed successfully${NC}"
+        else
+            echo -e "${RED}Failed to install ML dependencies${NC}"
+            echo -e "${YELLOW}You can install them manually later with:${NC}"
+            echo -e "  python3 -m pip install --user markovify numpy"
+        fi
+    else
+        echo -e "${GREEN}ML dependencies already installed${NC}"
+    fi
+else
+    echo -e "${YELLOW}Python 3 not found. ML features will be disabled.${NC}"
+    echo -e "${YELLOW}Install Python 3 and dependencies to enable ML features:${NC}"
+    echo -e "  python3 -m pip install --user markovify numpy"
+fi
+
+# Install the sentinel_ml module
+echo -e "${GREEN}Installing sentinel_ml module...${NC}"
+if [ -f "./bash_modules.d/sentinel_ml.fixed" ]; then
+    cp -v "./bash_modules.d/sentinel_ml.fixed" "${HOME}/.bash_modules.d/sentinel_ml"
+    chmod 700 "${HOME}/.bash_modules.d/sentinel_ml"
+    echo -e "${GREEN}Installed sentinel_ml module${NC}"
+    
+    # Enable module if Python and dependencies are available
+    if command -v python3 &>/dev/null && python3 -c "import markovify" &>/dev/null; then
+        if ! grep -q "^sentinel_ml$" "${HOME}/.bash_modules" 2>/dev/null; then
+            echo "sentinel_ml" >> "${HOME}/.bash_modules"
+            echo -e "${GREEN}Enabled sentinel_ml module${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}sentinel_ml module not found, skipping${NC}"
+fi
+
+# Copy suggestion module files
+echo -e "${GREEN}Installing suggestion module files...${NC}"
+if [ -d "./bash_modules.d/suggestions" ]; then
+    cp -rv "./bash_modules.d/suggestions/"* "${HOME}/.bash_modules.d/suggestions/"
+    find "${HOME}/.bash_modules.d/suggestions" -type f -name "*.sh" -exec chmod 700 {} \;
+    echo -e "${GREEN}Installed suggestions module files${NC}"
+fi
+
+# Copy Python scripts
+echo -e "${GREEN}Installing ML Python scripts...${NC}"
+if [ -f "./contrib/sentinel_autolearn.py" ]; then
+    cp -v "./contrib/sentinel_autolearn.py" "${HOME}/.sentinel/"
+    chmod 700 "${HOME}/.sentinel/sentinel_autolearn.py"
+    echo -e "${GREEN}Installed sentinel_autolearn.py${NC}"
+fi
+
+if [ -f "./contrib/sentinel_suggest.py" ]; then
+    cp -v "./contrib/sentinel_suggest.py" "${HOME}/.sentinel/"
+    chmod 700 "${HOME}/.sentinel/sentinel_suggest.py"
+    echo -e "${GREEN}Installed sentinel_suggest.py${NC}"
+fi
+
+# Step 10: Set up the conversational assistant
+echo -e "\n${BLUE}${BOLD}Step 10: Setting up conversational assistant${NC}"
+
+# Check for LLM dependencies (don't install automatically as they're larger)
+echo -e "${GREEN}Checking for chat dependencies...${NC}"
+CHAT_DEPS_AVAILABLE=0
+if command -v python3 &>/dev/null; then
+    if python3 -c "import llama_cpp" &>/dev/null && python3 -c "import rich" &>/dev/null; then
+        CHAT_DEPS_AVAILABLE=1
+        echo -e "${GREEN}Chat dependencies already installed${NC}"
+    else
+        echo -e "${YELLOW}Chat dependencies not installed${NC}"
+        echo -e "${YELLOW}You can install them manually later with:${NC}"
+        echo -e "  python3 -m pip install llama-cpp-python rich readline"
+        echo -e "${YELLOW}or run sentinel_chat_install_deps after installation${NC}"
+    fi
+fi
+
+# Install chat module
+echo -e "${GREEN}Installing sentinel_chat module...${NC}"
+if [ -f "./bash_modules.d/sentinel_chat" ]; then
+    cp -v "./bash_modules.d/sentinel_chat" "${HOME}/.bash_modules.d/sentinel_chat"
+    chmod 700 "${HOME}/.bash_modules.d/sentinel_chat"
+    echo -e "${GREEN}Installed sentinel_chat module${NC}"
+    
+    # Enable module
+    if ! grep -q "^sentinel_chat$" "${HOME}/.bash_modules" 2>/dev/null; then
+        echo "sentinel_chat" >> "${HOME}/.bash_modules"
+        echo -e "${GREEN}Enabled sentinel_chat module${NC}"
+    fi
+else
+    echo -e "${YELLOW}sentinel_chat module not found, skipping${NC}"
+fi
+
+# Copy chat Python script
+echo -e "${GREEN}Installing chat Python script...${NC}"
+if [ -f "./contrib/sentinel_chat.py" ]; then
+    cp -v "./contrib/sentinel_chat.py" "${HOME}/.sentinel/"
+    chmod 700 "${HOME}/.sentinel/sentinel_chat.py"
+    echo -e "${GREEN}Installed sentinel_chat.py${NC}"
+fi
+
+# Copy sentchat module files
+echo -e "${GREEN}Installing sentchat module files...${NC}"
+if [ -d "./bash_modules.d/sentchat" ]; then
+    cp -rv "./bash_modules.d/sentchat/"* "${HOME}/.bash_modules.d/sentchat/"
+    find "${HOME}/.bash_modules.d/sentchat" -type f -name "*.sh" -exec chmod 700 {} \;
+    echo -e "${GREEN}Installed sentchat module files${NC}"
+fi
+
+# Fix permissions for any Python scripts
+echo -e "${GREEN}Fixing permissions for Python scripts...${NC}"
+find "${HOME}/.sentinel" -type f -name "*.py" -exec chmod 700 {} \;
+find "${HOME}/.bash_modules.d" -type f -name "*.sh" -exec chmod 700 {} \;
+
 # Create a sentinel help command
 echo -e "${GREEN}Creating sentinel help command...${NC}"
 SENTINEL_HELP="${HOME}/.bash_functions.d/sentinel_help.sh"
@@ -631,6 +772,13 @@ ${BLUE}Build Environment:${NC}
   automake-distcc         - Set up GNU Automake with distcc
   cmake-distcc            - Set up CMake with distcc
   
+${BLUE}Machine Learning Features:${NC}
+  sentinel_suggest <cmd>  - Get ML-powered command suggestions
+  sentinel_ml_train       - Retrain ML model with your commands
+  sentinel_ml_stats       - Show command frequency statistics
+  sentinel_chat           - Interactive AI shell assistant
+  sentinel_chat_status    - Check chat assistant status
+
 ${BLUE}Text Processing:${NC}
   upper/lower             - Convert text to upper/lowercase
   csvview                 - Format CSV for better viewing

@@ -1,6 +1,6 @@
-Starting fix at 04/22/2025 17:15:15
+Starting fix at 04/22/2025 20:20:49
 Starting comprehensive line ending conversion for bash files...
-Found 16 files to process
+Found 17 files to process
 Processing C:\Users\Admin\Documents\GitHub\SENTINEL\bash_modules.d\bash_logout.module...
  Already correct
 Processing C:\Users\Admin\Documents\GitHub\SENTINEL\tests\bash_check.sh...
@@ -31,12 +31,14 @@ Processing C:\Users\Admin\Documents\GitHub\SENTINEL\bashrc.precustom...
  Already correct
 Processing C:\Users\Admin\Documents\GitHub\SENTINEL\bashrc.precustom~...
  Already correct
+Processing C:\Users\Admin\Documents\GitHub\SENTINEL\fix_permissions.sh...
+ Already correct
 Processing C:\Users\Admin\Documents\GitHub\SENTINEL\install.sh...
  Already correct
 
 Conversion Summary:
-Files processed: 16
-Files already correct: 15
+Files processed: 17
+Files already correct: 16
 Files converted: 1
 Errors encountered: 0
 

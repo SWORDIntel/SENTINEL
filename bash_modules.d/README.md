@@ -30,3 +30,9 @@ Modules use regular bash syntax, but must meet certain requirements:
 ### END MODULE INFO
 ```
 
+_sentinel_suggest() {
+  local prefix="${COMP_WORDS[COMP_CWORD]}"
+  COMPREPLY=( $(python3 ~/contrib/sentinel_suggest.py "$prefix") )
+}
+complete -F _sentinel_suggest sentinel_cmd
+
