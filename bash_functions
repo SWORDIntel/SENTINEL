@@ -1438,3 +1438,8 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     echo "Please source this script instead of executing it:"
     echo "source ~/.bashrc"
 fi
+
+# History search with pattern
+hgrep() {
+  history | grep -i "$*" | grep -v "hgrep $*"
+}

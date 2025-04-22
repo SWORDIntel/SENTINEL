@@ -85,7 +85,7 @@ verify_checksum() {
     if [[ -z "$actual_hash" ]]; then
         debug "Could not calculate hash for '$file', skipping verification"
         return 0
-    }
+    fi
     
     if [[ "$expected_hash" != "$actual_hash" ]]; then
         error "Hash mismatch for module '$file'"
