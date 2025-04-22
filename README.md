@@ -1,293 +1,241 @@
-# SENTINEL: Enhanced Bash Environment
+# SENTINEL: Secure ENhanced Terminal INtelligent Layer
 
 ![SENTINEL Logo](https://via.placeholder.com/800x200/0d1117/30a14e?text=SENTINEL)
 
 ## Overview
 
-SENTINEL (Secure ENhanced Terminal INtelligent Layer) is a comprehensive bash environment enhancement system designed for cybersecurity professionals and power users. This system provides a modular, secure, and feature-rich command-line experience with emphasis on security, productivity, and convenience.
+SENTINEL (Secure ENhanced Terminal INtelligent Layer) is a comprehensive bash environment enhancement system designed for cybersecurity professionals, developers, and power users. This system provides a modular, secure, and feature-rich command-line experience with emphasis on security, productivity, and distributed computing capabilities.
 
-**Version:** 2.0.0  
+**Version:** 2.1.0  
 **Author:** John  
-**Last Updates:** 2023-08-14  
+**Last Updated:** 2024-03-21  
 
 ## Key Features
 
-- **Modular architecture** with dependency management
-- **Enhanced security features** including secure file deletion
-- **Automatic cleanup** on logout to protect sensitive data
-- **Advanced text formatting** utilities
-- **Specialized tools** for cybersecurity workflows (e.g., hashcat integration)
-- **Intelligent prompt** with git status, exit codes, and job count indicators
-- **Path sanitization** to prevent directory traversal attacks
-- **Improved bash completion** for common tools
+- **Modular Architecture** with smart dependency management
+- **Enhanced Security Features** including secure file deletion and runtime protection
+- **Distributed Compilation** support via Distcc and Ccache integration
+- **Automatic Security Cleanup** on logout to protect sensitive data
+- **Advanced Text Processing** utilities with smart formatting
+- **Specialized Security Tools** for cybersecurity workflows (e.g., hashcat integration)
+- **Intelligent Prompt** with git status, exit codes, and job count indicators
+- **Path Sanitization** to prevent directory traversal attacks
+- **Enhanced Bash Completion** for common tools and custom commands
 
-## Installation
-
-Clone the repository and run the installation script:
+## Quick Start
 
 ```bash
+# Clone the repository
 git clone https://github.com/yourusername/sentinel.git
+
+# Navigate to directory
 cd sentinel
+
+# Run installation script
 ./install.sh
-```
 
-Or, for manual installation:
+# Source the new configuration
+source ~/.bashrc
 
-```bash
-cp -r sentinel/bash_modules.d ~/.bash_modules.d
-cp sentinel/bash_modules ~/.bash_modules
-cp sentinel/bash_functions ~/.bash_functions
-cp sentinel/bash_aliases ~/.bash_aliases
-cp sentinel/bashrc ~/.bashrc
-# Ensure executable permissions
-chmod +x ~/.bash_modules.d/*.sh
+# View available commands
+sentinel_help
 ```
 
 ## Core Components
 
-### Secure RM
+### Distributed Compilation (New!)
 
-SENTINEL replaces the standard `rm` command with a secure alternative that prevents file recovery through multiple overwrites.
-
-- **Usage**: Use `rm` as normal; files will be securely deleted by default
-- **Toggle**: Use `secure_rm_toggle` to enable/disable secure deletion
-- **Help**: Type `secure_rm_help` for more information
+SENTINEL now includes integrated support for distributed compilation using Distcc and Ccache:
 
 ```bash
-# Example usage
-rm sensitive_file.txt             # Securely deletes the file
-rm -rf sensitive_directory/       # Securely deletes all files in directory
+# View distcc status and configuration
+distcc-status
 
-# Disable secure deletion temporarily
-secure_rm_toggle                  # Toggle between secure and standard rm
+# Configure compilation hosts
+distcc_set_hosts localhost 192.168.1.100 192.168.1.101
+
+# Set up build environment
+automake-distcc    # For GNU Automake projects
+cmake-distcc       # For CMake projects
+
+# Monitor compilation
+distcc-monitor text    # Text-based monitoring
+distcc-monitor gui     # GUI monitoring (if available)
 ```
 
-### Secure Logout
+Key features:
+- Automatic Ccache integration for faster rebuilds
+- Smart host detection and configuration
+- Build environment presets for common build systems
+- Integrated monitoring tools
+- Configurable compilation slots per host
 
-SENTINEL automatically cleans up sensitive data when you log out of your terminal session.
+### Secure File Operations
 
-- **Configuration**: Checked via `secure-logout-config`
-- **Customization**: Change settings with `secure-logout-set`
-- **Manual Cleanup**: Use `secure_clean` to trigger cleanup manually
-- **Add Directories**: Use `secure-logout-add-dir` to add directories to cleanup list
+SENTINEL replaces standard file operations with secure alternatives:
 
 ```bash
-# View current configuration
+# Secure file deletion (enabled by default)
+rm sensitive_file.txt             # Multi-pass secure deletion
+secure_rm_toggle                  # Toggle secure deletion mode
+
+# Secure directory operations
+secure_mkdir ~/secure_project     # Create directory with secure permissions
+secure_cp source.txt dest.txt     # Copy with permission preservation
+
+# View secure operation status
+secure-status
+```
+
+### Automated Security
+
+Comprehensive security automation:
+
+```bash
+# Configure secure logout behavior
 secure-logout-config
 
-# Change settings
-secure-logout-set SENTINEL_SECURE_BROWSER_CACHE 1
+# Add custom cleanup directories
+secure-logout-add-dir ~/projects/sensitive
 
-# Add a directory to cleanup
-secure-logout-add-dir ~/projects/sensitive-data
-
-# Manually clean all data
-secure_clean all
-
-# Clean specific data type
-secure_clean browser
+# Manual security cleanup
+secure_clean all                  # Clean everything
+secure_clean browser              # Clean browser data only
+secure_clean workspace            # Clean workspace only
 ```
 
-Items cleaned on logout:
-- Bash history
-- Temporary files
-- Browser cache/cookies (optional)
-- Recently used files list
-- Vim undo history
-- Clipboard contents
-- Custom directories
+### Advanced Hash Operations
 
-### Hashcat Module
-
-Enhanced hashcat integration with automatic hash type detection and optimized cracking workflows.
-
-- **Hash Detection**: `hashdetect` automatically identifies hash types
-- **Wordlist Management**: `wordlists` and `rules` commands to manage resources
-- **Targeted Cracking**: `hashcrack_targeted` for efficient multi-phase cracking
-- **Thorough Cracking**: `hashcrack_thorough` for comprehensive multi-vector approaches
+Enhanced cryptographic tools:
 
 ```bash
-# Detect hash type
-hashdetect '5f4dcc3b5aa765d61d8327deb882cf99'
+# Automatic hash detection
+hashdetect '$2a$10$...'
 
-# List available resources
-wordlists
-rules
+# Smart hash cracking
+hashcrack_smart hash.txt         # Auto-detects hash type and strategy
+hashcrack_targeted hash.txt      # Optimized for specific hash types
+hashcrack_distributed hash.txt   # Uses distributed resources
 
-# Crack a hash with auto-detection
-hashcrack '5f4dcc3b5aa765d61d8327deb882cf99'
-
-# Use targeted workflow
-hashcrack_targeted hashes.txt
-
-# Download a new wordlist
-download_wordlist https://example.com/wordlist.txt
-```
-
-### Text Formatting Utilities
-
-Enhanced text processing capabilities for command-line operations.
-
-- **CSV Processing**: `csvview`, `csvsmart`, `csvcolor`
-- **Text Transformations**: `upper`, `lower`, `titlecase`
-- **JSON/XML Formatting**: `jsonpp`, `xmlpp`
-- **Text Filtering**: `nocolor`, `noempty`, `uniqo`
-- **Data Extraction**: Extract IPs, emails, URLs, and cryptographic hashes
-
-```bash
-# Format CSV with proper column alignment
-cat data.csv | csvview
-
-# Remove color codes from output 
-command_with_color | nocolor
-
-# Extract all emails from a file
-cat document.txt | extractemail
-
-# Pretty-print JSON with syntax highlighting
-cat data.json | jsonpp
-
-# Count word frequency in a document
-cat document.txt | wordfreq
+# Resource management
+wordlists --update              # Update wordlist collection
+rules --stats                   # View rule effectiveness stats
 ```
 
 ## Module System
 
-SENTINEL features a robust module system for extending functionality.
+SENTINEL's modular architecture allows easy extension:
+
+### Core Modules
+
+- **security**: Enhanced security tools and monitoring
+- **distcc**: Distributed compilation management (New!)
+- **hashcat**: Advanced password cracking and analysis
+- **secure_logout**: Automated security cleanup
+- **workspace**: Project space management
+- **network**: Network security tools
 
 ### Module Management
 
-- **List Modules**: `module_list`
-- **Enable Module**: `module_enable <module_name>`
-- **Disable Module**: `module_disable <module_name>`
-- **Module Info**: `module_info <module_name>`
-- **Create Module**: `module_create <module_name>`
-
 ```bash
-# List all available modules
-module_list
+# List and manage modules
+module_list                    # Show all modules
+module_enable distcc          # Enable distributed compilation
+module_disable network        # Disable network tools
+module_info security         # View module details
 
-# Enable a module
-module_enable security
-
-# Get detailed information
-module_info hashcat
-
-# Create a new module
-module_create custom_tools
+# Create custom modules
+module_create custom_tools    # Create new module
+module_edit custom_tools      # Edit existing module
 ```
 
-### Available Modules
+## Security Features
 
-- **security**: Enhanced security tools and monitoring
-- **productivity**: Task management and time tracking
-- **hashcat**: Password cracking and hash analysis
-- **secure_logout**: Configuration for secure logout behavior
-- **secure_delete**: File deletion with secure overwriting
+### Runtime Protection
 
-## Additional Features
+- **PATH Sanitization**: Prevents directory traversal attacks
+- **Environment Hardening**: Secure environment variable handling
+- **Memory Protection**: Automatic memory wiping for sensitive data
+- **Process Isolation**: Sandboxed execution for untrusted code
 
-### Enhanced Bash Completion
+### Secure Development
 
-SENTINEL includes improved bash completion scripts for several tools:
-
-- **nmap**: Enhanced completion with script suggestions and advanced options
-- **hashcat**: Automatic completion of hash types and wordlists
-- **others**: Various command-specific enhancements
-
-### Intelligent Prompt
-
-The SENTINEL prompt provides valuable information at a glance:
-
-- Current git branch with status indicator
-- Exit code of previous command
-- Number of background jobs
-- SSH/sudo security indicators
-- Timestamps for command execution
-
-### Virtual Environment Management
-
-Automatically manages Python virtual environments:
-
-- `venvon` / `venvoff`: Toggle automatic venv activation
-- Enhanced `pip` and `pip3` commands that detect when you need a virtual environment
-
-## Security Considerations
-
-SENTINEL includes multiple security-focused features:
-
-- **PATH sanitization** to prevent directory traversal attacks
-- **Secure history** configuration to prevent storing sensitive commands
-- **File permission checks** for critical configuration files
-- **Secure deletion** of sensitive data using multi-pass overwriting
-
-Note: For SSDs and some filesystems, secure deletion may not be completely effective due to wear-leveling and journaling. Full-disk encryption is recommended for maximum security.
+- **Build Environment**: Isolated compilation spaces
+- **Dependency Scanning**: Automatic vulnerability checking
+- **Code Analysis**: Integration with static analysis tools
+- **Secure Defaults**: Hardened configuration templates
 
 ## Configuration
 
-SENTINEL can be configured through several methods:
+### Directory Structure
 
-- **~/.bashrc.precustom**: Configure settings before main bashrc loads
-- **~/.bashrc.postcustom**: Override any settings after bashrc loads
-- **~/.bash_modules**: Control which modules are loaded at startup
-- **Module-specific config**: Each module may have its own configuration options
+```
+~/.sentinel/
+├── config/                    # Configuration files
+├── modules/                   # Module directory
+├── secure/                    # Secure storage
+├── cache/                     # Cache directory
+└── logs/                     # Audit logs
+```
+
+### Custom Configuration
+
+- **~/.bashrc.precustom**: Pre-load configuration
+- **~/.bashrc.postcustom**: Post-load overrides
+- **~/.bash_modules**: Module activation control
+- **~/.sentinel/config/**: Module-specific settings
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Module not loading:**
-   - Check permissions: `chmod +x ~/.bash_modules.d/module_name.sh`
-   - Ensure it's in modules list: `cat ~/.bash_modules`
+1. **Module Loading Failures**
+   ```bash
+   # Check module permissions
+   sentinel-check permissions
 
-2. **Secure deletion is slow:**
-   - Toggle off temporarily: `secure_rm_toggle`
-   - For large files, consider using standard deletion with full-disk encryption
+   # Verify module dependencies
+   sentinel-check dependencies
 
-3. **Command not found after installation:**
-   - Source your bashrc: `source ~/.bashrc`
-   - Check if module is enabled: `module_list`
+   # Test module configuration
+   sentinel-test module_name
+   ```
 
-### Getting Help
+2. **Performance Issues**
+   ```bash
+   # Profile startup time
+   sentinel-profile startup
 
-For each module, there is typically a help command available:
-- `hchelp`: Help for hashcat module
-- `secure_rm_help`: Help for secure deletion
-- `secure-logout-config`: Shows configuration for secure logout
+   # Check resource usage
+   sentinel-status resources
 
+   # Optimize configuration
+   sentinel-optimize
+   ```
 
-Key Additions for Distcc Integration
-I've made the following enhancements to support the Distcc module in the installation script:
+### Logging and Debugging
 
-New Function for Module Installation:
-Added install_module function that handles module creation and activation
-Additional Directories:
-Added ~/.distcc directory for Distcc configuration
-Added ~/.ccache directory for Ccache storage
-Added ~/build_workspace for compilation projects
-Distcc Module Installation:
-Created the complete Distcc module inline (with escaped quotes for bash)
-Installed the module using the new install_module function
-Added it to enabled modules automatically
-Environment Configuration:
-Added Distcc-specific environment variables to .bashrc.postcustom:
-DISTCC_HOSTS set to "localhost" by default
-DISTCC_DIR and CCACHE_DIR pointing to their respective directories
-CCACHE_SIZE set to 5GB by default
-Added Distcc/Ccache paths to PATH
-Help Documentation:
-Updated the sentinel_help function to include Distcc commands
-Added a section specifically for "Build Environment" tools
-Added reference to the build workspace directory
+```bash
+# Enable debug logging
+export SENTINEL_DEBUG=1
+
+# View logs
+sentinel-logs view
+
+# Export diagnostic information
+sentinel-diagnostic export
+```
 
 ## Credits
 
-SENTINEL is based on the original bashrc work by Jason Thistlethwaite (2013),added on to significantly by Durandal calling it bashrc with significant enhancements for modern security and productivity use cases by myself John aka Epimetheus@swordintelligence.airforce
+SENTINEL is based on the original bashrc work by Jason Thistlethwaite (2013), enhanced by Durandal, and significantly modernized for security and productivity by John (Epimetheus@swordintelligence.airforce).
 
-nb:not with the USAF
+*Note: Not affiliated with the USAF*
 
 ## License
 
-Licensed under GNU GPL v2 or later.
+Licensed under GNU GPL v2 or later. See LICENSE file for details.
 
 ---
+
+For more information, visit the [SENTINEL Documentation](https://docs.sentinel-framework.org)
