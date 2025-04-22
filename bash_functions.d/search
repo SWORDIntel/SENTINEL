@@ -4,6 +4,6 @@
 # (c) 2013 Jason Thistlethwaite
 # Recursively search current directory for files and directories containing <arg> in
 # their name
-function ff() {
+function function ff() {
 	find -iname "*$1*"
 }

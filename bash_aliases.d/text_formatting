@@ -13,10 +13,10 @@ alias dcsv='sed -e "s/,/ /g" -e "s/\"//g"'
 alias csvview='column -s, -t'
 
 # Format CSV with headers preserved and colored
-alias csvsmart='awk -F, "NR==1 {print \"\\033[1;32m\" \ \"\\033[0m\"; next} {print}" | column -s, -t'
+alias csvsmart='awk -F, "NR==1 {print \"\\033[1;32m\" $0 \"\\033[0m\"; next} {print}" | column -s, -t'
 
 # Format CSV with alternating row colors for readability
-alias csvcolor='awk -F, "{if(NR%2==0) printf \"\\033[48;5;236m\"; printf \ \"\\033[0m\n\"}"|column -t -s,'
+alias csvcolor='awk -F, "{if(NR%2==0) printf \"\\033[48;5;236m\"; printf $0 \"\\033[0m\n\"}"|column -t -s,'
 
 # Text Transformations
 # -------------------
@@ -45,7 +45,7 @@ alias nocolor='sed -r "s/\x1B\[([0-9]{1,3}(;[0-9]{1,3})*)?[mGK]//g"'
 alias noempty='grep -v "^[[:space:]]*$"'
 
 # Remove duplicate lines while maintaining original order
-alias uniqo='awk "!seen[\]++"'
+alias uniqo='awk "!seen[\$0]++"'
 
 # Remove lines with comments (# style)
 alias nocomments='grep -v "^[[:space:]]*#"'
@@ -94,14 +94,14 @@ alias bashfmt='shfmt -i 2 -bn -ci -sr -kp | pygmentize -l bash 2>/dev/null || sh
 # Show data as ASCII table with custom headers
 # Usage: table_display "header1,header2,header3" "data1,data2,data3" "data4,data5,data6"
 function table_display() {
-    local headers="\"
+    local headers="$1"
     shift
-    echo "\" > /tmp/table_data_\$\$.csv
-    for line in "\$@"; do
-        echo "\" >> /tmp/table_data_\$\$.csv
+    echo "$headers" > /tmp/table_data_$$.csv
+    for line in "$@"; do
+        echo "$line" >> /tmp/table_data_$$.csv
     done
-    column -t -s, /tmp/table_data_\$\$.csv
-    rm /tmp/table_data_\$\$.csv
+    column -t -s, /tmp/table_data_$$.csv
+    rm /tmp/table_data_$$.csv
 }
 
 # Advanced Diff with Color
@@ -117,10 +117,10 @@ alias grepc='grep --color=always -n -A 2 -B 2'
 # Text Encoding/Decoding
 # --------------------
 # URL encode a string
-alias urlencode='python -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))"'
+alias urlencode="python -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))\""
 
 # URL decode a string
-alias urldecode='python -c "import sys, urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip()))"'
+alias urldecode="python -c \"import sys, urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip()))\""
 
 # Base64 encode a string
 alias b64encode='base64'
@@ -136,9 +136,9 @@ alias hexdecode='xxd -p -r'
 
 # Check for required commands and provide installation instructions if missing
 for cmd in shfmt pygmentize column xxd; do
-    if ! command -v \ >/dev/null 2>&1; then
-        echo "Warning: \ is not installed. Some text_formatting aliases may not work properly."
-        case \ in
+    if ! command -v $cmd >/dev/null 2>&1; then
+        echo "Warning: $cmd is not installed. Some text_formatting aliases may not work properly."
+        case $cmd in
             shfmt)
                 echo "  Install with: go get -u mvdan.cc/sh/cmd/shfmt"
                 ;;
