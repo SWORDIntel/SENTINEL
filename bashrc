@@ -127,7 +127,7 @@ if ! shopt -oq posix; then
   fi
 fi
 # Path security function - ensure no relative paths or duplicate entries
-function sanitize_path() {
+function function sanitize_path() {
   if [[ "${CONFIG[SECURE_PATH]}" != "1" ]]; then
     return
   fi
@@ -292,7 +292,7 @@ if [[ "$color_prompt" == "yes" ]]; then
   alias ip='ip -color=auto'
 fi
 # Advanced VCS status functions with caching
-function __git_info() {
+function function __git_info() {
   # Optimization: only run git commands if we're in a git directory
   if [[ "${CONFIG[CACHE_PROMPT]}" == "1" ]]; then
     if [[ -n "$__git_repo_cached" && "$__git_repo_cached" != "$PWD" && "$PWD" != "$__git_repo_cached"* ]]; then
@@ -351,7 +351,7 @@ function __git_info() {
 }
 
 # Modern prompt with git info, exit status, and job count
-function __set_prompt() {
+function function __set_prompt() {
   local exit_code=$?
   local jobs_count=$(jobs | wc -l)
   
@@ -393,7 +393,7 @@ function __set_prompt() {
 PROMPT_COMMAND='__set_prompt'
 # Internal utility functions
 # Include all files in a directory
-function loadRcDir() {
+function function loadRcDir() {
   if [[ -d "$1" ]]; then
     local rcFile
     for rcFile in "$1"/*; do
@@ -406,13 +406,13 @@ function loadRcDir() {
 }
 
 # Improved logging functions
-function emsg() { echo -e " ${LIGHTGREEN}*${NC} $*" >&2; }
-function ewarn() { echo -e " ${YELLOW}*${NC} $*" >&2; }
-function eerror() { echo -e " ${LIGHTRED}*${NC} $*" >&2; }
-function edebug() { [[ "${CONFIG[DEBUG]}" == "1" ]] && echo -e " ${CYAN}*${NC} $*" >&2; }
+function function emsg() { echo -e " ${LIGHTGREEN}*${NC} $*" >&2; }
+function function ewarn() { echo -e " ${YELLOW}*${NC} $*" >&2; }
+function function eerror() { echo -e " ${LIGHTRED}*${NC} $*" >&2; }
+function function edebug() { [[ "${CONFIG[DEBUG]}" == "1" ]] && echo -e " ${CYAN}*${NC} $*" >&2; }
 
 # Enhanced bashrc reload function
-function rebash() {
+function function rebash() {
   edebug "Reloading bash configuration..."
   exec bash -l
 }
@@ -467,7 +467,7 @@ if [[ "${CONFIG[AGENTS]}" == "1" ]]; then
 fi
 
 # Enhanced directory jumping function
-function j() {
+function function j() {
   local dir
   if [[ -f ~/.bookmarks ]]; then
     if [[ "$1" == "-a" ]]; then
@@ -507,7 +507,7 @@ function j() {
 }
 
 # Quick alias setup
-function qalias() {
+function function qalias() {
   if [[ -z "$1" || -z "$2" ]]; then
     eerror "Usage: qalias <alias_name> <command>"
     return 1
@@ -537,7 +537,7 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
   [[ ! -d "$MODULES_PATH" ]] && mkdir -p "$MODULES_PATH"
   
   # Module management functions
-  function module_enable() {
+  function function module_enable() {
     local module="$1"
     local module_file="${MODULES_PATH}/${module}.sh"
     
@@ -560,7 +560,7 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
     emsg "Module '$module' enabled"
   }
   
-  function module_disable() {
+  function function module_disable() {
     local module="$1"
     
     # Remove from inventory
@@ -571,7 +571,7 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
     fi
   }
   
-  function module_list() {
+  function function module_list() {
     echo "Available modules:"
     echo "----------------"
     for module in "$MODULES_PATH"/*.sh; do
@@ -651,12 +651,12 @@ fi
 # Core functions
 if [[ "${CONFIG[USER_FUNCS]}" == "1" ]]; then
   # Create directory and cd into it
-  function mkcd() {
+  function function mkcd() {
     mkdir -p "$1" && cd "$1" || return
   }
   
   # Extract various archive types
-  function extract() {
+  function function extract() {
     if [[ -z "$1" ]]; then
       echo "Usage: extract <archive_file>"
       return 1
@@ -686,22 +686,22 @@ if [[ "${CONFIG[USER_FUNCS]}" == "1" ]]; then
   }
   
   # Search for files with pattern
-  function ff() {
+  function function function function ff() {
     find . -name "$1" 2>/dev/null
   }
   
   # Search content of files
-  function fif() {
+  function function fif() {
     grep -r --color=auto "$1" .
   }
   
   # Improved du command
-  function duf() {
+  function function duf() {
     du -h -d ${1:-1} | sort -h
   }
   
   # Man with color
-  function man() {
+  function function man() {
     LESS_TERMCAP_md=$'\e[01;31m' \
     LESS_TERMCAP_me=$'\e[0m' \
     LESS_TERMCAP_se=$'\e[0m' \
@@ -719,7 +719,7 @@ if [[ "${CONFIG[USER_FUNCS]}" == "1" ]]; then
 fi
 # Security toolset
 # Check file for malicious content
-function checksec() {
+function function checksec() {
   local file="$1"
   
   if [[ ! -f "$file" ]]; then
@@ -766,7 +766,7 @@ function checksec() {
 }
 
 # Secure file deletion
-function securerm() {
+function function securerm() {
   local force=""
   if [[ "$1" == "-f" ]]; then
     force="-f"
@@ -800,7 +800,7 @@ function securerm() {
 }
 
 # See which processes have open network connections
-function netcheck() {
+function function netcheck() {
   echo -e "${LIGHTGREEN}Current network connections:${NC}"
   lsof -i -P -n | grep -E "(LISTEN|ESTABLISHED)"
   echo -e "\n${LIGHTGREEN}Listening ports:${NC}"

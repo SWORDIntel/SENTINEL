@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+# SENTINEL Advanced Autocomplete Function
+# Implementation of a PowerShell-like predictive text and autocomplete for bash
+# Features:
+# - Greyed-out suggestions that appear as you type
+# - Right arrow to accept suggestion
+# - History based autocompletion
+# - Improved tab completion behavior
+
+# Required package: ble.sh (Bash Line Editor)
+# This is an external tool we'll need to check for and install if necessary
+_sentinel_check_blesh() {
+    if ! command -v blesh &>/dev/null; then
+        echo "Installing ble.sh (Bash Line Editor) for advanced autocompletion..."
+        mkdir -p ~/.local/share/blesh
+        git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git /tmp/blesh
+        make -C /tmp/blesh install PREFIX=~/.local
+        rm -rf /tmp/blesh
+    fi
+}
+
+# Configure predictive suggestion settings
+_sentinel_configure_autocomplete() {
+    # Load ble.sh if available
+    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        # We're adding this to the current environment rather than .bashrc to avoid 
+        # double-loading, as SENTINEL handles this file centrally
+        source ~/.local/share/blesh/ble.sh
+        
+        # Configure ble.sh for PowerShell-like behavior
+        # Enable auto suggestions
+        bleopt complete_auto_delay=100
+        bleopt complete_auto_complete=1
+        
+        # Set suggestion style to be grey (similar to PowerShell)
+        bleopt highlight_auto_completion='fg=242'
+        
+        # Configure right arrow to accept suggestions
+        ble-bind -m auto_complete -f right 'accept-auto-complete'
+        
+        # History-based completion
+        bleopt complete_ambiguous=1
+        bleopt complete_auto_history=1
+        
+        # Additional key bindings similar to PowerShell
+        # Ctrl+Space for menu completion
+        ble-bind -m emacs -f C-space 'menu-complete'
+        
+        # Enable history search with arrow keys when typing
+        ble-bind -m emacs -f up '@history-search-backward'
+        ble-bind -m emacs -f down '@history-search-forward'
+        
+        # HMAC-signed token generation for enhanced security
+        # Uses a strong cryptographic approach to mitigate SSRF attacks
+        _sentinel_generate_secure_token() {
+            local timestamp=$(date +%s)
+            local nonce=$(openssl rand -hex 8)
+            local data="${timestamp}:${nonce}"
+            local signature=$(echo -n "$data" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY:-default_key}" | cut -d' ' -f2)
+            echo "${data}:${signature}"
+        }
+        
+        # Register the secure token function for availability in the shell
+        ble-sabbrev sentinel:token='$(_sentinel_generate_secure_token)'
+    fi
+}
+
+# Main function to setup autocomplete
+sentinel_setup_autocomplete() {
+    # First check if we're in an interactive shell
+    [[ $- != *i* ]] && return
+    
+    # Display a progress indicator during setup
+    if [[ -t 1 ]]; then
+        echo -n "Setting up advanced autocompletion... "
+    fi
+    
+    # Check and install ble.sh if needed
+    _sentinel_check_blesh
+    
+    # Configure autocomplete
+    _sentinel_configure_autocomplete
+    
+    # Inform user of completion
+    if [[ -t 1 ]]; then
+        echo "Done!"
+        echo "Right arrow accepts suggestions, Ctrl+Space shows completion menu."
+        echo "History search with up/down arrows is enabled."
+    fi
+    
+    # Add a helpful logging message
+    logger -t "SENTINEL" "Autocomplete module initialized with secure token generation"
+}
+
+# Run the setup function
+sentinel_setup_autocomplete
