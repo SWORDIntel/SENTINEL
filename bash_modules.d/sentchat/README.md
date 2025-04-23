@@ -1,4 +1,4 @@
-# SENTINEL Chat Module
+﻿# SENTINEL Chat Module
 
 The SENTINEL Chat module provides an interactive, AI-powered conversational assistant for your shell environment. It offers context-aware responses to shell questions, command suggestions, and shell environment assistance.
 

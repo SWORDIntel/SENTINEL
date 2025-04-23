@@ -30,8 +30,8 @@ alias lower='tr "[:upper:]" "[:lower:]"'
 alias titlecase='sed "s/\b\(.\)/\u\1/g"'
 
 # Format JSON nicely with colors (requires python)
-alias jsonpp='python -m json.tool | pygmentize -l json 2>/dev/null || python -m json.tool'
-alias jsonfmt='python -m json.tool'
+alias jsonpp='python3 -m json.tool | pygmentize -l json 2>/dev/null || python3 -m json.tool'
+alias jsonfmt='python3 -m json.tool'
 
 # Format XML nicely with colors (requires xmllint and pygmentize)
 alias xmlpp='xmllint --format - | pygmentize -l xml 2>/dev/null || xmllint --format -'
@@ -94,14 +94,15 @@ alias bashfmt='shfmt -i 2 -bn -ci -sr -kp | pygmentize -l bash 2>/dev/null || sh
 # Show data as ASCII table with custom headers
 # Usage: table_display "header1,header2,header3" "data1,data2,data3" "data4,data5,data6"
 function table_display() {
-    local headers="\"
+    local headers="$1"
     shift
-    echo "\" > /tmp/table_data_\$\$.csv
-    for line in "\$@"; do
-        echo "\" >> /tmp/table_data_\$\$.csv
+    local tmp_file="/tmp/table_data_$$.csv"
+    echo "$headers" > "$tmp_file"
+    for line in "$@"; do
+        echo "$line" >> "$tmp_file"
     done
-    column -t -s, /tmp/table_data_\$\$.csv
-    rm /tmp/table_data_\$\$.csv
+    column -t -s, "$tmp_file"
+    rm "$tmp_file"
 }
 
 # Advanced Diff with Color
@@ -117,10 +118,14 @@ alias grepc='grep --color=always -n -A 2 -B 2'
 # Text Encoding/Decoding
 # --------------------
 # URL encode a string
-alias urlencode='python -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))"'
+function urlencode() {
+    python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip() if not sys.argv[1:] else ' '.join(sys.argv[1:])))" "$@"
+}
 
 # URL decode a string
-alias urldecode='python -c "import sys, urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip()))"'
+function urldecode() {
+    python3 -c "import sys, urllib.parse; print(urllib.parse.unquote(sys.stdin.read().strip() if not sys.argv[1:] else ' '.join(sys.argv[1:])))" "$@"
+}
 
 # Base64 encode a string
 alias b64encode='base64'
@@ -136,9 +141,9 @@ alias hexdecode='xxd -p -r'
 
 # Check for required commands and provide installation instructions if missing
 for cmd in shfmt pygmentize column xxd; do
-    if ! command -v \ >/dev/null 2>&1; then
-        echo "Warning: \ is not installed. Some text_formatting aliases may not work properly."
-        case \ in
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Warning: $cmd is not installed. Some text_formatting aliases may not work properly."
+        case "$cmd" in
             shfmt)
                 echo "  Install with: go get -u mvdan.cc/sh/cmd/shfmt"
                 ;;
@@ -148,6 +153,10 @@ for cmd in shfmt pygmentize column xxd; do
             column)
                 echo "  Install with: sudo apt install bsdmainutils  # Debian/Ubuntu"
                 echo "  Install with: sudo yum install util-linux     # RHEL/CentOS"
+                ;;
+            xxd)
+                echo "  Install with: sudo apt install vim-common    # Debian/Ubuntu"
+                echo "  Install with: sudo yum install vim-common    # RHEL/CentOS"
                 ;;
         esac
     fi

@@ -1,4 +1,4 @@
-# SENTINEL Suggestions Module
+﻿# SENTINEL Suggestions Module
 
 The SENTINEL Suggestions module provides intelligent command suggestions based on your shell usage patterns. It uses machine learning to analyze your command history and provide relevant suggestions.
 

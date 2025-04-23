@@ -594,7 +594,7 @@ if [ -f "$POSTCUSTOM" ]; then
     fi
 fi
 
-# Step 9: Install and set up Machine Learning features
+# Step 9: Setting up Machine Learning features
 echo -e "\n${BLUE}${BOLD}Step 9: Setting up Machine Learning features${NC}"
 
 # Create sentinel_ml module directory
@@ -602,26 +602,35 @@ create_directory "${HOME}/.bash_modules.d/sentchat"
 create_directory "${HOME}/.bash_modules.d/suggestions"
 create_directory "${HOME}/.sentinel/models"
 
-# Install Python dependencies
-echo -e "${GREEN}Checking for Python dependencies...${NC}"
+# Create and set up Python virtual environment
+echo -e "${GREEN}Setting up Python virtual environment...${NC}"
+VENV_DIR="${HOME}/.sentinel/venv"
+create_directory "$VENV_DIR"
+
 if command -v python3 &>/dev/null; then
-    INSTALL_DEPS=0
+    echo -e "${GREEN}Creating Python virtual environment in $VENV_DIR${NC}"
+    python3 -m venv "$VENV_DIR"
     
-    # Check if ML dependencies are already installed
-    if ! python3 -c "import markovify" &>/dev/null || ! python3 -c "import numpy" &>/dev/null; then
-        INSTALL_DEPS=1
-    fi
-    
-    if [ $INSTALL_DEPS -eq 1 ]; then
-        echo -e "${YELLOW}Installing required Python packages for ML features...${NC}"
+    # Activate the virtual environment
+    if [ -f "$VENV_DIR/bin/activate" ]; then
+        # Source the activate script
+        . "$VENV_DIR/bin/activate"
+        echo -e "${GREEN}Virtual environment activated${NC}"
+        
+        # Upgrade pip in the virtual environment
+        echo -e "${GREEN}Upgrading pip in virtual environment...${NC}"
+        pip install --upgrade pip
+        
+        # Install Python dependencies in the virtual environment
+        echo -e "${GREEN}Installing required Python packages for ML features...${NC}"
         
         # Install using provided script if available
         if [ -f "./contrib/install_deps.py" ]; then
             python3 ./contrib/install_deps.py --group ml
         else
             # Fall back to direct pip install
-            echo -e "${YELLOW}Installing markovify and numpy...${NC}"
-            python3 -m pip install --user markovify numpy
+            echo -e "${GREEN}Installing markovify and numpy...${NC}"
+            pip install markovify numpy
         fi
         
         if [ $? -eq 0 ]; then
@@ -629,15 +638,33 @@ if command -v python3 &>/dev/null; then
         else
             echo -e "${RED}Failed to install ML dependencies${NC}"
             echo -e "${YELLOW}You can install them manually later with:${NC}"
-            echo -e "  python3 -m pip install --user markovify numpy"
+            echo -e "  source ${VENV_DIR}/bin/activate && pip install markovify numpy"
+        fi
+        
+        # Deactivate the virtual environment
+        deactivate
+        
+        # Add venv activation to .bashrc.postcustom
+        POSTCUSTOM="${HOME}/.bashrc.postcustom"
+        if [ -f "$POSTCUSTOM" ]; then
+            # Only add if not already present
+            if ! grep -q "SENTINEL_VENV_DIR" "$POSTCUSTOM"; then
+                echo "" >> "$POSTCUSTOM"
+                echo "# SENTINEL Python virtual environment" >> "$POSTCUSTOM"
+                echo "export SENTINEL_VENV_DIR=\"$VENV_DIR\"" >> "$POSTCUSTOM"
+                echo "# Add venv to PATH without activating" >> "$POSTCUSTOM"
+                echo "export PATH=\"\$SENTINEL_VENV_DIR/bin:\$PATH\"" >> "$POSTCUSTOM"
+                echo "# Alias for activating the environment" >> "$POSTCUSTOM"
+                echo "alias sentinel-venv=\"source \$SENTINEL_VENV_DIR/bin/activate\"" >> "$POSTCUSTOM"
+                echo -e "${GREEN}Added virtual environment configuration to .bashrc.postcustom${NC}"
+            fi
         fi
     else
-        echo -e "${GREEN}ML dependencies already installed${NC}"
+        echo -e "${RED}Failed to create virtual environment. Continuing without it.${NC}"
     fi
 else
     echo -e "${YELLOW}Python 3 not found. ML features will be disabled.${NC}"
-    echo -e "${YELLOW}Install Python 3 and dependencies to enable ML features:${NC}"
-    echo -e "  python3 -m pip install --user markovify numpy"
+    echo -e "${YELLOW}Install Python 3 to enable ML features${NC}"
 fi
 
 # Install the sentinel_ml module
@@ -647,12 +674,24 @@ if [ -f "./bash_modules.d/sentinel_ml.fixed" ]; then
     chmod 700 "${HOME}/.bash_modules.d/sentinel_ml"
     echo -e "${GREEN}Installed sentinel_ml module${NC}"
     
-    # Enable module if Python and dependencies are available
-    if command -v python3 &>/dev/null && python3 -c "import markovify" &>/dev/null; then
-        if ! grep -q "^sentinel_ml$" "${HOME}/.bash_modules" 2>/dev/null; then
-            echo "sentinel_ml" >> "${HOME}/.bash_modules"
-            echo -e "${GREEN}Enabled sentinel_ml module${NC}"
+    # Enable module if Python and dependencies are available in the virtual environment
+    if [ -f "$VENV_DIR/bin/activate" ] && command -v python3 &>/dev/null; then
+        # Source the virtual environment
+        . "$VENV_DIR/bin/activate"
+        
+        # Check if the required packages are installed
+        if python3 -c "import importlib.util; print(importlib.util.find_spec('markovify') is not None)" 2>/dev/null | grep -q "True"; then
+            if ! grep -q "^sentinel_ml$" "${HOME}/.bash_modules" 2>/dev/null; then
+                echo "sentinel_ml" >> "${HOME}/.bash_modules"
+                echo -e "${GREEN}Enabled sentinel_ml module${NC}"
+            fi
+        else
+            echo -e "${YELLOW}ML dependencies not available in virtual environment. ML module not enabled.${NC}"
+            echo -e "${YELLOW}Install dependencies with: sentinel-venv && pip install markovify numpy${NC}"
         fi
+        
+        # Deactivate the virtual environment
+        deactivate
     fi
 else
     echo -e "${YELLOW}sentinel_ml module not found, skipping${NC}"
@@ -683,19 +722,66 @@ fi
 # Step 10: Set up the conversational assistant
 echo -e "\n${BLUE}${BOLD}Step 10: Setting up conversational assistant${NC}"
 
-# Check for LLM dependencies (don't install automatically as they're larger)
+# Check for LLM dependencies using the virtual environment
 echo -e "${GREEN}Checking for chat dependencies...${NC}"
 CHAT_DEPS_AVAILABLE=0
-if command -v python3 &>/dev/null; then
-    if python3 -c "import llama_cpp" &>/dev/null && python3 -c "import rich" &>/dev/null; then
+
+if [ -f "$VENV_DIR/bin/activate" ]; then
+    # Source the virtual environment
+    . "$VENV_DIR/bin/activate"
+    
+    if python3 -c "import importlib.util; print(importlib.util.find_spec('llama_cpp') is not None)" 2>/dev/null | grep -q "True" && \
+       python3 -c "import importlib.util; print(importlib.util.find_spec('rich') is not None)" 2>/dev/null | grep -q "True"; then
         CHAT_DEPS_AVAILABLE=1
-        echo -e "${GREEN}Chat dependencies already installed${NC}"
+        echo -e "${GREEN}Chat dependencies already installed in virtual environment${NC}"
     else
-        echo -e "${YELLOW}Chat dependencies not installed${NC}"
+        echo -e "${YELLOW}Chat dependencies not installed in virtual environment${NC}"
         echo -e "${YELLOW}You can install them manually later with:${NC}"
-        echo -e "  python3 -m pip install llama-cpp-python rich readline"
+        echo -e "  sentinel-venv && pip install llama-cpp-python rich readline"
         echo -e "${YELLOW}or run sentinel_chat_install_deps after installation${NC}"
+        
+        # Create installation script for chat dependencies
+        CHAT_DEPS_SCRIPT="${HOME}/.sentinel/install_chat_deps.sh"
+        cat > "$CHAT_DEPS_SCRIPT" << 'EOF'
+#!/usr/bin/env bash
+# Install chat dependencies in the virtual environment
+
+VENV_DIR="${HOME}/.sentinel/venv"
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+    echo -e "Virtual environment not found. Creating one..."
+    python3 -m venv "$VENV_DIR"
+fi
+
+# Activate the virtual environment
+source "$VENV_DIR/bin/activate"
+
+# Upgrade pip
+pip install --upgrade pip
+
+# Install dependencies
+echo "Installing chat dependencies..."
+pip install llama-cpp-python rich readline
+
+echo "Dependencies installed. You can now use sentinel_chat."
+EOF
+        chmod 700 "$CHAT_DEPS_SCRIPT"
+        
+        # Create alias for installing chat dependencies
+        if [ -f "$POSTCUSTOM" ]; then
+            if ! grep -q "sentinel_chat_install_deps" "$POSTCUSTOM"; then
+                echo "alias sentinel_chat_install_deps=\"${HOME}/.sentinel/install_chat_deps.sh\"" >> "$POSTCUSTOM"
+            fi
+        fi
     fi
+    
+    # Deactivate the virtual environment
+    deactivate
+else
+    echo -e "${YELLOW}Virtual environment not available. Chat features may not work properly.${NC}"
+    echo -e "${YELLOW}Run the following commands to set up chat dependencies:${NC}"
+    echo -e "  python3 -m venv ${HOME}/.sentinel/venv"
+    echo -e "  source ${HOME}/.sentinel/venv/bin/activate"
+    echo -e "  pip install llama-cpp-python rich readline"
 fi
 
 # Install chat module
@@ -734,6 +820,64 @@ fi
 echo -e "${GREEN}Fixing permissions for Python scripts...${NC}"
 find "${HOME}/.sentinel" -type f -name "*.py" -exec chmod 700 {} \;
 find "${HOME}/.bash_modules.d" -type f -name "*.sh" -o -name "*.module" -exec chmod 700 {} \;
+
+# Create wrapper scripts for Python utilities that use the virtual environment
+echo -e "${GREEN}Creating virtual environment wrappers for Python scripts...${NC}"
+SENTINEL_WRAPPERS="${HOME}/.sentinel/wrappers"
+create_directory "$SENTINEL_WRAPPERS"
+
+# Create wrapper template
+cat > "${SENTINEL_WRAPPERS}/wrapper_template.sh" << 'EOF'
+#!/usr/bin/env bash
+# Wrapper to run Python scripts within the SENTINEL virtual environment
+
+VENV_DIR="${HOME}/.sentinel/venv"
+SCRIPT_PATH="$1"
+shift
+
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+    echo -e "\033[1;33mVirtual environment not found. Creating one...\033[0m"
+    python3 -m venv "$VENV_DIR"
+fi
+
+# Activate the virtual environment
+source "$VENV_DIR/bin/activate"
+
+# Run the script with all arguments
+python3 "$SCRIPT_PATH" "$@"
+EXIT_CODE=$?
+
+# Deactivate the virtual environment
+deactivate
+
+exit $EXIT_CODE
+EOF
+chmod 700 "${SENTINEL_WRAPPERS}/wrapper_template.sh"
+
+# Create specific wrappers for key scripts
+for script in "sentinel_autolearn.py" "sentinel_suggest.py" "sentinel_chat.py"; do
+    if [ -f "${HOME}/.sentinel/$script" ]; then
+        script_name=$(basename "$script" .py)
+        wrapper="${SENTINEL_WRAPPERS}/${script_name}_wrapper.sh"
+        
+        echo -e "${GREEN}Creating wrapper for $script_name${NC}"
+        cat > "$wrapper" << EOF
+#!/usr/bin/env bash
+# Wrapper for $script_name
+
+"${SENTINEL_WRAPPERS}/wrapper_template.sh" "${HOME}/.sentinel/$script" "\$@"
+EOF
+        chmod 700 "$wrapper"
+        
+        # Add to postcustom if needed
+        if [ -f "$POSTCUSTOM" ]; then
+            if ! grep -q "alias ${script_name}=" "$POSTCUSTOM"; then
+                echo "alias ${script_name}=\"${wrapper}\"" >> "$POSTCUSTOM"
+                echo -e "${GREEN}Added alias for $script_name to .bashrc.postcustom${NC}"
+            fi
+        fi
+    fi
+done
 
 # Create a sentinel help command
 echo -e "${GREEN}Creating sentinel help command...${NC}"
@@ -774,6 +918,10 @@ ${BLUE}Build Environment:${NC}
   automake-distcc         - Set up GNU Automake with distcc
   cmake-distcc            - Set up CMake with distcc
   
+${BLUE}Python Virtual Environment:${NC}
+  sentinel-venv           - Activate the Python virtual environment
+  sentinel_chat_install_deps - Install chat dependencies
+
 ${BLUE}Machine Learning Features:${NC}
   sentinel_suggest <cmd>  - Get ML-powered command suggestions
   sentinel_ml_train       - Retrain ML model with your commands

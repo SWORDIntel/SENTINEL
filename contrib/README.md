@@ -1,4 +1,4 @@
-# SENTINEL: Enhanced Bash Environment
+﻿# SENTINEL: Enhanced Bash Environment
 
 ![SENTINEL Logo](https://via.placeholder.com/800x200/0d1117/30a14e?text=SENTINEL)
 
