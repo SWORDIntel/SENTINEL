@@ -320,6 +320,43 @@ SENTINEL uses a Markov model to learn from your command history and provide inte
 
 To access this feature, use the `sentinel_suggest` command followed by the beginning of a command you're trying to remember.
 
+### GitHub Star Analyzer
+
+* Automatically download READMEs from your GitHub starred repositories
+* Use machine learning to categorize repositories by purpose and functionality
+* Intelligent search and suggestions for finding the right tool for specific tasks
+* LLM-powered analysis for detailed understanding of repository features
+
+### Cybersecurity ML Analyzer (New!)
+
+SENTINEL now includes an advanced cybersecurity machine learning module that helps identify security vulnerabilities in code:
+
+* **ML-powered vulnerability detection** that identifies potential security issues
+* **Multi-language support** covering Python, JavaScript, PHP, Java, C/C++, and more
+* **LLM-based code analysis** for advanced security review capabilities
+* **Up-to-date vulnerability database** synchronized with NVD and other sources
+* **Clustered findings** to identify patterns across security issues
+* **Mitigation recommendations** to help fix identified vulnerabilities
+
+```bash
+# Quick security scan of current directory
+securitycheck
+
+# Full scan with options
+cyberscan ~/my-project --recursive --include=py,js,php
+
+# Update vulnerability database
+cyberupdate
+
+# Train custom security models
+cybertrain
+
+# Generate synthetic security training data
+cyberdata --samples 200
+```
+
+For detailed documentation, see [Cybersecurity ML Documentation](contrib/README_CYBERSEC_ML.md) and [Machine Learning Capabilities](MACHINE_LEARNING.md).
+
 ### Installation of ML Features
 
 To install the ML components:
@@ -333,6 +370,9 @@ pip install markovify numpy
 
 # Enable the suggestion module
 echo "source bash_modules.d/suggestions" >> ~/.bashrc
+
+# Install cybersecurity ML dependencies
+cyberinstall
 ```
 
 ## Key Components
@@ -347,10 +387,3 @@ For detailed documentation on each component, see the individual README files in
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-### GitHub Star Analyzer
-
-* Automatically download READMEs from your GitHub starred repositories
-* Use machine learning to categorize repositories by purpose and functionality
-* Intelligent search and suggestions for finding the right tool for specific tasks
-* LLM-powered analysis for detailed understanding of repository features
