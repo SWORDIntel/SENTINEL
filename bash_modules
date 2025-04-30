@@ -8,6 +8,9 @@ export SENTINEL_MODULES_PATH=${U_MODULES_PATH:-"$HOME/.bash_modules.d"}
 # Registry of loaded modules
 declare -A SENTINEL_LOADED_MODULES
 
+# Set quiet mode by default (set to 0 for verbose output)
+export SENTINEL_QUIET_MODULES=${SENTINEL_QUIET_MODULES:-1}
+
 # Initialize modules directory if it doesn't exist
 if [[ ! -d "$SENTINEL_MODULES_PATH" ]]; then
     mkdir -p "$SENTINEL_MODULES_PATH"
@@ -17,6 +20,21 @@ fi
 if [[ ! -f "$HOME/.bash_modules" ]]; then
     touch "$HOME/.bash_modules"
 fi
+
+# Output functions with verbosity control
+emsg() {
+    [[ "$SENTINEL_QUIET_MODULES" != "1" ]] && echo "$@"
+}
+
+ewarn() {
+    # Always show warnings
+    echo "$@"
+}
+
+eerror() {
+    # Always show errors
+    echo "$@" >&2
+}
 
 # Module loading function with error handling and dependency resolution
 module_enable() {
@@ -34,7 +52,7 @@ module_enable() {
     
     # Check if module is already loaded
     if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]] && [[ "$force" != "1" ]]; then
-        [[ "$called_by" == "direct" ]] && emsg "Module '$module_name' is already loaded."
+        [[ "$called_by" == "direct" && "$SENTINEL_QUIET_MODULES" != "1" ]] && emsg "Module '$module_name' is already loaded."
         return 0
     fi
     
@@ -92,7 +110,8 @@ module_enable() {
                 emsg "Module '$module_name' enabled and will be loaded on startup."
             fi
             
-            [[ "$called_by" == "direct" ]] && emsg "Module '$module_name' loaded successfully."
+            # Only show success message if direct call and not in quiet mode
+            [[ "$called_by" == "direct" && "$SENTINEL_QUIET_MODULES" != "1" ]] && emsg "Module '$module_name' loaded successfully."
             return 0
         else
             SENTINEL_LOADED_MODULES["$module_name"]="failed"
@@ -200,105 +219,39 @@ module_list() {
     echo -e "Summary: $total_modules total, $enabled_modules enabled, $loaded_modules loaded"
 }
 
-# Get detailed information about a module
-module_info() {
-    local module_name="$1"
-    local module_file=""
-    
-    # Check for both .sh and .module extensions
-    if [[ -f "$SENTINEL_MODULES_PATH/$module_name.sh" ]]; then
-        module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
-    elif [[ -f "$SENTINEL_MODULES_PATH/$module_name.module" ]]; then
-        module_file="$SENTINEL_MODULES_PATH/$module_name.module"
-    fi
-    
-    if [[ -z "$module_file" || ! -f "$module_file" ]]; then
-        eerror "Module '$module_name' not found."
-        return 1
-    fi
-    
-    echo "Module Information: $module_name"
-    echo "=================================="
-    
-    # Extract metadata
-    local version=$(grep "SENTINEL_MODULE_VERSION=" "$module_file" | head -n1 | cut -d'"' -f2)
-    local description=$(grep "SENTINEL_MODULE_DESCRIPTION=" "$module_file" | head -n1 | cut -d'"' -f2)
-    local author=$(grep "SENTINEL_MODULE_AUTHOR=" "$module_file" | head -n1 | cut -d'"' -f2)
-    local dependencies=$(grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | cut -d'"' -f2)
-    
-    # Display metadata
-    echo -e "Version:\t${version:-unknown}"
-    echo -e "Author:\t\t${author:-unknown}"
-    echo -e "Description:\t${description:-No description available}"
-    echo -e "Dependencies:\t${dependencies:-none}"
-    
-    # Status information
-    echo -e "\nStatus:"
-    if grep -q "^${module_name}\$" "$HOME/.bash_modules"; then
-        echo -e "  ${GREEN}✓${NC} Enabled at startup"
+# Function to control verbosity
+module_verbose() {
+    if [[ "$1" == "on" ]]; then
+        export SENTINEL_QUIET_MODULES=0
+        echo "Module verbose mode ON"
+    elif [[ "$1" == "off" ]]; then
+        export SENTINEL_QUIET_MODULES=1
+        echo "Module verbose mode OFF"
     else
-        echo -e "  ${RED}✗${NC} Not enabled at startup"
-    fi
-    
-    if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]]; then
-        echo -e "  ${GREEN}✓${NC} Loaded in current session"
-    elif [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "failed" ]]; then
-        echo -e "  ${RED}✗${NC} Failed to load in current session"
-    else
-        echo -e "  ${RED}✗${NC} Not loaded in current session"
-    fi
-    
-    # Show brief breakdown of functions provided by this module
-    echo -e "\nFunctions provided:"
-    if [[ -x "$module_file" ]]; then
-        # Extract function declarations
-        grep -E "^function [a-zA-Z0-9_-]+\(\)|^[a-zA-Z0-9_-]+\(\)" "$module_file" | 
-        sed -E 's/function ([a-zA-Z0-9_-]+)\(\)|\s*\{$|\s*\{|\(\)|\s*$/\1/g' | 
-        while IFS= read -r func; do
-            [[ -z "$func" ]] && continue
-            echo -e "  - $func"
-        done
-    else
-        echo -e "  (Cannot analyze: Module file is not executable)"
+        echo "Current module verbose mode: $([[ "$SENTINEL_QUIET_MODULES" == "1" ]] && echo "OFF" || echo "ON")"
+        echo "Usage: module_verbose [on|off]"
     fi
 }
 
-# Helper to create a new module
-module_create() {
-    local module_name="$1"
-    local module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
-    
-    if [[ -z "$module_name" ]]; then
-        eerror "Module name is required."
-        echo "Usage: module_create <module_name>"
-        return 1
-    fi
-    
-    # Check if module already exists
-    if [[ -f "$module_file" ]]; then
-        eerror "Module '$module_name' already exists at $module_file"
-        return 1
-    fi
-    
-    # Create module file with template content
-    # (Template content would go here in a real implementation)
-    
-    # Make it executable
-    chmod +x "$module_file"
-    
-    emsg "Module '$module_name' created at $module_file"
-    emsg "Edit the file to implement your module functionality."
-    emsg "To enable the module, run: module_enable $module_name"
-}
-
-# Load all enabled modules on startup
+# Load all enabled modules on startup with minimal output
 _load_enabled_modules() {
     if [[ -f "$HOME/.bash_modules" ]]; then
-        emsg "Loading modules from $HOME/.bash_modules..."
+        # Only show this message in verbose mode
+        [[ "$SENTINEL_QUIET_MODULES" != "1" ]] && echo "Loading modules from $HOME/.bash_modules..."
+        
+        # Count for summary
+        local enabled_count=0
+        local success_count=0
+        
         while IFS= read -r module; do
             [[ -z "$module" || "$module" =~ ^# ]] && continue
+            enabled_count=$((enabled_count + 1))
             module_enable "$module" "0" "startup"
+            [[ $? -eq 0 ]] && success_count=$((success_count + 1))
         done < "$HOME/.bash_modules"
+        
+        # Always show a brief summary
+        echo "Loaded $success_count modules."
     fi
 }
 

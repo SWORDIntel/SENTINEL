@@ -848,12 +848,12 @@ if [[ "${CONFIG[DEBUG]}" == "1" ]]; then
   set +x
 fi
 
-# Display startup message
-emsg "Loaded SENTINEL $BASHRC_VERSION"
+# Display startup message only if not in quiet mode
+[[ "${SENTINEL_QUIET_MODULES:-1}" != "1" ]] && echo "Loaded SENTINEL $BASHRC_VERSION"
 
 # Stop profiling if enabled
 if [[ -n "$BASHRC_PROFILE" ]]; then
   set +x
   exec 2>&3 3>&-
-  emsg "Profiling data written to /tmp/bashrc-$$.profile"
+  [[ "${SENTINEL_QUIET_MODULES:-1}" != "1" ]] && echo "Profiling data written to /tmp/bashrc-$$.profile"
 fi

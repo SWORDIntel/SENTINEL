@@ -417,6 +417,20 @@ secure_clean() {
 # Default to secure rm mode
 export SENTINEL_SECURE_RM=1
 
+# Function to toggle module verbosity
+sentinel_quiet() {
+    if [[ "$1" == "on" ]]; then
+        export SENTINEL_QUIET_MODULES=1
+        echo "SENTINEL quiet mode: ON - Minimal module output"
+    elif [[ "$1" == "off" ]]; then
+        export SENTINEL_QUIET_MODULES=0
+        echo "SENTINEL quiet mode: OFF - Verbose module output"
+    else
+        echo "SENTINEL quiet mode is currently: $([[ "${SENTINEL_QUIET_MODULES:-1}" == "1" ]] && echo "ON" || echo "OFF")"
+        echo "Usage: sentinel_quiet [on|off]"
+    fi
+}
+
 # Load additional functions from function directory
 loadRcDir "${HOME}/.bash_functions.d"
 
