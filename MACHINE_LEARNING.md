@@ -9,6 +9,7 @@ This document provides a comprehensive overview of the machine learning capabili
   - [Command Learning & Suggestions](#command-learning--suggestions)
   - [Interactive Chat Assistant](#interactive-chat-assistant)
   - [OpenVINO Acceleration](#openvino-acceleration)
+  - [GitHub Star Analyzer](#github-star-analyzer)
 - [Technical Implementation](#technical-implementation)
   - [Markov Chain Models](#markov-chain-models)
   - [Local LLM Integration](#local-llm-integration)
@@ -119,6 +120,50 @@ When available, SENTINEL can use Intel's OpenVINO framework to accelerate machin
 
 - OpenVINO toolkit installed (`pip install openvino`)
 - Compatible hardware (Intel CPU, GPU, or Neural Compute Stick)
+
+### GitHub Star Analyzer
+
+The GitHub Star Analyzer module downloads READMEs from starred GitHub repositories and analyzes them using machine learning to categorize repositories and provide intelligent suggestions.
+
+**Key Features:**
+
+- **Automated download:** Fetches READMEs from GitHub starred repositories
+- **ML-powered categorization:** Clusters repositories by content similarity 
+- **Context-aware search:** Finds repositories matching specific queries
+- **Task suggestions:** Recommends repositories for specific tasks
+- **Advanced LLM analysis:** Uses local LLM to extract detailed metadata
+- **Terminal-based UI:** Intuitive interface for managing repositories
+
+**Components:**
+
+- `sentinel_gitstar.module`: Bash module that provides the shell interface
+- `sentinel_gitstar.py`: Core Python implementation for fetching and analyzing repositories
+- `sentinel_gitstar_tui.py`: Terminal-based UI for easier interaction
+- Repository data stored in `~/.sentinel/gitstar/`
+
+**Example Usage:**
+
+```bash
+# Terminal UI (Recommended)
+sgtui
+
+# Install all dependencies
+sgdeps
+
+# Command-line interface
+sentinel_gitstar_fetch <username>
+sentinel_gitstar_analyze
+sentinel_gitstar_search "text processing"
+sentinel_gitstar_suggest "build a REST API with authentication"
+sentinel_gitstar_stats
+```
+
+**Behavior Notes:**
+
+- Uses TF-IDF vectorization and K-means clustering for repository categorization
+- LLM analysis provides detailed insights about repository purpose and features
+- All data stays local; no GitHub token is required for public repositories
+- Aliases are provided for common commands (sgfetch, sgsearch, sgsuggest, sgstats, sgtui)
 
 ## Technical Implementation
 

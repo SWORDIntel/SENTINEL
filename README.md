@@ -347,3 +347,10 @@ For detailed documentation on each component, see the individual README files in
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+### GitHub Star Analyzer
+
+* Automatically download READMEs from your GitHub starred repositories
+* Use machine learning to categorize repositories by purpose and functionality
+* Intelligent search and suggestions for finding the right tool for specific tasks
+* LLM-powered analysis for detailed understanding of repository features

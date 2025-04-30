@@ -250,8 +250,13 @@ _load_enabled_modules() {
             [[ $? -eq 0 ]] && success_count=$((success_count + 1))
         done < "$HOME/.bash_modules"
         
-        # Always show a brief summary
-        echo "Loaded $success_count modules."
+        # Show summary only in verbose mode
+        [[ "$SENTINEL_QUIET_MODULES" != "1" ]] && echo "Loaded $success_count/$enabled_count modules"
+    fi
+    
+    # Also load our new GitHub Star Analyzer module
+    if [[ -f "$SENTINEL_MODULES_PATH/sentinel_gitstar.module" ]]; then
+        module_enable "sentinel_gitstar" "0" "startup"
     fi
 }
 
@@ -268,3 +273,17 @@ bash_list_modules() {
 
 # Load modules on startup
 _load_enabled_modules
+
+# Load modules
+for f in ./bash_modules.d/*.module; do
+  [ -r "$f" ] && source "$f"
+done
+
+# Additional modules can be loaded here
+# For example:
+# source /path/to/custom/module.sh
+
+# Add our GitHub Star Analyzer module
+if [ -r "./bash_modules.d/sentinel_gitstar.module" ]; then
+  source "./bash_modules.d/sentinel_gitstar.module"
+fi
