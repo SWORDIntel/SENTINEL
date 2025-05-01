@@ -1,2 +1,3 @@
 # Ignore local module configurations
 *.local.sh#
+.cursor
