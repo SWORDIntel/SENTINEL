@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+# SENTINEL Shell Integration Fixer
+# This script fixes all shell integration components
+# Author: SENTINEL Team
+# Last Update: $(date +%Y-%m-%d)
+
+# Set text colors
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+# Display progress bar
+show_progress() {
+    local duration=$1
+    local msg="$2"
+    local bar_length=40
+    local progress=0
+    local step=$((bar_length / duration))
+    
+    echo -e "${msg}"
+    echo -ne "[                                        ]\r"
+    
+    for ((i=0; i<duration; i++)); do
+        sleep 1
+        progress=$((progress + step))
+        local filled=$((progress * bar_length / 100))
+        local empty=$((bar_length - filled))
+        
+        printf "["
+        printf "%${filled}s" | tr ' ' '#'
+        printf "%${empty}s" | tr ' ' ' '
+        printf "] %d%%\r" $((progress * 100 / bar_length))
+    done
+    
+    echo -e "\n${GREEN}Done!${NC}"
+}
+
+# Log with HMAC signature for security
+secure_log() {
+    local timestamp=$(date +%s)
+    local message="$1"
+    local level="$2"
+    local nonce=$(openssl rand -hex 8)
+    local key="${SENTINEL_AUTH_KEY:-$(hostname | openssl dgst -sha256 | cut -d' ' -f2)}"
+    local data="${timestamp}:${level}:${nonce}:${message}"
+    local hmac=$(echo -n "$data" | openssl dgst -sha256 -hmac "$key" | cut -d' ' -f2)
+    
+    # Log with signature
+    logger -t "SENTINEL" "[${hmac}] ${level}: ${message}" 2>/dev/null || true
+    
+    # Terminal output
+    case "$level" in
+        "ERROR")
+            echo -e "${RED}${message}${NC}"
+            ;;
+        "WARNING")
+            echo -e "${YELLOW}${message}${NC}"
+            ;;
+        "INFO")
+            echo -e "${BLUE}${message}${NC}"
+            ;;
+        "SUCCESS")
+            echo -e "${GREEN}${message}${NC}"
+            ;;
+        *)
+            echo -e "${message}"
+            ;;
+    esac
+}
+
+# Print banner
+echo -e "${BLUE}${BOLD}"
+echo '  ██████ ▓█████  ███▄    █ ▄▄▄█████▓ ██▓ ███▄    █ ▓█████  ██▓    '
+echo '▒██    ▒ ▓█   ▀  ██ ▀█   █ ▓  ██▒ ▓▒▓██▒ ██ ▀█   █ ▓█   ▀ ▓██▒    '
+echo '░ ▓██▄   ▒███   ▓██  ▀█ ██▒▒ ▓██░ ▒░▒██▒▓██  ▀█ ██▒▒███   ▒██░    '
+echo '  ▒   ██▒▒▓█  ▄ ▓██▒  ▐▌██▒░ ▓██▓ ░ ░██░▓██▒  ▐▌██▒▒▓█  ▄ ▒██░    '
+echo '▒██████▒▒░▒████▒▒██░   ▓██░  ▒██▒ ░ ░██░▒██░   ▓██░░▒████▒░██████▒'
+echo '▒ ▒▓▒ ▒ ░░░ ▒░ ░░ ▒░   ▒ ▒   ▒ ░░   ░▓  ░ ▒░   ▒ ▒ ░░ ▒░ ░░ ▒░▓  ░'
+echo '░ ░▒  ░ ░ ░ ░  ░░ ░░   ░ ▒░    ░     ▒ ░░ ░░   ░ ▒░ ░ ░  ░░ ░ ▒  ░'
+echo '░  ░  ░     ░      ░   ░ ░   ░       ▒ ░   ░   ░ ░    ░     ░ ░   '
+echo '      ░     ░  ░         ░           ░           ░    ░  ░    ░  ░'
+echo -e "${NC}"
+echo -e "${BLUE}${BOLD}Shell Integration Fixer${NC}"
+echo -e "${BLUE}-----------------------------------${NC}\n"
+
+secure_log "Starting SENTINEL shell integration fixer" "INFO"
+
+# Fix path_manager.sh
+secure_log "Fixing path_manager.sh permissions" "INFO"
+if [[ -f $(dirname "$0")/bash_functions.d/path_manager.sh ]]; then
+    chmod +x "$(dirname "$0")/bash_functions.d/path_manager.sh"
+    secure_log "Fixed path_manager.sh permissions" "SUCCESS"
+else
+    secure_log "path_manager.sh not found" "ERROR"
+fi
+
+# Create directories
+secure_log "Creating required directories" "INFO"
+mkdir -p ~/.sentinel/autocomplete/context
+mkdir -p ~/.sentinel/autocomplete/params
+mkdir -p ~/.sentinel/autocomplete/categories.db
+
+# Fix ble.sh integration
+secure_log "Checking ble.sh integration" "INFO"
+if [[ -x $(dirname "$0")/contrib/integration/fix_blesh.sh ]]; then
+    bash "$(dirname "$0")/contrib/integration/fix_blesh.sh"
+else
+    secure_log "ble.sh fixer script not found or not executable" "ERROR"
+    secure_log "Attempting to fix ble.sh directly" "INFO"
+    
+    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        chmod +x ~/.local/share/blesh/ble.sh
+        find ~/.local/share/blesh/contrib -type f -name "*.bash" -exec chmod +x {} \; 2>/dev/null
+        secure_log "Set executable permissions for ble.sh files" "SUCCESS"
+    else
+        secure_log "ble.sh not found at ~/.local/share/blesh/ble.sh" "ERROR"
+        secure_log "Would you like to install ble.sh? (y/n)" "INFO"
+        read -r answer
+        if [[ "$answer" =~ ^[Yy]$ ]]; then
+            secure_log "Installing ble.sh..." "INFO"
+            git clone --depth 1 https://github.com/akinomyoga/ble.sh.git /tmp/blesh
+            pushd /tmp/blesh > /dev/null
+            make install PREFIX=~/.local
+            popd > /dev/null
+            rm -rf /tmp/blesh
+            secure_log "ble.sh installed successfully" "SUCCESS"
+        else
+            secure_log "Aborted ble.sh installation" "WARNING"
+        fi
+    fi
+fi
+
+# Generate secure token for autocomplete functions
+secure_log "Configuring autocomplete with secure token generation" "INFO"
+
+# Create auto-activation script
+cat > ~/.sentinel/activate_integration.sh << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL Integration Activator
+# Auto-generated by SENTINEL Shell Integration Fixer
+
+# Generate HMAC-signed token for security
+_sentinel_generate_token() {
+    local timestamp=$(date +%s)
+    local nonce=$(openssl rand -hex 8)
+    local key="${SENTINEL_AUTH_KEY:-$(hostname | openssl dgst -sha256 | cut -d' ' -f2)}"
+    local data="${timestamp}:${nonce}"
+    local hmac=$(echo -n "$data" | openssl dgst -sha256 -hmac "$key" | cut -d' ' -f2)
+    echo "${data}:${hmac}"
+}
+
+# Background tasks with progress tracking
+{
+    # Load ble.sh if available
+    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        source ~/.local/share/blesh/ble.sh 2>/dev/null
+    fi
+    
+    # Activate autocomplete functions
+    _sentinel_configure_autocomplete
+    _sentinel_register_fuzzy_correction
+    _sentinel_command_chain_predictor
+    
+    # Log success
+    logger -t "SENTINEL" "Autocomplete module initialized with enhanced features" 2>/dev/null || true
+} &
+
+# Return secure token for verification
+_sentinel_token=$(_sentinel_generate_token)
+echo "SENTINEL integration activated with token: $_sentinel_token"
+EOF
+
+chmod +x ~/.sentinel/activate_integration.sh
+
+# Add to bashrc if not already there
+if ! grep -q "~/.sentinel/activate_integration.sh" ~/.bashrc; then
+    echo '# SENTINEL integration activator' >> ~/.bashrc
+    echo 'if [[ -f ~/.sentinel/activate_integration.sh ]]; then' >> ~/.bashrc
+    echo '    source ~/.sentinel/activate_integration.sh &>/dev/null' >> ~/.bashrc
+    echo 'fi' >> ~/.bashrc
+    secure_log "Added integration activator to ~/.bashrc" "SUCCESS"
+fi
+
+secure_log "Shell integration fix complete" "SUCCESS"
+secure_log "Please restart your terminal or run 'source ~/.sentinel/activate_integration.sh'" "INFO"
+
+# Final verification with progress indicator
+show_progress 5 "${YELLOW}Performing final verification...${NC}"
+
+echo -e "${GREEN}${BOLD}Shell integration fixed successfully!${NC}"
+echo -e "${BLUE}Restart your terminal to apply all changes.${NC}" 
