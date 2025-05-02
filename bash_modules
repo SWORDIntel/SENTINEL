@@ -506,11 +506,6 @@ _load_enabled_modules() {
             fi
         fi
     fi
-    
-    # Also load our new GitHub Star Analyzer module
-    if [[ -f "$SENTINEL_MODULES_PATH/sentinel_gitstar.module" ]]; then
-        module_enable "sentinel_gitstar" "0" "startup"
-    fi
 }
 
 # Register backwards compatibility functions

@@ -13,6 +13,94 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Perform initial checks
+echo -e "${BLUE}${BOLD}Performing pre-installation checks${NC}"
+
+# Check available disk space
+check_disk_space() {
+    local req_space=100000  # Required space in KB (100MB)
+    local home_space
+    
+    if command -v df &>/dev/null; then
+        home_space=$(df -k "${HOME}" | awk 'NR==2 {print $4}')
+        if [ -n "$home_space" ] && [ "$home_space" -lt "$req_space" ]; then
+            echo -e "${RED}Warning: Low disk space detected (${home_space}KB available)${NC}"
+            echo -e "${YELLOW}The installation requires at least ${req_space}KB (100MB) of free space${NC}"
+            echo -e "${YELLOW}Continue anyway? This may cause issues during installation.${NC}"
+            read -p "$(echo -e "${YELLOW}Continue? [y/N] ${NC}")" continue_install
+            case "$continue_install" in
+                'Y'|'y'|'yes')
+                    echo -e "${YELLOW}Continuing installation despite low disk space${NC}"
+                    ;;
+                *)
+                    echo -e "${RED}Installation aborted due to insufficient disk space${NC}"
+                    exit 1
+                    ;;
+            esac
+        fi
+    else
+        echo -e "${YELLOW}Unable to check disk space - 'df' command not found${NC}"
+        echo -e "${YELLOW}Continuing anyway, but installation may fail if disk space is insufficient${NC}"
+    fi
+}
+
+# Check if running as root (not recommended)
+check_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        echo -e "${RED}Warning: Running this script as root is not recommended${NC}"
+        echo -e "${YELLOW}The script will modify files in your home directory${NC}"
+        echo -e "${YELLOW}It's better to run it as a regular user${NC}"
+        echo -e "${YELLOW}Continue anyway?${NC}"
+        read -p "$(echo -e "${YELLOW}Continue as root? [y/N] ${NC}")" continue_as_root
+        case "$continue_as_root" in
+            'Y'|'y'|'yes')
+                echo -e "${YELLOW}Continuing as root user${NC}"
+                ;;
+            *)
+                echo -e "${GREEN}Please run this script as a non-root user${NC}"
+                exit 1
+                ;;
+        esac
+    fi
+}
+
+# Run pre-installation checks
+check_disk_space
+check_root
+
+# Create temporary directory for installation
+TEMP_DIR=$(mktemp -d -t sentinel-XXXXXX)
+if [ ! -d "$TEMP_DIR" ]; then
+    echo -e "${RED}Failed to create temporary directory. Aborting.${NC}"
+    exit 1
+fi
+
+# Cleanup function
+cleanup() {
+    echo -e "\n${YELLOW}Cleaning up temporary files...${NC}"
+    rm -rf "$TEMP_DIR" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}Temporary files removed successfully${NC}"
+    else
+        echo -e "${YELLOW}Warning: Failed to remove temporary directory: $TEMP_DIR${NC}"
+    fi
+}
+
+# Register cleanup on script exit (normal, interrupt, error)
+trap cleanup EXIT INT TERM
+
+# Setup logging
+LOG_FILE="$TEMP_DIR/sentinel_install.log"
+exec &> >(tee -a "$LOG_FILE")
+echo -e "${GREEN}Installation log will be saved to: $LOG_FILE${NC}"
+echo -e "${GREEN}A copy will be moved to ~/.sentinel/install.log at the end${NC}"
+
+# Install timestamp
+echo "SENTINEL Installation Started: $(date)" > "$LOG_FILE"
+echo "User: $(whoami)" >> "$LOG_FILE"
+echo "System: $(uname -a)" >> "$LOG_FILE"
+echo "----------------------" >> "$LOG_FILE"
+
 # Print banner
 echo -e "${BLUE}${BOLD}"
 echo '  ██████ ▓█████  ███▄    █ ▄▄▄█████▓ ██▓ ███▄    █ ▓█████  ██▓    '
@@ -70,13 +158,16 @@ install_file() {
     
     if [ -f "./${source}" ]; then
         echo -e "${GREEN}Installing ${source}${NC}"
-        cp -v "./${source}" "${dest}" 2>/dev/null | awk '{print "\t" $0}'
+        cp -v "./${source}" "${dest}" 2>/dev/null || {
+            echo -e "${RED}Error: Failed to copy ${source} to ${dest}${NC}"
+            return 1
+        }
         
         # Set proper permissions
         if [[ "$source" == *".sh" || "$source" == "bash_modules.d/"* ]]; then
-            chmod 700 "${dest}"
+            chmod 700 "${dest}" || echo -e "${YELLOW}Warning: Could not set execute permissions for ${dest}${NC}"
         else
-            chmod 600 "${dest}"
+            chmod 600 "${dest}" || echo -e "${YELLOW}Warning: Could not set permissions for ${dest}${NC}"
         fi
         
         return 0
@@ -95,7 +186,9 @@ create_directory() {
             echo -e "${RED}Failed to create directory ${dir}${NC}"
             return 1
         }
-        chmod 0700 "${dir}"
+        chmod 0700 "${dir}" || {
+            echo -e "${YELLOW}Warning: Could not set permissions for ${dir}${NC}"
+        }
     fi
     return 0
 }
@@ -170,32 +263,43 @@ sign_module() {
         
         if [ ! -f "$hmac_key_file" ]; then
             # Create .sentinel directory if it doesn't exist
-            mkdir -p "${HOME}/.sentinel" 2>/dev/null
+            mkdir -p "${HOME}/.sentinel" 2>/dev/null || {
+                echo -e "${RED}Failed to create .sentinel directory${NC}"
+                return 1
+            }
             
-            # Generate a random key
-            if command -v uuidgen &>/dev/null; then
-                hmac_key=$(uuidgen)
+            # Generate a random key with higher entropy
+            if command -v openssl &>/dev/null; then
+                # Use OpenSSL's more secure random generator - 32 bytes (256 bits)
+                hmac_key=$(openssl rand -hex 32)
+            elif command -v uuidgen &>/dev/null; then
+                # Combine multiple UUIDs for better entropy if OpenSSL isn't available
+                hmac_key=$(uuidgen)$(uuidgen)
             else
-                hmac_key=$(openssl rand -hex 16)
+                # Fallback to a combination of methods if neither is available
+                hmac_key=$(date +%s%N)$(head -c 32 /dev/urandom 2>/dev/null | base64 2>/dev/null || echo "FallbackKey$$")
             fi
             
             # Save the key
             echo "$hmac_key" > "$hmac_key_file"
-            chmod 600 "$hmac_key_file"
+            chmod 600 "$hmac_key_file" || echo -e "${YELLOW}Warning: Could not set permissions for HMAC key file${NC}"
             echo -e "${GREEN}Generated HMAC key for module verification${NC}"
         else
             # Read existing key
             hmac_key=$(cat "$hmac_key_file")
         fi
         
-        # Generate HMAC signature
+        # Generate HMAC signature using SHA-256
         local hmac=$(openssl dgst -sha256 -hmac "$hmac_key" "$module_file" | cut -d' ' -f2)
-        echo "$hmac" > "${module_file}.hmac"
-        chmod 600 "${module_file}.hmac"
-        
-        echo -e "${GREEN}Module ${module_name} signed with HMAC${NC}"
-        
-        return 0
+        if [ -n "$hmac" ]; then
+            echo "$hmac" > "${module_file}.hmac"
+            chmod 600 "${module_file}.hmac" || echo -e "${YELLOW}Warning: Could not set permissions for HMAC signature file${NC}"
+            echo -e "${GREEN}Module ${module_name} signed with HMAC${NC}"
+            return 0
+        else
+            echo -e "${RED}Failed to generate HMAC signature${NC}"
+            return 1
+        fi
     else
         echo -e "${YELLOW}openssl not found, module not signed with HMAC${NC}"
         return 1
@@ -277,12 +381,12 @@ echo -e "${BLUE}${BOLD}Step 1: Checking dependencies${NC}"
 check_dependencies
 
 echo -e "${BLUE}${BOLD}Step 2: Backing up existing files${NC}"
-for old in .bashrc .bash_aliases .bash_completion .bash_functions .bash_modules .bash_logout; do
+for old in .bashrc .bash_aliases .bash_completion .bash_functions .bash_modules; do
     backup_file "$old"
 done
 
 echo -e "\n${BLUE}${BOLD}Step 3: Installing core files${NC}"
-for new in bashrc bash_aliases bash_functions bash_completion bash_modules bash_logout; do
+for new in bashrc bash_aliases bash_functions bash_completion bash_modules; do
     install_file "$new" "${HOME}/.${new}"
 done
 
@@ -341,12 +445,6 @@ done
 
 # Final steps
 echo -e "\n${BLUE}${BOLD}Step 8: Finalizing installation${NC}"
-# Set proper permissions for .bash_logout to ensure it runs on exit
-if [ -f "${HOME}/.bash_logout" ]; then
-    chmod 700 "${HOME}/.bash_logout"
-    echo -e "${GREEN}Set executable permissions for .bash_logout${NC}"
-fi
-
 # Create a sample bookmark file for the 'j' function
 if [ ! -f "${HOME}/.bookmarks" ]; then
     touch "${HOME}/.bookmarks"
@@ -383,312 +481,6 @@ if [ ! -f "$OBFUSCATE_MODULE" ]; then
         fi
     fi
 fi
-
-# Create and install the distcc module
-DISTCC_MODULE_CONTENT='#!/usr/bin/env bash
-# SENTINEL Module: distcc
-# Configure environment for distributed compilation with Distcc and Ccache
-
-# Module metadata
-SENTINEL_MODULE_VERSION="1.0.0"
-SENTINEL_MODULE_DESCRIPTION="Configure environment for distributed compilation with Distcc and Ccache"
-SENTINEL_MODULE_AUTHOR="John"
-SENTINEL_MODULE_DEPENDENCIES=""
-
-# Check if we'"'"'re being sourced
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    echo "This script is meant to be sourced, not executed directly."
-    exit 1
-fi
-
-# Configuration
-DISTCC_DIR="${DISTCC_DIR:-$HOME/.distcc}"
-CCACHE_DIR="${CCACHE_DIR:-$HOME/.ccache}"
-DISTCC_HOSTS="${DISTCC_HOSTS:-localhost}"
-DISTCC_LOG="${DISTCC_LOG:-$HOME/.distcc/distcc.log}"
-DISTCC_VERBOSE="${DISTCC_VERBOSE:-0}"
-DISTCC_FALLBACK="${DISTCC_FALLBACK:-1}"
-CCACHE_SIZE="${CCACHE_SIZE:-5G}"
-
-# Create necessary directories
-mkdir -p "$DISTCC_DIR" 2>/dev/null
-mkdir -p "$CCACHE_DIR" 2>/dev/null
-mkdir -p "$(dirname "$DISTCC_LOG")" 2>/dev/null
-
-# Function to check for distcc and ccache installations
-distcc_check_installation() {
-    local missing=""
-    
-    # Check for distcc
-    if ! command -v distcc &>/dev/null; then
-        missing+="distcc "
-    fi
-    
-    # Check for ccache
-    if ! command -v ccache &>/dev/null; then
-        missing+="ccache "
-    fi
-    
-    if [[ -n "$missing" ]]; then
-        echo -e "${YELLOW}Warning: The following tools are not installed: ${missing}${NC}"
-        echo -e "You can install them with:"
-        echo -e "  ${BLUE}sudo apt install $missing${NC}  # Debian/Ubuntu"
-        echo -e "  ${BLUE}sudo dnf install $missing${NC}  # Fedora/RHEL"
-        echo -e "  ${BLUE}sudo pacman -S $missing${NC}    # Arch Linux"
-        
-        return 1
-    else
-        return 0
-    fi
-}
-
-# Function to setup distcc environment
-distcc_setup() {
-    # Configure distcc
-    export DISTCC_DIR
-    export DISTCC_HOSTS
-    export DISTCC_LOG
-    export DISTCC_VERBOSE
-    export DISTCC_FALLBACK
-    
-    # Configure ccache
-    export CCACHE_DIR
-    
-    # Set ccache size if not already configured
-    if ! ccache -s | grep -q "max cache size.*$CCACHE_SIZE"; then
-        ccache -M "$CCACHE_SIZE" >/dev/null
-    fi
-    
-    # Add distcc and ccache to PATH
-    local distcc_bin_paths=(
-        "/usr/lib/distcc/bin"
-        "/usr/lib64/distcc/bin"
-        "/usr/local/lib/distcc/bin"
-        "/opt/local/lib/distcc/bin"
-    )
-    
-    local ccache_bin_paths=(
-        "/usr/lib/ccache/bin"
-        "/usr/lib64/ccache/bin"
-        "/usr/local/lib/ccache/bin"
-        "/opt/local/lib/ccache/bin"
-    )
-    
-    # Find existing paths and add to PATH
-    for p in "${distcc_bin_paths[@]}"; do
-        if [[ -d "$p" && ":$PATH:" != *":$p:"* ]]; then
-            export PATH="$p:$PATH"
-            break
-        fi
-    done
-    
-    for p in "${ccache_bin_paths[@]}"; do
-        if [[ -d "$p" && ":$PATH:" != *":$p:"* ]]; then
-            export PATH="$p:$PATH"
-            break
-        fi
-    done
-    
-    # Verify PATH updates
-    if echo "$PATH" | grep -q "distcc\|ccache"; then
-        echo -e "${GREEN}Distcc and Ccache added to PATH:${NC} $PATH"
-    else
-        echo -e "${YELLOW}Warning: Could not find distcc or ccache bin directories${NC}"
-        echo -e "Standard paths were not found. You may need to manually set your PATH."
-    fi
-    
-    echo -e "${GREEN}Distcc configured with hosts:${NC} $DISTCC_HOSTS"
-}
-
-# Function to configure distcc hosts
-distcc_set_hosts() {
-    if [[ -z "$1" ]]; then
-        echo "Current DISTCC_HOSTS: $DISTCC_HOSTS"
-        echo "Usage: distcc_set_hosts <host1> [host2] [host3] ..."
-        echo "Examples:"
-        echo "  distcc_set_hosts localhost"
-        echo "  distcc_set_hosts 192.168.1.100 192.168.1.101"
-        echo "  distcc_set_hosts localhost/4 192.168.1.100/8"
-        return 0
-    fi
-    
-    # Join all arguments with spaces
-    DISTCC_HOSTS="$*"
-    export DISTCC_HOSTS
-    
-    echo -e "${GREEN}DISTCC_HOSTS set to:${NC} $DISTCC_HOSTS"
-    
-    # Save to configuration
-    if [[ -f "$HOME/.bashrc.postcustom" ]]; then
-        if grep -q "export DISTCC_HOSTS=" "$HOME/.bashrc.postcustom"; then
-            sed -i "s/export DISTCC_HOSTS=.*/export DISTCC_HOSTS=\"$DISTCC_HOSTS\"/" "$HOME/.bashrc.postcustom"
-        else
-            echo "export DISTCC_HOSTS=\"$DISTCC_HOSTS\"" >> "$HOME/.bashrc.postcustom"
-        fi
-    fi
-}
-
-# Function to check distcc status
-distcc_status() {
-    echo -e "${BLUE}Distcc Configuration:${NC}"
-    echo -e "DISTCC_DIR:      $DISTCC_DIR"
-    echo -e "DISTCC_HOSTS:    $DISTCC_HOSTS"
-    echo -e "DISTCC_LOG:      $DISTCC_LOG"
-    echo -e "DISTCC_VERBOSE:  $DISTCC_VERBOSE"
-    echo -e "DISTCC_FALLBACK: $DISTCC_FALLBACK"
-    
-    echo -e "\n${BLUE}Ccache Configuration:${NC}"
-    echo -e "CCACHE_DIR:      $CCACHE_DIR"
-    ccache -s
-    
-    echo -e "\n${BLUE}System PATH:${NC}"
-    echo "$PATH" | tr '"'"':'"'"' '"'"'\n'"'"' | grep -E '"'"'distcc|ccache'"'"'
-}
-
-# Function to show compile example
-distcc_example() {
-    cat << '"'"'EOF'"'"'
-Distcc and Ccache Usage Examples:
----------------------------------
-
-Basic compilation with distcc:
-  $ CC="distcc gcc" ./configure
-  $ make -j$(distcc -j)
-
-Automake/Autoconf with distcc:
-  $ export CC="distcc gcc"
-  $ export CXX="distcc g++"
-  $ ./configure
-  $ make -j$(distcc -j)
-
-CMake with distcc:
-  $ cmake -DCMAKE_C_COMPILER_LAUNCHER=distcc -DCMAKE_CXX_COMPILER_LAUNCHER=distcc ..
-  $ make -j$(distcc -j)
-
-Check if distcc is being used:
-  $ DISTCC_VERBOSE=1 make -j$(distcc -j)
-
-Monitor distcc activity:
-  $ distccmon-text        # Text-based monitor
-  $ distccmon-gnome       # GUI monitor (if installed)
-EOF
-}
-
-# Function to create monitor alias
-distcc_monitor() {
-    local type="${1:-text}"
-    
-    case "$type" in
-        text)
-            if command -v distccmon-text &>/dev/null; then
-                distccmon-text 1
-            else
-                echo "distccmon-text not found. Install distcc-client package."
-            fi
-            ;;
-        gui|gnome)
-            if command -v distccmon-gnome &>/dev/null; then
-                distccmon-gnome &
-            else
-                echo "distccmon-gnome not found. Install distcc-client package."
-            fi
-            ;;
-        *)
-            echo "Unknown monitor type. Use '"'"'text'"'"' or '"'"'gui'"'"'."
-            ;;
-    esac
-}
-
-# Function to display help information
-distcc_help() {
-    cat << EOF
-${GREEN}SENTINEL Distcc Module Help${NC}
-==============================
-
-${BLUE}Available Commands:${NC}
-  distcc_status       - Show distcc and ccache configuration
-  distcc_set_hosts    - Configure distcc hosts
-  distcc_monitor      - Monitor distcc activity
-  distcc_example      - Show usage examples
-
-${BLUE}Configuration Variables:${NC}
-  DISTCC_HOSTS        - Space-separated list of compilation hosts
-  DISTCC_DIR          - Directory for distcc files
-  CCACHE_DIR          - Directory for ccache files
-  CCACHE_SIZE         - Maximum size of ccache (default: 5G)
-  
-${BLUE}Example usage:${NC}
-  distcc_set_hosts localhost 192.168.1.100
-  distcc_monitor text
-  
-${BLUE}To use in build systems:${NC}
-  export CC="distcc gcc"
-  export CXX="distcc g++"
-  ./configure && make -j\$(distcc -j)
-  
-For more information about distcc:
-  man distcc
-EOF
-}
-
-# Function to create automake environment
-automake_env() {
-    local type="${1:-gnu}"
-    
-    local configure_flags=""
-    local num_jobs=$(distcc -j || echo 4)
-    
-    case "$type" in
-        gnu)
-            export CC="distcc gcc"
-            export CXX="distcc g++"
-            configure_flags="--prefix=/usr/local"
-            ;;
-        cmake)
-            export CMAKE_C_COMPILER_LAUNCHER="distcc"
-            export CMAKE_CXX_COMPILER_LAUNCHER="distcc"
-            ;;
-        *)
-            echo "Unknown build type. Use '"'"'gnu'"'"' or '"'"'cmake'"'"'."
-            return 1
-            ;;
-    esac
-    
-    echo -e "${GREEN}Automake environment set for $type builds${NC}"
-    echo -e "Compilers: CC=$CC CXX=$CXX"
-    echo -e "Configure flags: $configure_flags"
-    echo -e "Parallel jobs: $num_jobs"
-    
-    echo -e "\n${BLUE}Build commands:${NC}"
-    if [[ "$type" == "gnu" ]]; then
-        echo -e "  ./configure $configure_flags"
-        echo -e "  make -j$num_jobs"
-    else
-        echo -e "  mkdir -p build && cd build"
-        echo -e "  cmake .."
-        echo -e "  make -j$num_jobs"
-    fi
-}
-
-# Main setup
-if distcc_check_installation; then
-    distcc_setup
-fi
-
-# Create aliases for quick access
-alias distcc-status='"'"'distcc_status'"'"'
-alias distcc-monitor='"'"'distcc_monitor'"'"'
-alias distcc-help='"'"'distcc_help'"'"'
-alias distcc-example='"'"'distcc_example'"'"'
-alias automake-distcc='"'"'automake_env gnu'"'"'
-alias cmake-distcc='"'"'automake_env cmake'"'"'
-
-# Display module loaded message
-echo -e "${GREEN}[+]${NC} Distcc/Ccache module loaded. PATH configured for distributed compilation."
-echo -e "    Type ${CYAN}distcc-help${NC} to see available commands."
-'
-
-install_module "distcc" "$DISTCC_MODULE_CONTENT"
 
 # Configure environment variables for secure operations
 echo -e "${GREEN}Configuring secure environment variables...${NC}"
@@ -759,16 +551,76 @@ if command -v python3 &>/dev/null; then
         # Install Python dependencies in the virtual environment
         echo -e "${GREEN}Installing required Python packages for ML features...${NC}"
         
+        # Function to verify pip package integrity
+        verify_pip_package() {
+            local package="$1"
+            local expected_hash="$2"
+            
+            if [ -z "$expected_hash" ]; then
+                # No hash provided, skip verification
+                return 0
+            fi
+            
+            # Get package info and extract the hash
+            local package_info=$(pip show -f "$package" 2>/dev/null)
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Failed to get info for package $package${NC}"
+                return 1
+            fi
+            
+            # Compute hash of the package
+            local package_file=$(echo "$package_info" | grep -o "^Location:.*" | cut -d' ' -f2)
+            if [ -z "$package_file" ]; then
+                echo -e "${RED}Could not find package location for $package${NC}"
+                return 1
+            fi
+            
+            local package_path="$package_file/$package"
+            if [ ! -d "$package_path" ]; then
+                echo -e "${RED}Package directory not found: $package_path${NC}"
+                return 1
+            fi
+            
+            # Compute hash of the main package file
+            local computed_hash=$(find "$package_path" -name "*.py" -type f -exec sha256sum {} \; | sort | sha256sum | cut -d' ' -f1)
+            
+            # Compare hashes
+            if [ "$computed_hash" != "$expected_hash" ]; then
+                echo -e "${RED}WARNING: Hash mismatch for package $package${NC}"
+                echo -e "${RED}Expected: $expected_hash${NC}"
+                echo -e "${RED}Computed: $computed_hash${NC}"
+                echo -e "${RED}This could indicate a security issue with the package!${NC}"
+                return 1
+            fi
+            
+            echo -e "${GREEN}Package $package integrity verified${NC}"
+            return 0
+        }
+
         # Install using provided script if available
         if [ -f "./contrib/install_deps.py" ]; then
+            echo -e "${GREEN}Installing dependencies using provided script...${NC}"
             python3 ./contrib/install_deps.py --group ml
+            
+            # Verify the installation was successful
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}Failed to install ML dependencies using script${NC}"
+                echo -e "${YELLOW}Trying direct pip install as fallback...${NC}"
+                pip install markovify numpy --user
+            fi
         else
             # Fall back to direct pip install
             echo -e "${GREEN}Installing markovify and numpy...${NC}"
-            pip install markovify numpy
+            pip install markovify numpy --user
+            
+            # Basic check that packages are installed
+            python3 -c "import markovify, numpy; print('Packages installed successfully')" 2>/dev/null || {
+                echo -e "${RED}Failed to import installed packages${NC}"
+                echo -e "${YELLOW}You may need to install them manually later${NC}"
+            }
         fi
         
-        if [ $? -eq 0 ]; then
+        if python3 -c "import markovify, numpy" 2>/dev/null; then
             echo -e "${GREEN}ML dependencies installed successfully${NC}"
         else
             echo -e "${RED}Failed to install ML dependencies${NC}"
@@ -804,8 +656,8 @@ fi
 
 # Install the sentinel_ml module
 echo -e "${GREEN}Installing sentinel_ml module...${NC}"
-if [ -f "./bash_modules.d/sentinel_ml.fixed" ]; then
-    cp -v "./bash_modules.d/sentinel_ml.fixed" "${HOME}/.bash_modules.d/sentinel_ml"
+if [ -f "./bash_modules.d/sentinel_ml.module" ]; then
+    cp -v "./bash_modules.d/sentinel_ml.module" "${HOME}/.bash_modules.d/sentinel_ml"
     chmod 700 "${HOME}/.bash_modules.d/sentinel_ml"
     echo -e "${GREEN}Installed sentinel_ml module${NC}"
     
@@ -881,25 +733,79 @@ if [ -f "$VENV_DIR/bin/activate" ]; then
 #!/usr/bin/env bash
 # Install chat dependencies in the virtual environment
 
+# Define colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
 VENV_DIR="${HOME}/.sentinel/venv"
 if [ ! -f "$VENV_DIR/bin/activate" ]; then
-    echo -e "Virtual environment not found. Creating one..."
-    python3 -m venv "$VENV_DIR"
+    echo -e "${YELLOW}Virtual environment not found. Creating one...${NC}"
+    python3 -m venv "$VENV_DIR" || {
+        echo -e "${RED}Failed to create virtual environment. Please install python3-venv package.${NC}"
+        exit 1
+    }
 fi
 
 # Activate the virtual environment
-source "$VENV_DIR/bin/activate"
+source "$VENV_DIR/bin/activate" || {
+    echo -e "${RED}Failed to activate virtual environment${NC}"
+    exit 1
+}
 
 # Upgrade pip
-pip install --upgrade pip
+echo -e "${GREEN}Upgrading pip...${NC}"
+pip install --upgrade pip || {
+    echo -e "${YELLOW}Warning: Failed to upgrade pip. Continuing anyway.${NC}"
+}
 
-# Install dependencies
-echo "Installing chat dependencies..."
-pip install llama-cpp-python rich readline
+# Install dependencies with progress indication
+echo -e "${GREEN}Installing chat dependencies...${NC}"
+echo -e "${YELLOW}Note: This may take some time, especially for llama-cpp-python which needs compilation.${NC}"
+echo -e "${YELLOW}Installing rich...${NC}"
+pip install rich || {
+    echo -e "${RED}Failed to install rich${NC}"
+    deactivate
+    exit 1
+}
 
-echo "Dependencies installed. You can now use sentinel_chat."
+echo -e "${YELLOW}Installing readline...${NC}"
+pip install readline || {
+    echo -e "${RED}Failed to install readline${NC}"
+    deactivate
+    exit 1
+}
+
+echo -e "${YELLOW}Installing llama-cpp-python (this may take a while)...${NC}"
+pip install llama-cpp-python || {
+    echo -e "${RED}Failed to install llama-cpp-python${NC}"
+    echo -e "${YELLOW}Trying alternative installation method...${NC}"
+    
+    # Try with specific compiler flags for better compatibility
+    CMAKE_ARGS="-DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS" pip install llama-cpp-python || {
+        echo -e "${RED}Alternative installation also failed.${NC}"
+        echo -e "${YELLOW}You may need to install development packages:${NC}"
+        echo -e "${YELLOW}  - For Debian/Ubuntu: sudo apt install python3-dev build-essential cmake${NC}"
+        echo -e "${YELLOW}  - For Fedora/RHEL: sudo dnf install python3-devel gcc-c++ cmake${NC}"
+        echo -e "${YELLOW}  - For Arch: sudo pacman -S python-pip cmake gcc${NC}"
+        deactivate
+        exit 1
+    }
+}
+
+# Verify installation
+if python3 -c "import llama_cpp, rich, readline" 2>/dev/null; then
+    echo -e "${GREEN}Dependencies installed successfully. You can now use sentinel_chat.${NC}"
+else
+    echo -e "${RED}Installation verification failed. Some packages may not be properly installed.${NC}"
+    deactivate
+    exit 1
+fi
+
+deactivate
 EOF
-        chmod 700 "$CHAT_DEPS_SCRIPT"
+        chmod 700 "$CHAT_DEPS_SCRIPT" || echo -e "${YELLOW}Warning: Could not set execute permissions for install_chat_deps.sh${NC}"
         
         # Create alias for installing chat dependencies
         if [ -f "$POSTCUSTOM" ]; then
@@ -950,14 +856,15 @@ if [ -d "./bash_modules.d/sentchat" ]; then
     mkdir -p "${HOME}/.sentinel/sentchat"
     
     # Create __init__.py to make it a proper module
-    cat > "${HOME}/.sentinel/sentchat/__init__.py" << EOF
+    cat > "${HOME}/.sentinel/sentchat/__init__.py" << 'EOF'
 """
-SENTINEL Chat module - Provides context-aware conversational AI for the shell
+SENTINEL Chat Module
+Provides functionality for the SENTINEL conversational assistant.
 """
 
 __version__ = "1.0.0"
 EOF
-    
+
     # Copy module files
     cp -rv "./bash_modules.d/sentchat/"* "${HOME}/.bash_modules.d/sentchat/"
     find "${HOME}/.bash_modules.d/sentchat" -type f -name "*.sh" -o -name "*.module" -exec chmod 700 {} \;
@@ -1079,6 +986,11 @@ cat > "$SENTINEL_HELP" << 'EOF'
 # SENTINEL Help Function
 
 sentinel_help() {
+    local BOLD='\033[1m'
+    local BLUE='\033[0;34m'
+    local YELLOW='\033[0;33m'
+    local NC='\033[0m'
+    
     cat << HELPTEXT
 ${BOLD}SENTINEL - Secure ENhanced Terminal INtelligent Layer${NC}
 
@@ -1158,7 +1070,7 @@ ${YELLOW}Security configuration:${NC}
 HELPTEXT
 }
 EOF
-chmod 700 "$SENTINEL_HELP"
+chmod 700 "$SENTINEL_HELP" || echo -e "${YELLOW}Warning: Could not set execute permissions for sentinel_help.sh${NC}"
 
 # Print completion message
 echo -e "\n${GREEN}${BOLD}Installation completed successfully!${NC}"
@@ -1167,3 +1079,41 @@ echo -e "  1. Start a new terminal session, or"
 echo -e "  2. Run: ${BLUE}source ~/.bashrc${NC}"
 echo -e "\nEnjoy your enhanced terminal environment!"
 echo -e "${YELLOW}For help and documentation, type: ${BLUE}sentinel_help${NC} after activation.\n"
+
+# Final cleanup and log saving
+echo -e "Installation completed: $(date)" >> "$LOG_FILE"
+mkdir -p "${HOME}/.sentinel/logs" 2>/dev/null
+cp "$LOG_FILE" "${HOME}/.sentinel/logs/install-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null
+
+# Verify critical components
+echo -e "${BLUE}${BOLD}Verifying critical components...${NC}"
+INSTALL_VERIFICATION="$TEMP_DIR/verification.txt"
+
+# Check for critical files
+echo "Verifying installed files..." > "$INSTALL_VERIFICATION"
+for critical_file in "${HOME}/.bashrc" "${HOME}/.bash_aliases" "${HOME}/.bash_functions" \
+                     "${HOME}/.bash_completion" "${HOME}/.bash_modules" \
+                     "${HOME}/.sentinel/hmac_key"; do
+    if [ -f "$critical_file" ]; then
+        echo "✓ $critical_file" >> "$INSTALL_VERIFICATION"
+    else
+        echo "✗ $critical_file (MISSING)" >> "$INSTALL_VERIFICATION"
+    fi
+done
+
+# Check for critical directories
+for critical_dir in "${HOME}/.bash_modules.d" "${HOME}/.sentinel/logs" \
+                    "${HOME}/.sentinel/temp" "${HOME}/.sentinel/models"; do
+    if [ -d "$critical_dir" ]; then
+        echo "✓ $critical_dir" >> "$INSTALL_VERIFICATION"
+    else
+        echo "✗ $critical_dir (MISSING)" >> "$INSTALL_VERIFICATION"
+    fi
+done
+
+# Display verification results
+cat "$INSTALL_VERIFICATION"
+cp "$INSTALL_VERIFICATION" "${HOME}/.sentinel/logs/verification-$(date +%Y%m%d-%H%M%S).txt" 2>/dev/null
+
+# Exit success
+exit 0
