@@ -20,7 +20,7 @@ export SENTINEL_OBFUSCATE_ENABLED=1      # Enable file obfuscation module (defau
 export OBFUSCATE_OUTPUT_DIR="${HOME}/secure/obfuscated_files"  # Change output directory for obfuscated files
 
 # OSINT tools and suggestions engine configuration
-export SENTINEL_OSINT_ENABLED=0          # Enable OSINT module (default: disabled)
+export SENTINEL_OSINT_ENABLED=1          # Enable OSINT module (default: disabled)
 
 # Hashcat module configuration
 export HASHCAT_BIN="/usr/bin/hashcat"    # Custom hashcat binary path
@@ -38,23 +38,23 @@ export DISTCC_HOSTS="localhost"          # Space-separated list of compilation h
 export CCACHE_SIZE="5G"                  # Maximum size of ccache
 
 # Chat module configuration
-export SENTINEL_CHAT_ENABLED=0           # Enable SENTINEL chat module
+export SENTINEL_CHAT_ENABLED=1           # Enable SENTINEL chat module
 export SENTINEL_DEBUG=0                  # Enable debug mode for chat module
 
 # ML module configuration
-export SENTINEL_ML_ENABLED=0             # Enable machine learning module
+export SENTINEL_ML_ENABLED=1             # Enable machine learning module
 
 # GitHub Star Analyzer configuration
 export SENTINEL_GITSTAR_ENABLED=1        # Enable GitHub star analyzer
 
 # Cybersecurity ML module configuration
-export SENTINEL_CYBERSEC_ENABLED=0       # Enable cybersecurity ML module
+export SENTINEL_CYBERSEC_ENABLED=1       # Enable cybersecurity ML module
 
 # Additional module configurations can be added here
 
 # Module security configuration
-export SENTINEL_VERIFY_MODULES=0         # Enable HMAC verification for modules
+export SENTINEL_VERIFY_MODULES=1         # Enable HMAC verification for modules
 export SENTINEL_REQUIRE_HMAC=1           # Require HMAC signatures for all modules
 export SENTINEL_CHECK_MODULE_CONTENT=0   # Check modules for suspicious patterns
 export SENTINEL_DEBUG_MODULES=0          # Enable debug mode for module loading
-# export SENTINEL_HMAC_KEY="random_string" # Custom HMAC key (uncomment and set for better security)
+#export SENTINEL_HMAC_KEY="random_string" # Custom HMAC key (uncomment and set for better security)
