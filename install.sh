@@ -152,18 +152,91 @@ install_module() {
     fi
 }
 
+# Function to check for dependencies
+check_dependencies() {
+    local missing_deps=()
+    
+    # Check for required dependencies
+    echo -e "${BLUE}Checking for required dependencies...${NC}"
+    
+    # Check for jq (required for autocomplete)
+    if ! command -v jq &>/dev/null; then
+        missing_deps+=("jq")
+        echo -e "${YELLOW}jq not found - required for autocomplete module${NC}"
+    else
+        echo -e "${GREEN}jq found${NC}"
+    fi
+    
+    # If missing dependencies, attempt to install them
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo -e "${YELLOW}Missing dependencies: ${missing_deps[*]}${NC}"
+        
+        # Try to detect package manager
+        if command -v apt &>/dev/null; then
+            # Debian/Ubuntu
+            echo -e "${BLUE}Attempting to install missing dependencies using apt...${NC}"
+            read -p "$(echo -e "${YELLOW}Install missing dependencies? [Y/n] ${NC}")" install_deps
+            case "$install_deps" in
+                'N'|'n'|'no')
+                    echo -e "${YELLOW}Skipping dependency installation${NC}"
+                    echo -e "${YELLOW}Note: Some features may not work correctly${NC}"
+                    ;;
+                *)
+                    sudo apt update && sudo apt install -y "${missing_deps[@]}"
+                    ;;
+            esac
+        elif command -v dnf &>/dev/null; then
+            # Fedora/RHEL
+            echo -e "${BLUE}Attempting to install missing dependencies using dnf...${NC}"
+            read -p "$(echo -e "${YELLOW}Install missing dependencies? [Y/n] ${NC}")" install_deps
+            case "$install_deps" in
+                'N'|'n'|'no')
+                    echo -e "${YELLOW}Skipping dependency installation${NC}"
+                    echo -e "${YELLOW}Note: Some features may not work correctly${NC}"
+                    ;;
+                *)
+                    sudo dnf install -y "${missing_deps[@]}"
+                    ;;
+            esac
+        elif command -v pacman &>/dev/null; then
+            # Arch Linux
+            echo -e "${BLUE}Attempting to install missing dependencies using pacman...${NC}"
+            read -p "$(echo -e "${YELLOW}Install missing dependencies? [Y/n] ${NC}")" install_deps
+            case "$install_deps" in
+                'N'|'n'|'no')
+                    echo -e "${YELLOW}Skipping dependency installation${NC}"
+                    echo -e "${YELLOW}Note: Some features may not work correctly${NC}"
+                    ;;
+                *)
+                    sudo pacman -S --needed "${missing_deps[@]}"
+                    ;;
+            esac
+        else
+            echo -e "${RED}Could not detect package manager${NC}"
+            echo -e "${YELLOW}Please install the following dependencies manually:${NC}"
+            for dep in "${missing_deps[@]}"; do
+                echo "  - $dep"
+            done
+            echo -e "${YELLOW}Then rerun the installer${NC}"
+        fi
+    fi
+}
+
 # Main installation process
-echo -e "${BLUE}${BOLD}Step 1: Backing up existing files${NC}"
+echo -e "${BLUE}${BOLD}Step 1: Checking dependencies${NC}"
+check_dependencies
+
+echo -e "${BLUE}${BOLD}Step 2: Backing up existing files${NC}"
 for old in .bashrc .bash_aliases .bash_completion .bash_functions .bash_modules .bash_logout; do
     backup_file "$old"
 done
 
-echo -e "\n${BLUE}${BOLD}Step 2: Installing core files${NC}"
+echo -e "\n${BLUE}${BOLD}Step 3: Installing core files${NC}"
 for new in bashrc bash_aliases bash_functions bash_completion bash_modules bash_logout; do
     install_file "$new" "${HOME}/.${new}"
 done
 
-echo -e "\n${BLUE}${BOLD}Step 3: Handling custom configuration files${NC}"
+echo -e "\n${BLUE}${BOLD}Step 4: Handling custom configuration files${NC}"
 for custom in bashrc.precustom bashrc.postcustom; do
     if [ -f "./${custom}" ]; then
         if [ -f "${HOME}/.${custom}" ]; then
@@ -190,13 +263,13 @@ for custom in bashrc.precustom bashrc.postcustom; do
     fi
 done
 
-echo -e "\n${BLUE}${BOLD}Step 4: Setting up directory structures${NC}"
+echo -e "\n${BLUE}${BOLD}Step 5: Setting up directory structures${NC}"
 for dir_base in bash_aliases.d bash_functions.d bash_completion.d bash_modules.d; do
     create_directory "${HOME}/.${dir_base}"
     install_directory_contents "${dir_base}" "${HOME}/.${dir_base}"
 done
 
-echo -e "\n${BLUE}${BOLD}Step 5: Running additional setup scripts${NC}"
+echo -e "\n${BLUE}${BOLD}Step 6: Running additional setup scripts${NC}"
 if [ -f "./sync.sh" ]; then
     echo -e "${GREEN}Running sync.sh...${NC}"
     chmod +x ./sync.sh
@@ -207,7 +280,7 @@ else
 fi
 
 # Create necessary output directories
-echo -e "\n${BLUE}${BOLD}Step 6: Creating additional required directories${NC}"
+echo -e "\n${BLUE}${BOLD}Step 7: Creating additional required directories${NC}"
 for extra_dir in "${HOME}/.hashcat/wordlists" "${HOME}/.hashcat/cracked" "${HOME}/.sentinel/logs" \
                 "${HOME}/secure_workspace/obfuscation" "${HOME}/secure_workspace/crypto" \
                 "${HOME}/secure_workspace/malware_analysis" "${HOME}/obfuscated_files" \
@@ -217,7 +290,7 @@ for extra_dir in "${HOME}/.hashcat/wordlists" "${HOME}/.hashcat/cracked" "${HOME
 done
 
 # Final steps
-echo -e "\n${BLUE}${BOLD}Step 7: Finalizing installation${NC}"
+echo -e "\n${BLUE}${BOLD}Step 8: Finalizing installation${NC}"
 # Set proper permissions for .bash_logout to ensure it runs on exit
 if [ -f "${HOME}/.bash_logout" ]; then
     chmod 700 "${HOME}/.bash_logout"
@@ -231,8 +304,8 @@ if [ ! -f "${HOME}/.bookmarks" ]; then
     echo -e "${GREEN}Created empty bookmarks file${NC}"
 fi
 
-# Step 8: Install and activate special modules
-echo -e "\n${BLUE}${BOLD}Step 8: Installing special modules${NC}"
+# Step 9: Install and activate special modules
+echo -e "\n${BLUE}${BOLD}Step 9: Installing special modules${NC}"
 
 # Create the obfuscate module
 echo -e "${GREEN}Installing obfuscation module...${NC}"
@@ -594,8 +667,8 @@ if [ -f "$POSTCUSTOM" ]; then
     fi
 fi
 
-# Step 9: Setting up Machine Learning features
-echo -e "\n${BLUE}${BOLD}Step 9: Setting up Machine Learning features${NC}"
+# Step 10: Setting up Machine Learning features
+echo -e "\n${BLUE}${BOLD}Step 10: Setting up Machine Learning features${NC}"
 
 # Create sentinel_ml module directory
 create_directory "${HOME}/.bash_modules.d/sentchat"
@@ -719,8 +792,8 @@ if [ -f "./contrib/sentinel_suggest.py" ]; then
     echo -e "${GREEN}Installed sentinel_suggest.py${NC}"
 fi
 
-# Step 10: Set up the conversational assistant
-echo -e "\n${BLUE}${BOLD}Step 10: Setting up conversational assistant${NC}"
+# Step 11: Set up the conversational assistant
+echo -e "\n${BLUE}${BOLD}Step 11: Setting up conversational assistant${NC}"
 
 # Check for LLM dependencies using the virtual environment
 echo -e "${GREEN}Checking for chat dependencies...${NC}"

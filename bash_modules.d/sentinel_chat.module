@@ -2,6 +2,13 @@
 # SENTINEL Chat Module
 # Provides conversational AI assistant for shell queries
 
+# Debug function to conditionally print messages
+sentinel_debug() {
+    if [ "${SENTINEL_DEBUG:-0}" -eq 1 ]; then
+        echo "[SENTINEL DEBUG] $*"
+    fi
+}
+
 # Check dependencies
 SENTINEL_CHAT_ENABLED=0
 if command -v python3 &>/dev/null; then
@@ -17,14 +24,42 @@ else
     echo "Warning: python3 not found. SENTINEL Chat capabilities disabled."
 fi
 
-# Path to Chat script - use the installed version in ~/.sentinel
-SENTINEL_CHAT_SCRIPT="${HOME}/.sentinel/sentinel_chat.py"
+# Ensure the .sentinel directory exists
+if [ ! -d "${HOME}/.sentinel" ]; then
+    mkdir -p "${HOME}/.sentinel"
+    mkdir -p "${HOME}/.sentinel/models"
+    sentinel_debug "Created ${HOME}/.sentinel directory structure"
+fi
+
+# Path to Chat script - try installed version first, then fall back to development location
+INSTALLED_CHAT_SCRIPT="${HOME}/.sentinel/sentinel_chat.py"
+CONTRIB_CHAT_SCRIPT="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/contrib/sentinel_chat.py"
+
+# Determine which script to use
+if [ -f "$INSTALLED_CHAT_SCRIPT" ]; then
+    SENTINEL_CHAT_SCRIPT="$INSTALLED_CHAT_SCRIPT"
+    sentinel_debug "Using installed chat script at $SENTINEL_CHAT_SCRIPT"
+elif [ -f "$CONTRIB_CHAT_SCRIPT" ]; then
+    SENTINEL_CHAT_SCRIPT="$CONTRIB_CHAT_SCRIPT"
+    sentinel_debug "Using development chat script at $SENTINEL_CHAT_SCRIPT"
+else
+    SENTINEL_CHAT_SCRIPT="$INSTALLED_CHAT_SCRIPT"  # Default to installed location
+    sentinel_debug "Warning: Chat script not found. Module will attempt to use $SENTINEL_CHAT_SCRIPT"
+fi
 
 # Install dependencies for SENTINEL Chat
 function sentinel_chat_install_deps() {
     if command -v python3 &>/dev/null; then
         echo "Installing required Python packages..."
-        python3 "$SENTINEL_CHAT_SCRIPT" --install-deps
+        
+        # Check if script exists, if not inform user
+        if [ ! -f "$SENTINEL_CHAT_SCRIPT" ]; then
+            echo "Warning: Chat script not found at $SENTINEL_CHAT_SCRIPT"
+            echo "Installing dependencies manually..."
+            pip install llama-cpp-python rich readline
+        else
+            python3 "$SENTINEL_CHAT_SCRIPT" --install-deps
+        fi
         
         # Check if installation was successful
         if python3 -c "import llama_cpp" &>/dev/null && \
@@ -44,6 +79,13 @@ function sentinel_chat_install_deps() {
 # Main chat function
 function sentinel_chat() {
     if [ $SENTINEL_CHAT_ENABLED -eq 1 ]; then
+        # Check if the script exists
+        if [ ! -f "$SENTINEL_CHAT_SCRIPT" ]; then
+            echo "Error: Chat script not found at $SENTINEL_CHAT_SCRIPT"
+            echo "Please run the SENTINEL installer to set up the chat module."
+            return 1
+        fi
+        
         # If arguments are provided, use them as a direct query
         if [ $# -gt 0 ]; then
             python3 "$SENTINEL_CHAT_SCRIPT" "$@"

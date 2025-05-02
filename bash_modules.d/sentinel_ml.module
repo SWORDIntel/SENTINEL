@@ -24,12 +24,33 @@ if [ $SENTINEL_ML_ENABLED -eq 1 ]; then
     fi
 fi
 
-# Path to ML scripts
-SENTINEL_ML_DIR="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/contrib"
+# Ensure the .sentinel directory exists
+if [ ! -d "${HOME}/.sentinel" ]; then
+    mkdir -p "${HOME}/.sentinel"
+    echo "Created ${HOME}/.sentinel directory"
+fi
+
+# Path to ML scripts - use installed script if available
+CONTRIB_ML_DIR="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/contrib"
+INSTALLED_ML_DIR="${HOME}/.sentinel"
+
+# Check for installed version first
+if [ -f "${INSTALLED_ML_DIR}/sentinel_autolearn.py" ]; then
+    SENTINEL_ML_DIR="${INSTALLED_ML_DIR}"
+else
+    SENTINEL_ML_DIR="${CONTRIB_ML_DIR}"
+fi
 
 # Initial setup and training
 function sentinel_ml_setup() {
     if [ $SENTINEL_ML_ENABLED -eq 1 ]; then
+        # Check if script exists
+        if [ ! -f "$SENTINEL_ML_DIR/sentinel_autolearn.py" ]; then
+            echo "Error: sentinel_autolearn.py not found at $SENTINEL_ML_DIR"
+            echo "Please run the SENTINEL installer to set up the ML module."
+            return 1
+        fi
+        
         # Initial training from bash history
         python3 "$SENTINEL_ML_DIR/sentinel_autolearn.py" --learn-history --train
         
@@ -42,12 +63,20 @@ function sentinel_ml_setup() {
         fi
     else
         echo "SENTINEL ML disabled due to missing dependencies."
+        echo "Install markovify with: pip install markovify"
     fi
 }
 
 # Manually trigger training
 function sentinel_ml_train() {
     if [ $SENTINEL_ML_ENABLED -eq 1 ]; then
+        # Check if script exists
+        if [ ! -f "$SENTINEL_ML_DIR/sentinel_autolearn.py" ]; then
+            echo "Error: sentinel_autolearn.py not found at $SENTINEL_ML_DIR"
+            echo "Please run the SENTINEL installer to set up the ML module."
+            return 1
+        fi
+        
         python3 "$SENTINEL_ML_DIR/sentinel_autolearn.py" --train
         echo "SENTINEL ML model retrained with latest command history."
     else
@@ -79,7 +108,10 @@ for cmd, count in sorted_stats[:20]:
 # Register completion for relevant functions
 for cmd in findlarge find_big_dirs find_recent find_by_ext; do
     if [ $SENTINEL_ML_ENABLED -eq 1 ]; then
-        complete -C "python3 $SENTINEL_ML_DIR/sentinel_autolearn.py --suggest" $cmd
+        # Check if autolearn script exists before setting up completion
+        if [ -f "$SENTINEL_ML_DIR/sentinel_autolearn.py" ]; then
+            complete -C "python3 $SENTINEL_ML_DIR/sentinel_autolearn.py --suggest" $cmd
+        fi
     fi
 done
 
