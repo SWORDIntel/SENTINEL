@@ -25,36 +25,46 @@ loadRcDir() {
     fi
 }
 
-# Add a directory to the PATH
+# Add a directory to the PATH (redirects to path_manager)
+# This function is kept for backward compatibility and redirects to add_path
 add2path() {
-    # Prompt the user
-    read -p "Do you want to add the current directory ($PWD) to PATH? [Y/n]: " answer
-    case "$answer" in
-        [Nn]* )
-            # User selected 'no', prompt for directory to add
-            read -p "Enter the full path you want to add to PATH: " new_path
-            ;;
-        * )
-            # Default to adding current directory
-            new_path="$PWD"
-            ;;
-    esac
-    
-    # Ensure new_path is not empty
-    if [ -z "$new_path" ]; then
-        echo "No path provided. Aborting."
-        return 1
-    fi
-    
-    # Resolve to full path
-    full_path=$(readlink -f "$new_path")
-    
-    # Check if full_path is already in PATH
-    if echo "$PATH" | tr ':' '\n' | grep -Fxq "$full_path"; then
-        echo "Directory $full_path is already in PATH."
+    # Check if path_manager.sh is available
+    if type add_path &>/dev/null; then
+        # Using the new path management system
+        add_path "$@"
     else
-        export PATH="$full_path:$PATH"
-        echo "Added $full_path to PATH."
+        echo "Path manager not available, using legacy method (PATH changes won't persist between sessions)."
+        
+        # Legacy implementation
+        # Prompt the user
+        read -p "Do you want to add the current directory ($PWD) to PATH? [Y/n]: " answer
+        case "$answer" in
+            [Nn]* )
+                # User selected 'no', prompt for directory to add
+                read -p "Enter the full path you want to add to PATH: " new_path
+                ;;
+            * )
+                # Default to adding current directory
+                new_path="$PWD"
+                ;;
+        esac
+        
+        # Ensure new_path is not empty
+        if [ -z "$new_path" ]; then
+            echo "No path provided. Aborting."
+            return 1
+        fi
+        
+        # Resolve to full path
+        full_path=$(readlink -f "$new_path")
+        
+        # Check if full_path is already in PATH
+        if echo "$PATH" | tr ':' '\n' | grep -Fxq "$full_path"; then
+            echo "Directory $full_path is already in PATH."
+        else
+            export PATH="$full_path:$PATH"
+            echo "Added $full_path to PATH."
+        fi
     fi
 }
 

@@ -1,43 +1,61 @@
 #!/usr/bin/env bash
-# SENTINEL Cybersecurity ML Module
-# Advanced machine learning module for cybersecurity analysis
+### BEGIN MODULE INFO
+# Name:                  sentinel_cybersec_ml
+# Short-Description:     Machine learning for cybersecurity analysis
+# Description:           Advanced machine learning module for cybersecurity analysis,
+#                        vulnerability detection, and security scanning of codebases.
+# Author:                John
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  cybersecurity, ml, vulnerability, scanning
+# Provides:              cybersec_ml_scanner
+# Requires:              python3, numpy, scipy, sklearn, requests, tqdm, joblib
+# Conflicts:             none
+### END MODULE INFO
+
+# Check if module is enabled in bashrc.postcustom
+if [[ "${SENTINEL_CYBERSEC_ENABLED:-0}" != "1" ]]; then
+    echo "SENTINEL Cybersecurity ML module is disabled."
+    echo "To enable, add the following line to your ~/.bashrc.postcustom file:"
+    echo "  export SENTINEL_CYBERSEC_ENABLED=1"
+    return 0
+fi
 
 # Check dependencies
-SENTINEL_CYBERSEC_ENABLED=0
 if command -v python3 &>/dev/null; then
     # Check for required Python packages
     if python3 -c "import requests, numpy, tqdm, joblib, sklearn" &>/dev/null; then
-        SENTINEL_CYBERSEC_ENABLED=1
+        # Module is already enabled via bashrc.postcustom
+        true
     else
         echo "Warning: Missing Python packages for SENTINEL Cybersec ML."
         echo "Install with: pip install requests numpy tqdm joblib scikit-learn"
+        return 0
     fi
 else
     echo "Warning: python3 not found. SENTINEL Cybersec ML capabilities disabled."
+    return 0
 fi
 
 # Check for advanced ML capabilities
 SENTINEL_ADV_ML_AVAILABLE=0
-if [ $SENTINEL_CYBERSEC_ENABLED -eq 1 ]; then
-    if python3 -c "import tensorflow" &>/dev/null; then
-        SENTINEL_ADV_ML_AVAILABLE=1
-        echo "Advanced ML capabilities available for Cybersec ML."
-    else
-        echo "Warning: TensorFlow not installed. Advanced ML features disabled."
-        echo "Install with: pip install tensorflow"
-    fi
+if python3 -c "import tensorflow" &>/dev/null; then
+    SENTINEL_ADV_ML_AVAILABLE=1
+    echo "Advanced ML capabilities available for Cybersec ML."
+else
+    echo "Warning: TensorFlow not installed. Advanced ML features disabled."
+    echo "Install with: pip install tensorflow"
 fi
 
-# Check for LLM availability (reuse from other modules)
+# Check for LLM availability
 SENTINEL_LLM_AVAILABLE=0
-if [ $SENTINEL_CYBERSEC_ENABLED -eq 1 ]; then
-    if python3 -c "import llama_cpp" &>/dev/null; then
-        SENTINEL_LLM_AVAILABLE=1
-        echo "LLM capabilities available for Cybersec ML."
-    else
-        echo "Warning: llama-cpp-python not installed. Install for advanced analysis."
-        echo "Install with: pip install llama-cpp-python"
-    fi
+if python3 -c "import llama_cpp" &>/dev/null; then
+    SENTINEL_LLM_AVAILABLE=1
+    echo "LLM capabilities available for Cybersec ML."
+else
+    echo "Warning: llama-cpp-python not installed. Install for advanced analysis."
+    echo "Install with: pip install llama-cpp-python"
 fi
 
 # Path to Cybersec scripts

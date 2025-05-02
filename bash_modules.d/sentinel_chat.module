@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
-# SENTINEL Chat Module
-# Provides conversational AI assistant for shell queries
+### BEGIN MODULE INFO
+# Name:                  sentinel_chat
+# Short-Description:     Conversational AI assistant for shell queries
+# Description:           Provides a conversational AI assistant to help with shell
+#                        commands, questions, and system information retrieval.
+# Author:                John
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  chat, ai, assistant, llm
+# Provides:              ai_chat_assistant
+# Requires:              python3, llama-cpp-python, rich
+# Conflicts:             none
+### END MODULE INFO
+
+# Check if module is enabled in bashrc.postcustom
+if [[ "${SENTINEL_CHAT_ENABLED:-0}" != "1" ]]; then
+    echo "SENTINEL Chat module is disabled."
+    echo "To enable, add the following line to your ~/.bashrc.postcustom file:"
+    echo "  export SENTINEL_CHAT_ENABLED=1"
+    return 0
+fi
 
 # Debug function to conditionally print messages
 sentinel_debug() {
@@ -10,18 +30,20 @@ sentinel_debug() {
 }
 
 # Check dependencies
-SENTINEL_CHAT_ENABLED=0
 if command -v python3 &>/dev/null; then
     # Check for required Python packages
     if python3 -c "import llama_cpp" &>/dev/null && \
        python3 -c "import rich" &>/dev/null; then
-        SENTINEL_CHAT_ENABLED=1
+        # Module is already enabled via bashrc.postcustom
+        true
     else
         echo "Info: llama-cpp-python or rich not installed."
         echo "To enable SENTINEL Chat, run: sentinel_chat_install_deps"
+        return 0
     fi
 else
     echo "Warning: python3 not found. SENTINEL Chat capabilities disabled."
+    return 0
 fi
 
 # Ensure the .sentinel directory exists
@@ -64,7 +86,6 @@ function sentinel_chat_install_deps() {
         # Check if installation was successful
         if python3 -c "import llama_cpp" &>/dev/null && \
            python3 -c "import rich" &>/dev/null; then
-            SENTINEL_CHAT_ENABLED=1
             echo "Dependencies installed successfully."
             echo "SENTINEL Chat is now enabled."
         else

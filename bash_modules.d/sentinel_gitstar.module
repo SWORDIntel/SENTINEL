@@ -1,31 +1,51 @@
 #!/usr/bin/env bash
-# SENTINEL GitHub Star Analyzer Module
-# Downloads and analyzes READMEs from starred GitHub repositories
+### BEGIN MODULE INFO
+# Name:                  sentinel_gitstar
+# Short-Description:     GitHub Star Analyzer Module
+# Description:           Downloads and analyzes READMEs from starred GitHub repositories
+#                        to provide search and insights about previously starred repos.
+# Author:                John
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  github, analysis, ml, repo-management
+# Provides:              github_star_analyzer
+# Requires:              python3, requests, beautifulsoup4, tqdm, numpy, scipy, sklearn
+# Conflicts:             none
+### END MODULE INFO
+
+# Check if module is enabled in bashrc.postcustom
+if [[ "${SENTINEL_GITSTAR_ENABLED:-0}" != "1" ]]; then
+    echo "SENTINEL GitHub Star Analyzer module is disabled."
+    echo "To enable, add the following line to your ~/.bashrc.postcustom file:"
+    echo "  export SENTINEL_GITSTAR_ENABLED=1"
+    return 0
+fi
 
 # Check dependencies
-SENTINEL_GITSTAR_ENABLED=0
 if command -v python3 &>/dev/null; then
     # Check for required Python packages
     if python3 -c "import requests, beautifulsoup4, tqdm, numpy, scipy, sklearn" &>/dev/null; then
-        SENTINEL_GITSTAR_ENABLED=1
+        # Module is already enabled via bashrc.postcustom
+        true
     else
         echo "Warning: Missing Python packages for SENTINEL GitStar."
         echo "Install with: pip install requests beautifulsoup4 tqdm numpy scipy scikit-learn"
+        return 0
     fi
 else
     echo "Warning: python3 not found. SENTINEL GitStar capabilities disabled."
+    return 0
 fi
 
 # Check for LLM availability (reuse from sentinel_ml)
 SENTINEL_LLM_AVAILABLE=0
-if [ $SENTINEL_GITSTAR_ENABLED -eq 1 ]; then
-    if python3 -c "import llama_cpp" &>/dev/null; then
-        SENTINEL_LLM_AVAILABLE=1
-        echo "LLM capabilities available for GitStar."
-    else
-        echo "Warning: llama-cpp-python not installed. Install for advanced analysis."
-        echo "Install with: pip install llama-cpp-python"
-    fi
+if python3 -c "import llama_cpp" &>/dev/null; then
+    SENTINEL_LLM_AVAILABLE=1
+    echo "LLM capabilities available for GitStar."
+else
+    echo "Warning: llama-cpp-python not installed. Install for advanced analysis."
+    echo "Install with: pip install llama-cpp-python"
 fi
 
 # Path to GitStar scripts

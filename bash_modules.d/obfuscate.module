@@ -1,12 +1,27 @@
 #!/usr/bin/env bash
-# SENTINEL Module: obfuscate
-# File obfuscation techniques for evading signature-based detection
+### BEGIN MODULE INFO
+# Name:			obfuscate
+# Short-Description:	File obfuscation techniques for evading signature-based detection
+# Description:		This module provides various obfuscation techniques for files and strings
+#			including bash scripts, PowerShell, Python, JavaScript, PE and ELF binaries.
+#			For legitimate security testing and educational purposes only.
+# Author:		John
+# URL:			https://github.com/SWORDIntel/SENTINEL/
+# Version:		1.0.0
+# Stability:		stable
+# Tags:			security, obfuscation, steganography, redteam
+# Provides:		file_obfuscation
+# Requires:		coreutils
+# Conflicts:
+### END MODULE INFO
 
-# Module metadata
-SENTINEL_MODULE_VERSION="1.0.0"
-SENTINEL_MODULE_DESCRIPTION="File obfuscation utilities for security testing and malware analysis"
-SENTINEL_MODULE_AUTHOR="John"
-SENTINEL_MODULE_DEPENDENCIES=""
+# Check if the module is enabled
+if [[ "${SENTINEL_OBFUSCATE_ENABLED:-1}" != "1" ]]; then
+    echo "SENTINEL obfuscation module is disabled."
+    echo "To enable, add the following line to your ~/.bashrc.postcustom file:"
+    echo "  export SENTINEL_OBFUSCATE_ENABLED=1"
+    return 0
+fi
 
 # Check if we're being sourced
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
@@ -43,6 +58,12 @@ purposes only. Improper use may violate laws and organizational policies.
 ${BLUE}General Commands:${NC}
   obfuscate_help              - Show this help message
   obfuscate_check_tools       - Check if required tools are installed
+
+${BLUE}Configuration:${NC}
+  Configure in ~/.bashrc.postcustom:
+    export SENTINEL_OBFUSCATE_ENABLED=1   # Enable/disable the module (0=off, 1=on)
+    export OBFUSCATE_OUTPUT_DIR="/path"   # Custom output directory
+    export OBFUSCATE_TEMP_DIR="/tmp/path" # Custom temp directory
 
 ${BLUE}Text Obfuscation:${NC}
   obfuscate_string <string>   - Various string obfuscation techniques

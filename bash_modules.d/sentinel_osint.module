@@ -1,6 +1,28 @@
 #!/usr/bin/env bash
-# SENTINEL OSINT Intelligence Module
-# Suggests OSINT tools based on usage patterns and provides a TUI for OSINT workflows
+### BEGIN MODULE INFO
+# Name:			sentinel_osint
+# Short-Description:	OSINT tools and suggestions engine
+# Description:		Suggests OSINT tools based on usage patterns and provides 
+#			a TUI for OSINT workflows. The module tracks tool usage,
+#			offers intelligent suggestions, and builds helpful workflows
+#			for open source intelligence gathering.
+# Author:		John
+# URL:			https://github.com/SWORDIntel/SENTINEL/
+# Version:		1.0.0
+# Stability:		stable
+# Tags:			osint, intelligence, security, suggestions
+# Provides:		osint_intelligence
+# Requires:		python3, numpy, scipy, scikit-learn, requests, tqdm, npyscreen
+# Conflicts:
+### END MODULE INFO
+
+# Check if module is enabled in bash_modules
+if [[ "${SENTINEL_OSINT_ENABLED:-0}" != "1" ]]; then
+    echo "SENTINEL OSINT module is disabled."
+    echo "To enable, add the following line to your ~/.bashrc.postcustom file:"
+    echo "  export SENTINEL_OSINT_ENABLED=1"
+    return 0
+fi
 
 # Check dependencies
 SENTINEL_OSINT_ENABLED=0

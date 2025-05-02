@@ -150,6 +150,56 @@ install_module() {
         echo "$module_name" >> "${HOME}/.bash_modules"
         echo -e "${GREEN}Enabled ${module_name} module${NC}"
     fi
+    
+    # Sign the module with HMAC if openssl is available
+    sign_module "$module_name"
+}
+
+# Function to sign a module with HMAC
+sign_module() {
+    local module_name="$1"
+    local module_file="${HOME}/.bash_modules.d/${module_name}.module"
+    
+    # Check if openssl is available
+    if command -v openssl &>/dev/null && [ -f "$module_file" ]; then
+        echo -e "${GREEN}Signing ${module_name} module with HMAC...${NC}"
+        
+        # Generate a default HMAC key if one doesn't exist
+        local hmac_key_file="${HOME}/.sentinel/hmac_key"
+        local hmac_key
+        
+        if [ ! -f "$hmac_key_file" ]; then
+            # Create .sentinel directory if it doesn't exist
+            mkdir -p "${HOME}/.sentinel" 2>/dev/null
+            
+            # Generate a random key
+            if command -v uuidgen &>/dev/null; then
+                hmac_key=$(uuidgen)
+            else
+                hmac_key=$(openssl rand -hex 16)
+            fi
+            
+            # Save the key
+            echo "$hmac_key" > "$hmac_key_file"
+            chmod 600 "$hmac_key_file"
+            echo -e "${GREEN}Generated HMAC key for module verification${NC}"
+        else
+            # Read existing key
+            hmac_key=$(cat "$hmac_key_file")
+        fi
+        
+        # Generate HMAC signature
+        local hmac=$(openssl dgst -sha256 -hmac "$hmac_key" "$module_file" | cut -d' ' -f2)
+        echo "$hmac" > "${module_file}.hmac"
+        chmod 600 "${module_file}.hmac"
+        
+        echo -e "${GREEN}Module ${module_name} signed with HMAC${NC}"
+        
+        return 0
+    else
+        echo -e "${YELLOW}openssl not found, module not signed with HMAC${NC}"
+        return 1
+    fi
 }
 
 # Function to check for dependencies
@@ -665,6 +715,18 @@ if [ -f "$POSTCUSTOM" ]; then
         echo "export PATH=\"/usr/lib/ccache/bin:/usr/lib/distcc/bin:\${PATH}\"" >> "$POSTCUSTOM"
         echo -e "${GREEN}Added distcc environment variables to .bashrc.postcustom${NC}"
     fi
+    
+    # Add module security configuration if not present
+    if ! grep -q "SENTINEL_VERIFY_MODULES" "$POSTCUSTOM"; then
+        echo "" >> "$POSTCUSTOM"
+        echo "# Module security configuration" >> "$POSTCUSTOM"
+        echo "export SENTINEL_VERIFY_MODULES=0         # Enable HMAC verification for modules" >> "$POSTCUSTOM"
+        echo "export SENTINEL_REQUIRE_HMAC=1           # Require HMAC signatures for all modules" >> "$POSTCUSTOM"
+        echo "export SENTINEL_CHECK_MODULE_CONTENT=0   # Check modules for suspicious patterns" >> "$POSTCUSTOM"
+        echo "export SENTINEL_DEBUG_MODULES=0          # Enable debug mode for module loading" >> "$POSTCUSTOM"
+        echo "# export SENTINEL_HMAC_KEY=\"random_string\" # Custom HMAC key (uncomment and set for better security)" >> "$POSTCUSTOM"
+        echo -e "${GREEN}Added module security configuration to .bashrc.postcustom${NC}"
+    fi
 fi
 
 # Step 10: Setting up Machine Learning features
@@ -859,8 +921,8 @@ fi
 
 # Install chat module
 echo -e "${GREEN}Installing sentinel_chat module...${NC}"
-if [ -f "./bash_modules.d/sentinel_chat" ]; then
-    cp -v "./bash_modules.d/sentinel_chat" "${HOME}/.bash_modules.d/sentinel_chat"
+if [ -f "./bash_modules.d/sentinel_chat.module" ]; then
+    cp -v "./bash_modules.d/sentinel_chat.module" "${HOME}/.bash_modules.d/sentinel_chat"
     chmod 700 "${HOME}/.bash_modules.d/sentinel_chat"
     echo -e "${GREEN}Installed sentinel_chat module${NC}"
     
@@ -884,9 +946,45 @@ fi
 # Copy sentchat module files
 echo -e "${GREEN}Installing sentchat module files...${NC}"
 if [ -d "./bash_modules.d/sentchat" ]; then
+    # Create Python module structure
+    mkdir -p "${HOME}/.sentinel/sentchat"
+    
+    # Create __init__.py to make it a proper module
+    cat > "${HOME}/.sentinel/sentchat/__init__.py" << EOF
+"""
+SENTINEL Chat module - Provides context-aware conversational AI for the shell
+"""
+
+__version__ = "1.0.0"
+EOF
+    
+    # Copy module files
     cp -rv "./bash_modules.d/sentchat/"* "${HOME}/.bash_modules.d/sentchat/"
     find "${HOME}/.bash_modules.d/sentchat" -type f -name "*.sh" -o -name "*.module" -exec chmod 700 {} \;
+    
+    # Copy additional Python files that might be part of the sentchat module
+    if [ -f "./contrib/sentinel_chat_context.py" ]; then
+        cp -v "./contrib/sentinel_chat_context.py" "${HOME}/.sentinel/sentchat/"
+    fi
+    
+    if [ -f "./contrib/sentinel_context.py" ]; then
+        cp -v "./contrib/sentinel_context.py" "${HOME}/.sentinel/sentchat/"
+    fi
+    
+    # Add the sentchat module to Python path if virtual env is activated
+    if [ -f "$VENV_DIR/bin/activate" ]; then
+        . "$VENV_DIR/bin/activate"
+        
+        # Create .pth file to add .sentinel directory to Python path
+        SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+        echo "${HOME}/.sentinel" > "${SITE_PACKAGES}/sentinel.pth"
+        
+        deactivate
+    fi
+    
     echo -e "${GREEN}Installed sentchat module files${NC}"
+else
+    echo -e "${YELLOW}sentchat module not found, skipping${NC}"
 fi
 
 # Fix permissions for any Python scripts
@@ -894,7 +992,28 @@ echo -e "${GREEN}Fixing permissions for Python scripts...${NC}"
 find "${HOME}/.sentinel" -type f -name "*.py" -exec chmod 700 {} \;
 find "${HOME}/.bash_modules.d" -type f -name "*.sh" -o -name "*.module" -exec chmod 700 {} \;
 
+# Sign all modules with HMAC for security
+echo -e "\n${BLUE}${BOLD}Step 12: Signing modules with HMAC for security${NC}"
+echo -e "${GREEN}Signing installed modules with HMAC for integrity verification...${NC}"
+for module_file in "${HOME}/.bash_modules.d/"*.module; do
+    if [ -f "$module_file" ]; then
+        module_name=$(basename "$module_file" .module)
+        sign_module "$module_name"
+    fi
+done
+
+# Create the HMAC key environment variable in bashrc.postcustom
+if [ -f "${HOME}/.sentinel/hmac_key" ] && [ -f "$POSTCUSTOM" ]; then
+    hmac_key=$(cat "${HOME}/.sentinel/hmac_key")
+    # Only add if not already set
+    if ! grep -q "SENTINEL_HMAC_KEY=" "$POSTCUSTOM"; then
+        sed -i 's/# export SENTINEL_HMAC_KEY="random_string"/export SENTINEL_HMAC_KEY="'"$hmac_key"'"/' "$POSTCUSTOM"
+        echo -e "${GREEN}Added HMAC key to .bashrc.postcustom${NC}"
+    fi
+fi
+
 # Create wrapper scripts for Python utilities that use the virtual environment
+echo -e "\n${BLUE}${BOLD}Step 13: Creating Python virtual environment wrappers${NC}"
 echo -e "${GREEN}Creating virtual environment wrappers for Python scripts...${NC}"
 SENTINEL_WRAPPERS="${HOME}/.sentinel/wrappers"
 create_directory "$SENTINEL_WRAPPERS"
@@ -974,6 +1093,9 @@ ${BLUE}Module Management:${NC}
   module_enable <name>    - Enable a module
   module_disable <name>   - Disable a module
   module_info <name>      - Show information about a module
+  module_sign <name>      - Sign a module with HMAC for verification
+  module_debug [on|off]   - Toggle debug mode for module loading
+  module_diagnose         - Run diagnostics on the module system
   
 ${BLUE}Navigation:${NC}
   j [-a|-l|-r <num>|<name>] - Directory jumping tool
@@ -984,6 +1106,12 @@ ${BLUE}Security Modules:${NC}
   obfuscate_check_tools   - Check for obfuscation tools
   hashdetect <hash>       - Identify hash type
   hashcrack <hash>        - Crack a hash with auto-detection
+  
+${BLUE}Module Security:${NC}
+  module_sign <name>      - Sign a module with HMAC
+  module_verify <name>    - Verify a module's HMAC signature
+  module_verbose [on|off] - Toggle verbose mode for modules
+  module_debug [on|off]   - Toggle debug mode for modules
   
 ${BLUE}Build Environment:${NC}
   distcc-help             - Show distcc module help
@@ -1021,6 +1149,12 @@ For more detailed help on specific features:
 ${YELLOW}Workspace directories:${NC}
   ~/secure_workspace/     - For security-related files
   ~/build_workspace/      - For compilation projects
+  
+${YELLOW}Security configuration:${NC}
+  ~/.bashrc.postcustom    - Contains security settings
+  SENTINEL_VERIFY_MODULES=1  - Enable HMAC verification
+  SENTINEL_REQUIRE_HMAC=1    - Require HMAC signatures
+  SENTINEL_HMAC_KEY          - Key for HMAC signatures
 HELPTEXT
 }
 EOF
