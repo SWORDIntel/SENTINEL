@@ -19,10 +19,68 @@
 _sentinel_check_blesh() {
     if ! command -v blesh &>/dev/null; then
         echo "Installing ble.sh (Bash Line Editor) for advanced autocompletion..."
-        mkdir -p ~/.local/share/blesh
-        git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git /tmp/blesh
-        make -C /tmp/blesh install PREFIX=~/.local
-        rm -rf /tmp/blesh
+        
+        # Ensure sentinel directory exists for scripts
+        mkdir -p ~/.sentinel
+        
+        # Aggressively clean up any existing blesh directories before installation
+        echo "Cleaning up any existing ble.sh directories..."
+        (
+            # Try to forcefully remove any existing blesh directories
+            find /tmp -maxdepth 1 -type d -name "blesh*" | while read dir; do
+                echo "Removing $dir..."
+                # First try unlinking any problematic files
+                find "$dir" -type f -name "*.lock" -delete 2>/dev/null || true
+                find "$dir" -type f -not -readable -exec rm -f {} \; 2>/dev/null || true
+                # Then set permissions and remove
+                chmod -R 755 "$dir" 2>/dev/null || true
+                rm -rf "$dir" 2>/dev/null || true
+            done
+        )
+        
+        # Create a unique temporary directory instead of reusing /tmp/blesh
+        local tmp_dir="/tmp/blesh_$$_$(date +%s)"
+        
+        # Clone the repository to the unique temporary directory
+        echo "Cloning ble.sh to $tmp_dir..."
+        git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+            mkdir -p ~/.local/share/blesh
+            echo "Compiling and installing ble.sh..."
+            make -C "$tmp_dir" install PREFIX=~/.local 2>/tmp/blesh_make.log || {
+                echo "Error during ble.sh compilation. See /tmp/blesh_make.log for details."
+                rm -rf "$tmp_dir" 2>/dev/null || true
+                return 1
+            }
+            
+            # Cleanup the temporary directory
+            rm -rf "$tmp_dir" 2>/dev/null || {
+                echo "Warning: Could not remove temporary directory $tmp_dir."
+                echo "Will try to clean up on next login."
+                # Add cleanup script to be run at next login
+                cat > ~/.sentinel/cleanup_blesh.sh << EOF
+#!/bin/bash
+if [[ -d "$tmp_dir" ]]; then
+    chmod -R 755 "$tmp_dir" 2>/dev/null
+    rm -rf "$tmp_dir" 2>/dev/null
+    echo "Cleaned up temporary ble.sh installation directory."
+fi
+# Also try to clean up the original directory if it exists
+if [[ -d "/tmp/blesh" ]]; then
+    chmod -R 755 "/tmp/blesh" 2>/dev/null
+    rm -rf "/tmp/blesh" 2>/dev/null
+    echo "Cleaned up old ble.sh installation directory."
+fi
+rm -f ~/.sentinel/cleanup_blesh.sh
+EOF
+                chmod +x ~/.sentinel/cleanup_blesh.sh
+            }
+            echo "ble.sh installation complete."
+        else
+            echo "Failed to clone ble.sh repository. Advanced autocompletion will be limited."
+            # Try to clean up any existing directories in background
+            (chmod -R 755 /tmp/blesh* 2>/dev/null; rm -rf /tmp/blesh* 2>/dev/null) &
+        fi
     fi
 }
 
@@ -30,6 +88,27 @@ _sentinel_check_blesh() {
 _sentinel_ensure_directories() {
     # Create directory for saved snippets
     mkdir -p ~/.sentinel/autocomplete/{snippets,context,projects}
+    
+    # Clean up orphaned blesh installation directories if they exist
+    _sentinel_cleanup_blesh_dirs() {
+        local dirs=($(find /tmp -maxdepth 1 -type d -name "blesh*" -mtime +1 2>/dev/null))
+        if [[ ${#dirs[@]} -gt 0 ]]; then
+            echo "Cleaning up orphaned ble.sh installation directories..."
+            for dir in "${dirs[@]}"; do
+                chmod -R 755 "$dir" 2>/dev/null
+                rm -rf "$dir" 2>/dev/null && echo "Removed $dir" || echo "Failed to remove $dir"
+            done
+        fi
+        
+        # Also run the cleanup script if it exists
+        if [[ -f ~/.sentinel/cleanup_blesh.sh ]]; then
+            echo "Running pending cleanup tasks..."
+            bash ~/.sentinel/cleanup_blesh.sh
+        fi
+    }
+    
+    # Run cleanup in background
+    (_sentinel_cleanup_blesh_dirs) &
     
     # Create command category database if it doesn't exist
     if [[ ! -f ~/.sentinel/autocomplete/categories.db ]]; then
@@ -80,30 +159,53 @@ _sentinel_configure_autocomplete() {
     if [[ -f ~/.local/share/blesh/ble.sh ]]; then
         # We're adding this to the current environment rather than .bashrc to avoid 
         # double-loading, as SENTINEL handles this file centrally
-        source ~/.local/share/blesh/ble.sh
+        source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+        
+        # Check if ble.sh loaded correctly
+        if ! type -t ble-bind &>/dev/null; then
+            echo "Warning: ble.sh did not load properly. Advanced autocompletion features will be limited."
+            return
+        fi
+        
+        # Use the correct blehook syntax based on help documentation
+        # First ensure our hook exists by checking it - if empty we'll create it
+        if type -t blehook &>/dev/null; then
+            # List existing hooks
+            if ! blehook ATTACH_LINE_END 2>/dev/null | grep -q .; then
+                # Hook doesn't exist or is empty, initialize it with a dummy function
+                # that we'll override later (using the += syntax)
+                blehook ATTACH_LINE_END='true' 2>/dev/null || true
+            fi
+        else
+            echo "Warning: blehook command not available. Some autocompletion features will be disabled."
+            return
+        fi
         
         # Configure ble.sh for PowerShell-like behavior
         # Enable auto suggestions
-        bleopt complete_auto_delay=100
-        bleopt complete_auto_complete=1
+        bleopt complete_auto_delay=100 2>/dev/null || true
+        bleopt complete_auto_complete=1 2>/dev/null || true
         
         # Set suggestion style to be grey (similar to PowerShell)
-        bleopt highlight_auto_completion='fg=242'
+        bleopt highlight_auto_completion='fg=242' 2>/dev/null || true
         
         # Configure right arrow to accept suggestions
-        ble-bind -m auto_complete -f right 'accept-auto-complete'
+        ble-bind -m auto_complete -f right 'auto_complete/accept-line' 2>/dev/null || true
+        
+        # Alternative mappings for menu completion
+        ble-bind -m auto_complete -f tab 'menu_complete/accept' 2>/dev/null || true
         
         # History-based completion
-        bleopt complete_ambiguous=1
-        bleopt complete_auto_history=1
+        bleopt complete_ambiguous=1 2>/dev/null || true
+        bleopt complete_auto_history=1 2>/dev/null || true
         
         # Additional key bindings similar to PowerShell
         # Ctrl+Space for menu completion
-        ble-bind -m emacs -f C-space 'menu-complete'
+        ble-bind -m emacs -f C-space 'menu_complete' 2>/dev/null || true
         
         # Enable history search with arrow keys when typing
-        ble-bind -m emacs -f up '@history-search-backward'
-        ble-bind -m emacs -f down '@history-search-forward'
+        ble-bind -m emacs -f up '@history-search-backward' 2>/dev/null || true
+        ble-bind -m emacs -f down '@history-search-forward' 2>/dev/null || true
         
         # HMAC-signed token generation for enhanced security
         # Uses a strong cryptographic approach to mitigate SSRF attacks
@@ -153,8 +255,13 @@ _sentinel_configure_autocomplete() {
             fi
         }
         
-        # Register the category hook
-        blehook ATTACH_LINE_END+=_sentinel_category_hook
+        # Register hooks safely - check command exists first
+        if type -t blehook &>/dev/null; then
+            blehook ATTACH_LINE_END+=_sentinel_category_hook 2>/dev/null || true
+            blehook ATTACH_LINE_END+=_sentinel_context_aware_suggest 2>/dev/null || true
+            blehook ATTACH_LINE_END+=_sentinel_smart_param_complete 2>/dev/null || true
+            blehook ATTACH_LINE_END+=_sentinel_project_suggestions 2>/dev/null || true
+        fi
         
         # FEATURE 2: Context-Aware Suggestions
         _sentinel_context_aware_suggest() {
@@ -222,9 +329,6 @@ _sentinel_configure_autocomplete() {
             } > "$context_file"
         }
         
-        # Register context-aware hook
-        blehook ATTACH_LINE_END+=_sentinel_context_aware_suggest
-        
         # FEATURE 3: Smart Parameter Completion
         _sentinel_smart_param_complete() {
             local command_line="${READLINE_LINE:-}"
@@ -256,9 +360,6 @@ _sentinel_configure_autocomplete() {
                 done < "$param_file"
             fi
         }
-        
-        # Register parameter completion hook
-        blehook ATTACH_LINE_END+=_sentinel_smart_param_complete
         
         # FEATURE 4: Custom Snippet Expansion with HMAC security
         _sentinel_register_snippets() {
@@ -781,9 +882,6 @@ fi"
                 done
             fi
         }
-        
-        # Register project suggestions hook
-        blehook ATTACH_LINE_END+=_sentinel_project_suggestions
     fi
 }
 
@@ -1079,6 +1177,9 @@ sentinel_setup_autocomplete() {
     # First check if we're in an interactive shell
     [[ $- != *i* ]] && return
     
+    # Ensure necessary directories exist (this will also trigger cleanup)
+    _sentinel_ensure_directories
+    
     # Display a progress indicator during setup
     if [[ -t 1 ]]; then
         echo -n "Setting up advanced autocompletion... "
@@ -1087,35 +1188,24 @@ sentinel_setup_autocomplete() {
     # Check and install ble.sh if needed
     _sentinel_check_blesh
     
-    # Ensure necessary directories exist
-    _sentinel_ensure_directories
-    
-    # Configure autocomplete
-    _sentinel_configure_autocomplete
-    
-    # Register fuzzy command correction
-    _sentinel_register_fuzzy_correction
-    
-    # Enable command chain prediction
-    _sentinel_command_chain_predictor
+    # Configure autocomplete in the background to prevent blocking
+    {
+        _sentinel_configure_autocomplete
+        
+        # Register fuzzy command correction
+        _sentinel_register_fuzzy_correction
+        
+        # Enable command chain prediction
+        _sentinel_command_chain_predictor
+        
+        # Add a helpful logging message
+        logger -t "SENTINEL" "Autocomplete module initialized with enhanced features" 2>/dev/null || true
+    } &
     
     # Inform user of completion
     if [[ -t 1 ]]; then
         echo "Done!"
-        echo "Right arrow accepts suggestions, Ctrl+Space shows completion menu."
-        echo "History search with up/down arrows is enabled."
-        echo "New features enabled:"
-        echo "  - Command category recognition (color-coded by command type)"
-        echo "  - Context-aware suggestions (directory & git awareness)"
-        echo "  - Smart parameter completion (learns from your usage)"
-        echo "  - Secure snippet expansion (use snippet:<name> abbreviations)"
-        echo "  - Fuzzy command correction (suggests corrections for typos)"
-        echo "  - Project-specific suggestions (detects project type)"
-        echo "  - Command chain predictions (suggests next commands)"
     fi
-    
-    # Add a helpful logging message
-    logger -t "SENTINEL" "Autocomplete module initialized with enhanced features"
 }
 
 # Run the setup function
