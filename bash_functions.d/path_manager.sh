@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SENTINEL Path Manager
 # Persistent path management solution for SENTINEL framework
-# Last Update: $(date +%Y-%m-%d)
+# Last Update: 2023-08-14
 
 # Path configuration file
 PATH_CONFIG_FILE="${HOME}/.sentinel_paths"
