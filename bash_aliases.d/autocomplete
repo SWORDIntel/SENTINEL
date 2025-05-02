@@ -17,6 +17,9 @@
 # Required package: ble.sh (Bash Line Editor)
 # This is an external tool we'll need to check for and install if necessary
 _sentinel_check_blesh() {
+    # Create sentinel directory if it doesn't exist yet
+    mkdir -p ~/.sentinel/autocomplete
+
     if ! command -v blesh &>/dev/null; then
         echo "Installing ble.sh (Bash Line Editor) for advanced autocompletion..."
         
@@ -76,10 +79,71 @@ EOF
                 chmod +x ~/.sentinel/cleanup_blesh.sh
             }
             echo "ble.sh installation complete."
+            
+            # Create a simple loader for immediate usage
+            cat > ~/.sentinel/blesh_loader.sh << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL ble.sh integration loader
+# This script loads ble.sh with proper error handling
+
+# Try to load ble.sh
+if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    source ~/.local/share/blesh/ble.sh 2>/dev/null
+    if ! type -t ble-bind &>/dev/null; then
+        echo "Warning: ble.sh did not load properly. Trying alternative loading method..."
+        # Try alternative loading with a different approach
+        source <(cat ~/.local/share/blesh/ble.sh) 2>/dev/null
+        
+        if ! type -t ble-bind &>/dev/null; then
+            echo "Warning: ble.sh could not be loaded. Using basic autocompletion instead."
+            # Load bash standard completion as fallback
+            [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+        fi
+    fi
+fi
+EOF
+            chmod +x ~/.sentinel/blesh_loader.sh
+            
+            # Try to source the loader immediately for this session
+            source ~/.sentinel/blesh_loader.sh 2>/dev/null || true
         else
             echo "Failed to clone ble.sh repository. Advanced autocompletion will be limited."
             # Try to clean up any existing directories in background
             (chmod -R 755 /tmp/blesh* 2>/dev/null; rm -rf /tmp/blesh* 2>/dev/null) &
+        fi
+    elif [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        # ble.sh binary is available but we should verify it works
+        if ! type -t ble-bind &>/dev/null; then
+            echo "ble.sh command found but functions aren't loaded. Attempting to load..."
+            # Try loading with our secure loader
+            if [[ -f ~/.sentinel/blesh_loader.sh ]]; then
+                source ~/.sentinel/blesh_loader.sh 2>/dev/null || true
+            else
+                # Create the loader if it doesn't exist
+                cat > ~/.sentinel/blesh_loader.sh << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL ble.sh integration loader
+# This script loads ble.sh with proper error handling
+
+# Try to load ble.sh
+if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    source ~/.local/share/blesh/ble.sh 2>/dev/null
+    if ! type -t ble-bind &>/dev/null; then
+        echo "Warning: ble.sh did not load properly. Trying alternative loading method..."
+        # Try alternative loading with a different approach
+        source <(cat ~/.local/share/blesh/ble.sh) 2>/dev/null
+        
+        if ! type -t ble-bind &>/dev/null; then
+            echo "Warning: ble.sh could not be loaded. Using basic autocompletion instead."
+            # Load bash standard completion as fallback
+            [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+        fi
+    fi
+fi
+EOF
+                chmod +x ~/.sentinel/blesh_loader.sh
+                source ~/.sentinel/blesh_loader.sh 2>/dev/null || true
+            fi
         fi
     fi
 }
