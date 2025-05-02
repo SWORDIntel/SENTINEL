@@ -1,78 +1,96 @@
-#!/usr/bin/env bash
+#!/bin/bash
+
 # SENTINEL Autocomplete Fix Script
-# This script fixes issues with the autocomplete module and ble.sh integration
+# This script fixes issues with the SENTINEL autocomplete module
 
-# Continue on errors but report them
-set +e
+# Color variables
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-echo "SENTINEL Autocomplete Module Fix"
-echo "==============================="
+echo -e "${BLUE}SENTINEL Autocomplete Fix Script${NC}"
+echo -e "${BLUE}=================================${NC}"
 
-# Add error handling function
-handle_error() {
-  echo "ERROR: $1"
-  # Continue despite errors
-}
-
-# Ensure proper permissions on all script files
-echo "Setting executable permissions on all script files..."
-find bash_functions.d/ -type f -exec chmod +x {} \; 2>/dev/null || handle_error "Could not set permissions on some files in bash_functions.d/"
-find bash_aliases.d/ -type f -exec chmod +x {} \; 2>/dev/null || handle_error "Could not set permissions on some files in bash_aliases.d/"
-find bash_modules.d/ -type f -exec chmod +x {} \; 2>/dev/null || handle_error "Could not set permissions on some files in bash_modules.d/"
-find bash_completion.d/ -type f -exec chmod +x {} \; 2>/dev/null || handle_error "Could not set permissions on some files in bash_completion.d/"
-
-# Ensure proper directories exist
-echo "Creating required directories..."
-mkdir -p ~/.sentinel/autocomplete/snippets 2>/dev/null
-mkdir -p ~/.sentinel/autocomplete/context 2>/dev/null
-mkdir -p ~/.sentinel/autocomplete/projects 2>/dev/null
-mkdir -p ~/.sentinel/autocomplete/params 2>/dev/null
-
-# Aggressive cleanup of ble.sh cache files
-echo "Aggressively cleaning ble.sh cache files..."
-if [[ -d ~/.cache/blesh ]]; then
-  # First try to fix permissions
-  chmod -R 755 ~/.cache/blesh 2>/dev/null || handle_error "Failed to fix permissions on ~/.cache/blesh"
-  
-  # Try to remove specific problematic files
-  echo "Removing potentially corrupted cache files..."
-  find ~/.cache/blesh -type f -name "*.part" -delete 2>/dev/null || true
-  find ~/.cache/blesh -type f -name "decode.readline*.txt*" -delete 2>/dev/null || true
-  
-  # Clean up the entire 0.4 directory that's causing problems
-  if [[ -d ~/.cache/blesh/0.4 ]]; then
-    echo "Removing problematic blesh cache directory..."
-    chmod -R 755 ~/.cache/blesh/0.4 2>/dev/null || true
-    rm -rf ~/.cache/blesh/0.4 2>/dev/null || handle_error "Failed to remove ~/.cache/blesh/0.4"
-  fi
+# Check if running as root
+if [[ $EUID -eq 0 ]]; then
+    echo -e "${RED}This script should not be run as root${NC}"
+    exit 1
 fi
 
-# Create a simple ble.sh loader
-echo "Creating ble.sh loader script..."
+# Step 1: Clean up any existing BLE.sh installations
+echo -e "\n${BLUE}Step 1: Cleaning up existing BLE.sh installations${NC}"
+
+# Clean up cache directories
+echo -e "${YELLOW}Cleaning BLE.sh cache directories...${NC}"
+rm -rf ~/.cache/blesh 2>/dev/null
+mkdir -p ~/.cache/blesh
+chmod 755 ~/.cache/blesh
+echo -e "${GREEN}✓ BLE.sh cache directories cleaned${NC}"
+
+# Remove temporary files
+echo -e "${YELLOW}Removing temporary BLE.sh files...${NC}"
+find /tmp -maxdepth 1 -type d -name "blesh*" | while read dir; do
+    echo "  Removing $dir"
+    chmod -R 755 "$dir" 2>/dev/null
+    rm -rf "$dir" 2>/dev/null
+done
+echo -e "${GREEN}✓ Temporary BLE.sh files removed${NC}"
+
+# Step 2: Check if BLE.sh is properly installed
+echo -e "\n${BLUE}Step 2: Checking BLE.sh installation${NC}"
+if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    echo -e "${GREEN}✓ BLE.sh is installed${NC}"
+else
+    echo -e "${YELLOW}BLE.sh is not installed. Installing now...${NC}"
+    
+    # Create a temporary directory for installation
+    tmp_dir="/tmp/blesh_fix_$$_$(date +%s)"
+    mkdir -p "$tmp_dir"
+    
+    # Clone the repository
+    echo "  Cloning BLE.sh repository..."
+    git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null
+    
+    if [[ $? -eq 0 ]]; then
+        # Install BLE.sh
+        echo "  Installing BLE.sh..."
+        mkdir -p ~/.local/share/blesh
+        make -C "$tmp_dir" install PREFIX=~/.local 2>/tmp/blesh_make.log
+        
+        if [[ $? -eq 0 ]]; then
+            echo -e "${GREEN}✓ BLE.sh installed successfully${NC}"
+        else
+            echo -e "${RED}✗ Failed to install BLE.sh. See /tmp/blesh_make.log for details${NC}"
+        fi
+        
+        # Clean up
+        rm -rf "$tmp_dir" 2>/dev/null
+    else
+        echo -e "${RED}✗ Failed to clone BLE.sh repository${NC}"
+    fi
+fi
+
+# Step 3: Create or update the BLE.sh loader script
+echo -e "\n${BLUE}Step 3: Creating BLE.sh loader script${NC}"
+mkdir -p ~/.sentinel
+
 cat > ~/.sentinel/blesh_loader.sh << 'EOF'
 #!/usr/bin/env bash
 # SENTINEL ble.sh integration loader
 # This script loads ble.sh with proper error handling
 
-# Clean up any stale cache files that might be causing issues
-cleanup_stale_cache() {
-  if [[ -d ~/.cache/blesh ]]; then
-    # Try to fix permissions
-    chmod -R 755 ~/.cache/blesh 2>/dev/null || true
-    
-    # Attempt to clean any .part files that might be causing issues
-    find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null || true
-    
-    # Clean decode.readline files that are causing errors
-    find ~/.cache/blesh -name "decode.readline.*.txt*" -type f -delete 2>/dev/null || true
-  fi
-}
-
-# Run cleanup before loading
-cleanup_stale_cache
+# Ensure cache directory exists with proper permissions
+mkdir -p ~/.cache/blesh 2>/dev/null
+chmod 755 ~/.cache/blesh 2>/dev/null
 
 # Try to load ble.sh
 if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    # Configure BLE to disable unused module caching files that cause errors
+    export _ble_suppress_stderr=1
+    export _ble_keymap_initialize=0
+    
     source ~/.local/share/blesh/ble.sh 2>/dev/null
     if ! type -t ble-bind &>/dev/null; then
         echo "Warning: ble.sh did not load properly. Trying alternative loading method..."
@@ -84,69 +102,202 @@ if [[ -f ~/.local/share/blesh/ble.sh ]]; then
             # Load bash standard completion as fallback
             [[ -f /etc/bash_completion ]] && source /etc/bash_completion
         fi
-    else
-        # Configure predictive suggestion settings
-        bleopt complete_auto_delay=100 2>/dev/null || true
-        bleopt complete_auto_complete=1 2>/dev/null || true
-        bleopt highlight_auto_completion='fg=242' 2>/dev/null || true
-        
-        # Configure key bindings
-        ble-bind -m auto_complete -f right 'auto_complete/accept-line' 2>/dev/null || true
     fi
 fi
 EOF
-chmod +x ~/.sentinel/blesh_loader.sh || handle_error "Failed to set permissions on blesh_loader.sh"
 
-# Create fix for path_manager.sh if it's causing problems
-echo "Creating path_manager fix script..."
-cat > ~/.sentinel/fix_path_manager.sh << 'EOF'
-#!/usr/bin/env bash
-# Fix for path_manager.sh loading issues
+chmod +x ~/.sentinel/blesh_loader.sh
+echo -e "${GREEN}✓ BLE.sh loader script created${NC}"
 
-# Create a simplified version of the PATH management functionality
-PATH_CONFIG_FILE="${HOME}/.sentinel_paths"
+# Step 4: Add the @autocomplete command to bash_aliases
+echo -e "\n${BLUE}Step 4: Creating @autocomplete command${NC}"
 
-# Initialize path config file if it doesn't exist
-[[ ! -f "${PATH_CONFIG_FILE}" ]] && touch "${PATH_CONFIG_FILE}"
-
-# Load paths from configuration
-load_custom_paths() {
-    if [[ -f "${PATH_CONFIG_FILE}" ]]; then
-        while IFS= read -r path_entry; do
-            # Skip comments and empty lines
-            [[ -z "${path_entry}" || "${path_entry}" =~ ^# ]] && continue
+# Create a temporary autocomplete command file
+cat > /tmp/autocomplete_command.sh << 'EOF'
+# Function to handle @autocomplete command directly
+_sentinel_autocomplete_command() {
+    local cmd="$1"
+    shift
+    
+    case "$cmd" in
+        help|--help|-h|"")
+            # Show help information
+            echo -e "\033[1;32mSENTINEL Autocomplete Commands:\033[0m"
+            echo -e "  \033[1;34m@autocomplete\033[0m                   - Show this help"
+            echo -e "  \033[1;34m@autocomplete status\033[0m            - Check autocomplete status"
+            echo -e "  \033[1;34m@autocomplete fix\033[0m               - Fix common issues"
+            echo -e "  \033[1;34m@autocomplete reload\033[0m            - Reload BLE.sh"
+            echo -e "  \033[1;34m@autocomplete install\033[0m           - Force reinstall BLE.sh"
             
-            # Only add if directory exists and isn't already in PATH
-            if [[ -d "${path_entry}" && ":${PATH}:" != *":${path_entry}:"* ]]; then
-                export PATH="${path_entry}:${PATH}"
+            echo -e "\n\033[1;32mUsage:\033[0m"
+            echo -e "  - Press \033[1;34mTab\033[0m to see suggestions"
+            echo -e "  - Press \033[1;34mRight Arrow\033[0m to accept suggestion"
+            echo -e "  - Type \033[1;34m!!:fix\033[0m to correct last failed command"
+            echo -e "  - Type \033[1;34m!!:next\033[0m to run most likely next command"
+            
+            echo -e "\n\033[1;32mTroubleshooting:\033[0m"
+            echo -e "  If autocomplete isn't working, try:"
+            echo -e "  1. Run '@autocomplete fix'"
+            echo -e "  2. Close and reopen your terminal"
+            echo -e "  3. If still not working, run '@autocomplete install'"
+            ;;
+        status|--status|-s)
+            # Show status information
+            echo -e "\033[1;32mSENTINEL Autocomplete Status:\033[0m"
+            
+            # Check BLE.sh installation
+            echo -n "BLE.sh installation: "
+            if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+                echo -e "\033[1;32mInstalled\033[0m"
+            else
+                echo -e "\033[1;31mNot installed\033[0m"
             fi
-        done < "${PATH_CONFIG_FILE}"
-    fi
+            
+            # Check if BLE.sh is loaded
+            echo -n "BLE.sh loaded: "
+            if type -t ble-bind &>/dev/null; then
+                echo -e "\033[1;32mYes\033[0m"
+            else
+                echo -e "\033[1;31mNo\033[0m"
+            fi
+            
+            # Check cache directory permissions
+            echo -n "Cache directory: "
+            if [[ -d ~/.cache/blesh ]]; then
+                local perms=$(stat -c "%a" ~/.cache/blesh 2>/dev/null)
+                if [[ "$perms" == "755" ]]; then
+                    echo -e "\033[1;32mOK (permissions: $perms)\033[0m"
+                else
+                    echo -e "\033[1;33mWarning (permissions: $perms, should be 755)\033[0m"
+                    echo "To fix: chmod 755 ~/.cache/blesh"
+                fi
+            else
+                echo -e "\033[1;31mNot found\033[0m"
+                echo "To fix: mkdir -p ~/.cache/blesh && chmod 755 ~/.cache/blesh"
+            fi
+            ;;
+        fix|--fix|-f)
+            # Fix common issues
+            echo "Fixing common autocomplete issues..."
+            
+            # Fix cache directory permissions
+            mkdir -p ~/.cache/blesh 2>/dev/null
+            chmod 755 ~/.cache/blesh 2>/dev/null
+            echo "✓ Fixed cache directory permissions"
+            
+            # Clean up problematic cache files
+            find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
+            find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
+            echo "✓ Cleaned up cache files"
+            
+            # Clean up temporary installation directories
+            find /tmp -maxdepth 1 -type d -name "blesh*" | while read dir; do
+                chmod -R 755 "$dir" 2>/dev/null
+                rm -rf "$dir" 2>/dev/null
+            done
+            echo "✓ Cleaned up temporary installation directories"
+            
+            # Reload BLE.sh if available
+            if [[ -f ~/.sentinel/blesh_loader.sh ]]; then
+                source ~/.sentinel/blesh_loader.sh 2>/dev/null || true
+                echo "✓ Reloaded BLE.sh using loader script"
+            elif [[ -f ~/.local/share/blesh/ble.sh ]]; then
+                export _ble_suppress_stderr=1
+                export _ble_keymap_initialize=0
+                source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+                echo "✓ Reloaded BLE.sh directly"
+            fi
+            
+            echo -e "\nAll issues fixed. Please \033[1;32mclose and reopen your terminal\033[0m for changes to take full effect."
+            ;;
+        reload|--reload|-r)
+            # Re-initialize BLE.sh
+            if [[ -f ~/.sentinel/blesh_loader.sh ]]; then
+                source ~/.sentinel/blesh_loader.sh 2>/dev/null || true
+                echo "BLE.sh reloaded using loader script."
+            elif [[ -f ~/.local/share/blesh/ble.sh ]]; then
+                export _ble_suppress_stderr=1
+                export _ble_keymap_initialize=0
+                source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+                echo "BLE.sh reloaded directly."
+            else
+                echo "BLE.sh not installed. Run '@autocomplete fix' to install."
+            fi
+            ;;
+        install|--install|-i)
+            # Force reinstall BLE.sh
+            rm -rf ~/.local/share/blesh 2>/dev/null
+            echo "Reinstalling BLE.sh..."
+            
+            # Create a temporary directory for installation
+            local tmp_dir="/tmp/blesh_reinstall_$$_$(date +%s)"
+            mkdir -p "$tmp_dir"
+            
+            # Clone the repository
+            echo "  Cloning BLE.sh repository..."
+            git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null
+            
+            if [[ $? -eq 0 ]]; then
+                # Install BLE.sh
+                echo "  Installing BLE.sh..."
+                mkdir -p ~/.local/share/blesh
+                make -C "$tmp_dir" install PREFIX=~/.local 2>/tmp/blesh_make.log
+                
+                if [[ $? -eq 0 ]]; then
+                    echo "✓ BLE.sh installed successfully"
+                else
+                    echo "✗ Failed to install BLE.sh. See /tmp/blesh_make.log for details"
+                fi
+                
+                # Clean up
+                rm -rf "$tmp_dir" 2>/dev/null
+            else
+                echo "✗ Failed to clone BLE.sh repository"
+            fi
+            
+            echo "Installation complete. Please restart your terminal."
+            ;;
+        *)
+            echo "Unknown command: $cmd"
+            echo "Available commands: help, status, fix, reload, install"
+            ;;
+    esac
 }
 
-# Load custom paths
-load_custom_paths
+# Enable @autocomplete command
+function @autocomplete() {
+    _sentinel_autocomplete_command "$@"
+}
 EOF
-chmod +x ~/.sentinel/fix_path_manager.sh || handle_error "Failed to set permissions on fix_path_manager.sh"
 
-# Add loader to bashrc if not already there
-if ! grep -q "~/.sentinel/blesh_loader.sh" ~/.bashrc; then
-    echo "" >> ~/.bashrc
-    echo "# SENTINEL automatic fixes for ble.sh and path_manager" >> ~/.bashrc
-    echo "if [[ -f ~/.sentinel/blesh_loader.sh ]]; then" >> ~/.bashrc
-    echo "    source ~/.sentinel/blesh_loader.sh" >> ~/.bashrc
-    echo "fi" >> ~/.bashrc
-    echo "if [[ -f ~/.sentinel/fix_path_manager.sh ]]; then" >> ~/.bashrc
-    echo "    source ~/.sentinel/fix_path_manager.sh" >> ~/.bashrc
-    echo "fi" >> ~/.bashrc
-    echo "Added fixes to ~/.bashrc"
+# Check if the function already exists in autocomplete file
+if grep -q "@autocomplete()" "bash_aliases.d/autocomplete"; then
+    echo -e "${YELLOW}@autocomplete command already exists in autocomplete file${NC}"
 else
-    echo "Fixes already in ~/.bashrc"
+    # Add the @autocomplete command to the autocomplete file
+    cat /tmp/autocomplete_command.sh >> bash_aliases.d/autocomplete
+    echo -e "${GREEN}✓ @autocomplete command added to autocomplete file${NC}"
 fi
 
-echo ""
-echo "Fixes applied. Please open a new terminal or run the following commands:"
-echo "source ~/.sentinel/blesh_loader.sh"
-echo "source ~/.sentinel/fix_path_manager.sh"
-echo ""
-echo "If problems persist, you may need to rebuild the ble.sh cache by removing ~/.cache/blesh directory." 
+# Step 5: Source the updated autocomplete file
+echo -e "\n${BLUE}Step 5: Testing the fix${NC}"
+echo -e "${YELLOW}Sourcing autocomplete file...${NC}"
+source bash_aliases.d/autocomplete
+echo -e "${GREEN}✓ Autocomplete file sourced${NC}"
+
+# Step 6: Test the @autocomplete command
+echo -e "\n${BLUE}Step 6: Testing @autocomplete command${NC}"
+if type -t @autocomplete &>/dev/null; then
+    echo -e "${GREEN}✓ @autocomplete command is available${NC}"
+    echo -e "${YELLOW}Running @autocomplete status...${NC}"
+    @autocomplete status
+else
+    echo -e "${RED}✗ @autocomplete command is not available${NC}"
+fi
+
+# Cleanup
+rm -f /tmp/autocomplete_command.sh
+
+echo -e "\n${BLUE}Autocomplete fix complete!${NC}"
+echo -e "${YELLOW}Please restart your terminal or run 'source ~/.bashrc' to apply changes${NC}"
+echo -e "Type '@autocomplete' for help and available commands" 

@@ -11,7 +11,7 @@ chmod 755 ~/.cache/blesh
 
 # Source the autocomplete module
 echo "Loading autocomplete module..."
-source ./bash_aliases.d/autocomplete
+source ~/Documents/GitHub/SENTINEL/bash_aliases.d/autocomplete
 
 # Run status command
 echo -e "\nTesting @autocomplete command..."

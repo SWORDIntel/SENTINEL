@@ -136,6 +136,33 @@ done
 
 # Step 1B: Clean up cache files (especially ble.sh which causes problems)
 echo -e "\n${BLUE}${BOLD}Step 1B: Cleaning up cache files${NC}"
+
+# Check for and kill any ble.sh processes that might be keeping files locked
+echo -e "${YELLOW}Checking for ble.sh processes...${NC}"
+# Find any processes related to ble.sh
+BLESH_PROCS=$(ps -ef | grep -i ble.sh | grep -v grep | awk '{print $2}')
+if [ -n "$BLESH_PROCS" ]; then
+    echo -e "${YELLOW}Found ble.sh related processes:${NC}"
+    ps -f $BLESH_PROCS
+    read -p "$(echo -e "${YELLOW}Kill these processes? [y/N] ${NC}")" kill_procs
+    case "$kill_procs" in
+        'Y'|'y'|'yes')
+            echo -e "${YELLOW}Terminating ble.sh processes...${NC}"
+            for pid in $BLESH_PROCS; do
+                kill -9 $pid 2>/dev/null
+                echo "Terminated process: $pid" >> "$LOG_FILE"
+            done
+            echo -e "${GREEN}Processes terminated${NC}"
+            # Small delay to allow processes to exit
+            sleep 1
+            ;;
+        *)
+            echo -e "${YELLOW}Keeping processes running.${NC}"
+            echo "Skipped termination of ble.sh processes (user declined)" >> "$LOG_FILE"
+            ;;
+    esac
+fi
+
 if [ -d "${HOME}/.cache/blesh" ]; then
     echo -e "${YELLOW}Cleaning up ble.sh cache directory...${NC}"
     
@@ -365,6 +392,83 @@ if [ -d "${HOME}/.local/share/blesh" ]; then
             echo -e "${GREEN}Keeping ble.sh installation.${NC}"
             ;;
     esac
+fi
+
+# Step 5C: Security cleanup
+echo -e "\n${BLUE}${BOLD}Step 5C: Security cleanup${NC}"
+
+# Check for and securely remove sensitive files
+SENSITIVE_FILES=(
+    "${HOME}/.sentinel/auth_tokens"
+    "${HOME}/.sentinel/api_keys"
+    "${HOME}/.sentinel/secure_tokens"
+    "${HOME}/.sentinel/hmac_keys"
+    "${HOME}/.sentinel/credentials.json"
+    "${HOME}/.sentinel/tokens.db"
+)
+
+echo -e "${YELLOW}Checking for sensitive credential files...${NC}"
+FOUND_SENSITIVE=0
+for file in "${SENSITIVE_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        FOUND_SENSITIVE=1
+        echo -e "${YELLOW}Found sensitive file: $file${NC}"
+    fi
+done
+
+if [ $FOUND_SENSITIVE -eq 1 ]; then
+    echo -e "${RED}Warning: Sensitive credential files were found${NC}"
+    read -p "$(echo -e "${YELLOW}Securely delete these files? [Y/n] ${NC}")" secure_delete
+    case "$secure_delete" in
+        'N'|'n'|'no')
+            echo -e "${YELLOW}Skipping secure deletion. Files will be kept in backup.${NC}"
+            for file in "${SENSITIVE_FILES[@]}"; do
+                if [ -f "$file" ]; then
+                    backup_before_remove "$file"
+                fi
+            done
+            ;;
+        *)
+            echo -e "${YELLOW}Securely wiping sensitive files...${NC}"
+            for file in "${SENSITIVE_FILES[@]}"; do
+                if [ -f "$file" ]; then
+                    # Check for shred command
+                    if command -v shred &>/dev/null; then
+                        echo -e "${YELLOW}Securely wiping: $file${NC}"
+                        shred -u -z -n 3 "$file" 2>/dev/null && {
+                            echo "Securely wiped: $file" >> "$LOG_FILE"
+                        } || {
+                            echo -e "${RED}Failed to securely wipe $file${NC}"
+                            echo "Failed to securely wipe: $file" >> "$LOG_FILE"
+                            backup_before_remove "$file"
+                        }
+                    else
+                        # Fallback if shred not available
+                        echo -e "${YELLOW}Secure shred not available, overwriting with zeros: $file${NC}"
+                        dd if=/dev/zero of="$file" bs=1k count=1 conv=notrunc 2>/dev/null
+                        rm -f "$file" 2>/dev/null && {
+                            echo "Overwritten and removed: $file" >> "$LOG_FILE"
+                        } || {
+                            echo -e "${RED}Failed to overwrite and remove $file${NC}"
+                            echo "Failed to overwrite: $file" >> "$LOG_FILE"
+                            backup_before_remove "$file"
+                        }
+                    fi
+                fi
+            done
+            ;;
+    esac
+fi
+
+# Clean up any temporary security tokens in standard locations
+if [ -d "${HOME}/.cache/sentinel_tokens" ]; then
+    echo -e "${YELLOW}Removing temporary security tokens...${NC}"
+    rm -rf "${HOME}/.cache/sentinel_tokens" 2>/dev/null && {
+        echo "Removed temporary token directory" >> "$LOG_FILE"
+    } || {
+        echo -e "${RED}Failed to remove ${HOME}/.cache/sentinel_tokens${NC}"
+        echo "Failed to remove temporary token directory" >> "$LOG_FILE"
+    }
 fi
 
 # Step 6: Finalize uninstallation

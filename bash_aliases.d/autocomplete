@@ -86,8 +86,15 @@ EOF
 # SENTINEL ble.sh integration loader
 # This script loads ble.sh with proper error handling
 
+# Ensure cache directory exists with proper permissions
+mkdir -p ~/.cache/blesh 2>/dev/null
+chmod 755 ~/.cache/blesh 2>/dev/null
+
 # Try to load ble.sh
 if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    # Configure BLE to disable unused module caching files that cause errors
+    export _ble_suppress_stderr=1
+    
     source ~/.local/share/blesh/ble.sh 2>/dev/null
     if ! type -t ble-bind &>/dev/null; then
         echo "Warning: ble.sh did not load properly. Trying alternative loading method..."
@@ -112,6 +119,10 @@ EOF
             (chmod -R 755 /tmp/blesh* 2>/dev/null; rm -rf /tmp/blesh* 2>/dev/null) &
         fi
     elif [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        # Create and set permissions on BLE.sh cache directory
+        mkdir -p ~/.cache/blesh 2>/dev/null
+        chmod 755 ~/.cache/blesh 2>/dev/null
+        
         # ble.sh binary is available but we should verify it works
         if ! type -t ble-bind &>/dev/null; then
             echo "ble.sh command found but functions aren't loaded. Attempting to load..."
@@ -125,8 +136,15 @@ EOF
 # SENTINEL ble.sh integration loader
 # This script loads ble.sh with proper error handling
 
+# Ensure cache directory exists with proper permissions
+mkdir -p ~/.cache/blesh 2>/dev/null
+chmod 755 ~/.cache/blesh 2>/dev/null
+
 # Try to load ble.sh
 if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    # Configure BLE to disable unused module caching files that cause errors
+    export _ble_suppress_stderr=1
+    
     source ~/.local/share/blesh/ble.sh 2>/dev/null
     if ! type -t ble-bind &>/dev/null; then
         echo "Warning: ble.sh did not load properly. Trying alternative loading method..."
@@ -153,6 +171,10 @@ _sentinel_ensure_directories() {
     # Create directory for saved snippets
     mkdir -p ~/.sentinel/autocomplete/{snippets,context,projects}
     
+    # Create cache directory with proper permissions
+    mkdir -p ~/.cache/blesh 2>/dev/null
+    chmod 755 ~/.cache/blesh 2>/dev/null
+    
     # Clean up orphaned blesh installation directories if they exist
     _sentinel_cleanup_blesh_dirs() {
         local dirs=($(find /tmp -maxdepth 1 -type d -name "blesh*" -mtime +1 2>/dev/null))
@@ -162,6 +184,12 @@ _sentinel_ensure_directories() {
                 chmod -R 755 "$dir" 2>/dev/null
                 rm -rf "$dir" 2>/dev/null && echo "Removed $dir" || echo "Failed to remove $dir"
             done
+        fi
+        
+        # Also clean BLE.sh cache files that might be causing issues
+        if [[ -d ~/.cache/blesh ]]; then
+            find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
+            find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
         fi
         
         # Also run the cleanup script if it exists
@@ -217,12 +245,68 @@ EOF
     fi
 }
 
-# Configure predictive suggestion settings
+# Function to handle @autocomplete command directly
+_sentinel_autocomplete_command() {
+    local cmd="$1"
+    shift
+    
+    case "$cmd" in
+        help|--help|-h|"")
+            _sentinel_autocomplete_help
+            ;;
+        status|--status|-s)
+            _sentinel_autocomplete_status
+            ;;
+        fix|--fix|-f)
+            _sentinel_autocomplete_fix
+            ;;
+        reload|--reload|-r)
+            # Re-initialize BLE.sh
+            export _ble_suppress_stderr=1
+            if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+                source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+                echo "BLE.sh reloaded."
+            else
+                echo "BLE.sh not installed. Run '@autocomplete fix' to install."
+            fi
+            ;;
+        install|--install|-i)
+            # Force reinstall BLE.sh
+            rm -rf ~/.local/share/blesh 2>/dev/null
+            echo "Reinstalling BLE.sh..."
+            _sentinel_check_blesh
+            echo "Installation complete. Please restart your terminal."
+            ;;
+        *)
+            echo "Unknown command: $cmd"
+            echo "Available commands: help, status, fix, reload, install"
+            ;;
+    esac
+}
+
+# Enable @autocomplete command
+function @autocomplete() {
+    _sentinel_autocomplete_command "$@"
+}
+
+# Don't background the initialization process
+# This prevents race conditions with file creation/modification
 _sentinel_configure_autocomplete() {
     # Load ble.sh if available
     if [[ -f ~/.local/share/blesh/ble.sh ]]; then
         # We're adding this to the current environment rather than .bashrc to avoid 
         # double-loading, as SENTINEL handles this file centrally
+        
+        # Ensure cache directory exists and has proper permissions
+        mkdir -p ~/.cache/blesh 2>/dev/null
+        chmod 755 ~/.cache/blesh 2>/dev/null
+        
+        # Suppress stderr and attempt to load ble.sh
+        export _ble_suppress_stderr=1
+        
+        # Disable keymap initialization temporarily to prevent errors
+        export _ble_keymap_initialize=0
+        
         source ~/.local/share/blesh/ble.sh 2>/dev/null || true
         
         # Check if ble.sh loaded correctly
@@ -230,6 +314,45 @@ _sentinel_configure_autocomplete() {
             echo "Warning: ble.sh did not load properly. Advanced autocompletion features will be limited."
             return
         fi
+        
+        # Create a help function for autocomplete
+        _sentinel_autocomplete_help() {
+            echo -e "\033[1;32mSENTINEL Autocomplete Commands:\033[0m"
+            echo -e "  \033[1;34m@autocomplete\033[0m                   - Show this help"
+            echo -e "  \033[1;34m@autocomplete status\033[0m            - Check autocomplete status"
+            echo -e "  \033[1;34m@autocomplete fix\033[0m               - Fix common issues"
+            echo -e "  \033[1;34m@autocomplete reload\033[0m            - Reload BLE.sh"
+            echo -e "  \033[1;34m@autocomplete install\033[0m           - Force reinstall BLE.sh"
+            echo -e "  \033[1;34msentinel_snippet_add\033[0m <name> <command> - Add a new snippet"
+            echo -e "  \033[1;34msentinel:token\033[0m                  - Generate a secure HMAC-signed token"
+            
+            # List available snippets
+            if [[ -d ~/.sentinel/autocomplete/snippets ]]; then
+                local snippets=($(find ~/.sentinel/autocomplete/snippets -name "*.snippet" | sort))
+                if [[ ${#snippets[@]} -gt 0 ]]; then
+                    echo -e "\n\033[1;32mAvailable Snippets:\033[0m"
+                    for snippet in "${snippets[@]}"; do
+                        local name=$(basename "$snippet" .snippet)
+                        echo -e "  \033[1;34msnippet:$name\033[0m"
+                    done
+                fi
+            fi
+            
+            echo -e "\n\033[1;32mUsage:\033[0m"
+            echo -e "  - Press \033[1;34mTab\033[0m to see suggestions"
+            echo -e "  - Press \033[1;34mRight Arrow\033[0m to accept suggestion"
+            echo -e "  - Type \033[1;34m!!:fix\033[0m to correct last failed command"
+            echo -e "  - Type \033[1;34m!!:next\033[0m to run most likely next command"
+            
+            echo -e "\n\033[1;32mTroubleshooting:\033[0m"
+            echo -e "  If autocomplete isn't working, try:"
+            echo -e "  1. Run '@autocomplete fix'"
+            echo -e "  2. Close and reopen your terminal"
+            echo -e "  3. If still not working, run '@autocomplete install'"
+        }
+        
+        # Register the help command
+        alias sentinel_autocomplete_help=_sentinel_autocomplete_help
         
         # Use the correct blehook syntax based on help documentation
         # First ensure our hook exists by checking it - if empty we'll create it
@@ -1236,6 +1359,115 @@ _sentinel_command_chain_predictor() {
     _sentinel_initialize_command_chains
 }
 
+# Function to display autocomplete status and help
+_sentinel_autocomplete_status() {
+    echo -e "\033[1;32mSENTINEL Autocomplete Status:\033[0m"
+    
+    # Check BLE.sh
+    echo -n "BLE.sh installation: "
+    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        echo -e "\033[1;32mInstalled\033[0m"
+    else
+        echo -e "\033[1;31mNot installed\033[0m"
+    fi
+    
+    # Check if BLE.sh is loaded
+    echo -n "BLE.sh loaded: "
+    if type -t ble-bind &>/dev/null; then
+        echo -e "\033[1;32mYes\033[0m"
+    else
+        echo -e "\033[1;31mNo\033[0m"
+    fi
+    
+    # Check cache directory permissions
+    echo -n "Cache directory: "
+    if [[ -d ~/.cache/blesh ]]; then
+        local perms=$(stat -c "%a" ~/.cache/blesh 2>/dev/null)
+        if [[ "$perms" == "755" ]]; then
+            echo -e "\033[1;32mOK (permissions: $perms)\033[0m"
+        else
+            echo -e "\033[1;33mWarning (permissions: $perms, should be 755)\033[0m"
+            echo "To fix: chmod 755 ~/.cache/blesh"
+        fi
+    else
+        echo -e "\033[1;31mNot found\033[0m"
+        echo "To fix: mkdir -p ~/.cache/blesh && chmod 755 ~/.cache/blesh"
+    fi
+    
+    # Display snippet count
+    local snippet_count=0
+    if [[ -d ~/.sentinel/autocomplete/snippets ]]; then
+        snippet_count=$(find ~/.sentinel/autocomplete/snippets -name "*.snippet" | wc -l)
+    fi
+    echo "Snippets available: $snippet_count"
+    
+    # Display enabled features
+    echo -e "\n\033[1;32mEnabled Features:\033[0m"
+    features=("PowerShell-like suggestions" "Right arrow completion" "History-based suggestions" 
+              "Context-aware suggestions" "Project-specific autocompletion" "Fuzzy command correction"
+              "Command chains" "HMAC-signed snippets")
+    
+    for feature in "${features[@]}"; do
+        if type -t ble-bind &>/dev/null; then
+            echo -e " \033[1;32m✓\033[0m $feature"
+        else
+            # If BLE isn't loaded, only some features work
+            if [[ "$feature" == *"Fuzzy command correction"* || "$feature" == *"Command chains"* ]]; then
+                echo -e " \033[1;32m✓\033[0m $feature"
+            else
+                echo -e " \033[1;31m✗\033[0m $feature (requires BLE.sh)"
+            fi
+        fi
+    done
+    
+    # Display usage information
+    echo -e "\n\033[1;32mUsage:\033[0m"
+    echo -e " \033[1;34m@autocomplete\033[0m    - Show this help"
+    echo -e " \033[1;34m@autocomplete status\033[0m    - Check autocomplete status"
+    echo -e " \033[1;34m@autocomplete fix\033[0m     - Fix common issues"
+    echo -e " \033[1;34m@autocomplete reload\033[0m    - Reload BLE.sh"
+    echo -e " \033[1;34m@autocomplete install\033[0m   - Force reinstall BLE.sh"
+    echo -e " \033[1;34msentinel_snippet_add\033[0m <name> <command> - Add a new snippet"
+    
+    # Troubleshooting tips
+    echo -e "\n\033[1;32mTroubleshooting:\033[0m"
+    echo -e " If you see errors with 'mv: cannot stat' messages:"
+    echo -e " 1. Run: @autocomplete fix"
+    echo -e " 2. Close and reopen your terminal"
+    echo -e " 3. Check: @autocomplete status"
+}
+
+# Function to fix common issues
+_sentinel_autocomplete_fix() {
+    echo "Fixing common autocomplete issues..."
+    
+    # Fix cache directory permissions
+    mkdir -p ~/.cache/blesh 2>/dev/null
+    chmod 755 ~/.cache/blesh 2>/dev/null
+    echo "✓ Fixed cache directory permissions"
+    
+    # Clean up problematic cache files
+    find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
+    find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
+    echo "✓ Cleaned up cache files"
+    
+    # Clean up temporary installation directories
+    find /tmp -maxdepth 1 -type d -name "blesh*" | while read dir; do
+        chmod -R 755 "$dir" 2>/dev/null
+        rm -rf "$dir" 2>/dev/null
+    done
+    echo "✓ Cleaned up temporary installation directories"
+    
+    # Reload BLE.sh if available
+    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        export _ble_suppress_stderr=1
+        source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+        echo "✓ Reloaded BLE.sh"
+    fi
+    
+    echo -e "\nAll issues fixed. Please \033[1;32mclose and reopen your terminal\033[0m for changes to take full effect."
+}
+
 # Main function to setup autocomplete
 sentinel_setup_autocomplete() {
     # First check if we're in an interactive shell
@@ -1252,23 +1484,21 @@ sentinel_setup_autocomplete() {
     # Check and install ble.sh if needed
     _sentinel_check_blesh
     
-    # Configure autocomplete in the background to prevent blocking
+    # Configure autocomplete in a more controlled way - don't background any processes
+    # as it causes race conditions with the cache files
+    _sentinel_configure_autocomplete
+    _sentinel_register_fuzzy_correction
+    _sentinel_command_chain_predictor
+    
+    # Log success in the background to avoid blocking
     {
-        _sentinel_configure_autocomplete
-        
-        # Register fuzzy command correction
-        _sentinel_register_fuzzy_correction
-        
-        # Enable command chain prediction
-        _sentinel_command_chain_predictor
-        
-        # Add a helpful logging message
         logger -t "SENTINEL" "Autocomplete module initialized with enhanced features" 2>/dev/null || true
     } &
     
     # Inform user of completion
     if [[ -t 1 ]]; then
         echo "Done!"
+        echo "Type '@autocomplete' for available commands and help"
     fi
 }
 
