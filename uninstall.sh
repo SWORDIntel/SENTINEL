@@ -134,6 +134,58 @@ for dir in "${HOME}/.sentinel" \
     fi
 done
 
+# Step 1B: Clean up cache files (especially ble.sh which causes problems)
+echo -e "\n${BLUE}${BOLD}Step 1B: Cleaning up cache files${NC}"
+if [ -d "${HOME}/.cache/blesh" ]; then
+    echo -e "${YELLOW}Cleaning up ble.sh cache directory...${NC}"
+    
+    # First attempt to fix permissions
+    chmod -R 755 "${HOME}/.cache/blesh" 2>/dev/null || {
+        echo -e "${RED}Failed to set permissions on ${HOME}/.cache/blesh, attempting alternative cleanup...${NC}"
+    }
+    
+    # Target problematic files first
+    find "${HOME}/.cache/blesh" -name "*.part" -type f -delete 2>/dev/null
+    find "${HOME}/.cache/blesh" -name "decode.readline*.txt*" -type f -delete 2>/dev/null
+    
+    # Try to remove the entire directory
+    rm -rf "${HOME}/.cache/blesh" 2>/dev/null && {
+        echo "Removed ble.sh cache directory" >> "$LOG_FILE"
+        echo -e "${GREEN}Successfully removed ble.sh cache directory${NC}"
+    } || {
+        echo -e "${RED}Could not completely remove ${HOME}/.cache/blesh, using sudo...${NC}"
+        
+        # Ask for sudo if needed
+        read -p "$(echo -e "${YELLOW}Attempt to remove cache files with sudo? [y/N] ${NC}")" use_sudo
+        case "$use_sudo" in
+            'Y'|'y'|'yes')
+                sudo rm -rf "${HOME}/.cache/blesh" 2>/dev/null && {
+                    echo "Removed ble.sh cache directory with sudo" >> "$LOG_FILE"
+                    echo -e "${GREEN}Successfully removed ble.sh cache directory with sudo${NC}"
+                } || {
+                    echo -e "${RED}Failed to remove ${HOME}/.cache/blesh even with sudo${NC}"
+                    echo "Failed to remove ble.sh cache directory" >> "$LOG_FILE"
+                }
+                ;;
+            *)
+                echo -e "${YELLOW}Skipping removal of problematic cache files${NC}"
+                echo "Skipped removal of ble.sh cache (user declined sudo)" >> "$LOG_FILE"
+                ;;
+        esac
+    }
+fi
+
+# Check for other SENTINEL-related cache
+if [ -d "${HOME}/.cache/sentinel" ]; then
+    echo -e "${YELLOW}Removing SENTINEL cache directory...${NC}"
+    rm -rf "${HOME}/.cache/sentinel" 2>/dev/null && {
+        echo "Removed SENTINEL cache directory" >> "$LOG_FILE"
+    } || {
+        echo -e "${RED}Failed to remove ${HOME}/.cache/sentinel${NC}"
+        echo "Failed to remove SENTINEL cache directory" >> "$LOG_FILE"
+    }
+fi
+
 # Step 2: Remove SENTINEL files
 echo -e "\n${BLUE}${BOLD}Step 2: Removing SENTINEL files${NC}"
 SENTINEL_FILES=(
@@ -274,6 +326,46 @@ case "$remove_dirs" in
         echo -e "${GREEN}Keeping all directories.${NC}"
         ;;
 esac
+
+# Step 5B: Clean up leftover config files
+echo -e "\n${BLUE}${BOLD}Step 5B: Cleaning up leftover configuration files${NC}"
+EXTRA_CONFIG_FILES=(
+    "${HOME}/.sentinel_paths"
+    "${HOME}/.local/share/blesh/init-attach.sh"
+    "${HOME}/.local/share/blesh/init-complete.sh"
+    "${HOME}/.local/share/blesh/init-cmap.sh"
+    "${HOME}/.local/share/blesh/init-color.sh"
+    "${HOME}/.local/share/blesh/init-bind.sh"
+)
+
+echo -e "${YELLOW}Checking for additional configuration files...${NC}"
+for file in "${EXTRA_CONFIG_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        echo -e "${YELLOW}Found: $file${NC}"
+        backup_before_remove "$file"
+    fi
+done
+
+# Also look for ble.sh installation directory
+if [ -d "${HOME}/.local/share/blesh" ]; then
+    echo -e "${YELLOW}ble.sh installation found at ${HOME}/.local/share/blesh${NC}"
+    read -p "$(echo -e "${YELLOW}Remove ble.sh installation? [y/N] ${NC}")" remove_blesh
+    case "$remove_blesh" in
+        'Y'|'y'|'yes')
+            echo -e "${YELLOW}Removing ble.sh installation...${NC}"
+            rm -rf "${HOME}/.local/share/blesh" 2>/dev/null && {
+                echo "Removed ble.sh installation directory" >> "$LOG_FILE"
+                echo -e "${GREEN}Successfully removed ble.sh installation${NC}"
+            } || {
+                echo -e "${RED}Failed to remove ${HOME}/.local/share/blesh${NC}"
+                echo "Failed to remove ble.sh installation directory" >> "$LOG_FILE"
+            }
+            ;;
+        *)
+            echo -e "${GREEN}Keeping ble.sh installation.${NC}"
+            ;;
+    esac
+fi
 
 # Step 6: Finalize uninstallation
 echo -e "\n${BLUE}${BOLD}Step 6: Finalizing uninstallation${NC}"
