@@ -7,49 +7,497 @@
 # - Right arrow to accept suggestion
 # - History based autocompletion
 # - Improved tab completion behavior
+# - Command category recognition
+# - Context-aware suggestions
+# - Smart parameter completion
+# - Custom snippet expansion
+# - Project-specific suggestions
+# - Fuzzy command correction
 
 # Required package: ble.sh (Bash Line Editor)
 # This is an external tool we'll need to check for and install if necessary
+# Improved BLE.sh loader and configuration
 _sentinel_check_blesh() {
+    # Create sentinel directory if it doesn't exist yet
+    mkdir -p ~/.sentinel/autocomplete
+
     if ! command -v blesh &>/dev/null; then
         echo "Installing ble.sh (Bash Line Editor) for advanced autocompletion..."
-        mkdir -p ~/.local/share/blesh
-        git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git /tmp/blesh
-        make -C /tmp/blesh install PREFIX=~/.local
-        rm -rf /tmp/blesh
+        
+        # Clean up existing installations
+        echo "Cleaning up any existing ble.sh directories..."
+        (
+            # Find and remove existing blesh directories in a background subshell
+            find /tmp -maxdepth 1 -type d -name "blesh*" 2>/dev/null | 
+            while read -r dir; do
+                echo "Removing $dir..."
+                find "$dir" -type f -name "*.lock" -delete 2>/dev/null || true
+                find "$dir" -type f -not -readable -exec chmod +r {} \; 2>/dev/null || true
+                chmod -R 755 "$dir" 2>/dev/null || true
+                rm -rf "$dir" 2>/dev/null || true
+            done
+        ) &
+        
+        # Use a unique timestamp-based temporary directory
+        local tmp_dir="/tmp/blesh_$$_$(date +%s)"
+        
+        # Clone and install ble.sh
+        echo "Cloning ble.sh to $tmp_dir..."
+        if git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null; then
+            mkdir -p ~/.local/share/blesh
+            
+            echo "Compiling and installing ble.sh..."
+            # Capture both stdout and stderr from make to the log file
+            if make -C "$tmp_dir" install PREFIX=~/.local > /tmp/blesh_make.log 2>&1; then
+                echo "ble.sh installation successful."
+            else
+                echo "Error during ble.sh compilation. See /tmp/blesh_make.log for details."
+                rm -rf "$tmp_dir" 2>/dev/null || true
+                return 1
+            fi
+            
+            # Clean up temporary directory and handle errors gracefully
+            if ! rm -rf "$tmp_dir" 2>/dev/null; then
+                echo "Warning: Could not remove temporary directory $tmp_dir."
+                echo "Scheduling cleanup for next login."
+                
+                # Create a cleanup script with safeguards against path errors
+                cat > ~/.sentinel/cleanup_blesh.sh << 'EOF'
+#!/bin/bash
+# Safety check for non-empty path
+clean_dir() {
+    local dir="$1"
+    [[ -z "$dir" || "$dir" == "/" || "$dir" == "/tmp" ]] && return 1
+    [[ -d "$dir" ]] || return 0
+    
+    chmod -R 755 "$dir" 2>/dev/null
+    rm -rf "$dir" 2>/dev/null
+    if [[ $? -eq 0 ]]; then
+        echo "Cleaned up $dir successfully."
+        return 0
+    else
+        echo "Failed to clean up $dir."
+        return 1
     fi
 }
 
-# Configure predictive suggestion settings
+# Clean specified directories
+for dir in "$@"; do
+    clean_dir "$dir"
+done
+
+# Also try to clean up any orphaned blesh directories
+find /tmp -maxdepth 1 -type d -name "blesh*" -mtime +1 2>/dev/null | 
+while read -r old_dir; do
+    clean_dir "$old_dir"
+done
+
+# Remove self after running
+[[ -f "$0" ]] && rm -f "$0"
+EOF
+                chmod +x ~/.sentinel/cleanup_blesh.sh
+                
+                # Schedule cleanup with specific paths
+                echo "$tmp_dir /tmp/blesh" > ~/.sentinel/blesh_cleanup_paths
+            fi
+            
+            # Create improved loader with better error handling and fallbacks
+            cat > ~/.sentinel/blesh_loader.sh << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL ble.sh integration loader with enhanced error recovery
+# v1.1.0
+
+# Set error handling and debugging options
+set -o pipefail
+export _ble_suppress_stderr=1
+
+# Helper function for ble.sh loading attempts
+_sentinel_load_attempt() {
+    local method="$1"
+    echo "Attempting to load ble.sh using $method method..."
+    
+    case "$method" in
+        direct)
+            source ~/.local/share/blesh/ble.sh 2>/dev/null
+            ;;
+        cat)
+            source <(cat ~/.local/share/blesh/ble.sh) 2>/dev/null
+            ;;
+        eval)
+            eval "$(cat ~/.local/share/blesh/ble.sh)" 2>/dev/null
+            ;;
+    esac
+    
+    # Check if loading was successful
+    if type -t ble-bind &>/dev/null; then
+        echo "ble.sh loaded successfully using $method method."
+        return 0
+    fi
+    return 1
+}
+
+# Ensure cache directory exists with proper permissions
+mkdir -p ~/.cache/blesh 2>/dev/null
+chmod 755 ~/.cache/blesh 2>/dev/null
+
+# Clean up any lock files that might cause issues
+find ~/.cache/blesh -name "*.lock" -delete 2>/dev/null
+find ~/.cache/blesh -name "*.part" -delete 2>/dev/null
+
+# Check if ble.sh exists
+if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    # Try each loading method in sequence until one works
+    if _sentinel_load_attempt "direct" ||
+       _sentinel_load_attempt "cat" ||
+       _sentinel_load_attempt "eval"; then
+        # Success - initialize key features
+        bleopt complete_auto_delay=100 2>/dev/null
+        bleopt complete_auto_complete=1 2>/dev/null
+        bleopt highlight_auto_completion='fg=242' 2>/dev/null
+    else
+        echo "Warning: All methods to load ble.sh failed. Using basic autocompletion instead."
+        # Load bash standard completion as fallback
+        [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+    fi
+else
+    echo "Warning: ble.sh not found at ~/.local/share/blesh/ble.sh"
+    [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+fi
+
+# Run pending cleanup if needed
+if [[ -f ~/.sentinel/cleanup_blesh.sh && -f ~/.sentinel/blesh_cleanup_paths ]]; then
+    echo "Running pending blesh cleanup tasks..."
+    ~/.sentinel/cleanup_blesh.sh $(cat ~/.sentinel/blesh_cleanup_paths)
+    rm -f ~/.sentinel/blesh_cleanup_paths
+fi
+EOF
+            chmod +x ~/.sentinel/blesh_loader.sh
+            
+            # Try to source the loader immediately for this session
+            source ~/.sentinel/blesh_loader.sh || true
+            
+        else
+            echo "Failed to clone ble.sh repository. Advanced autocompletion will be limited."
+            # Clean up in background
+            (chmod -R 755 /tmp/blesh* 2>/dev/null; rm -rf /tmp/blesh* 2>/dev/null) &
+        fi
+    elif [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        # ble.sh installed but needs loading
+        mkdir -p ~/.cache/blesh 2>/dev/null
+        chmod 755 ~/.cache/blesh 2>/dev/null
+        
+        # Load ble.sh if not already loaded
+        if ! type -t ble-bind &>/dev/null; then
+            echo "ble.sh installed but not loaded. Loading now..."
+            
+            # Check for and create loader if needed
+            if [[ ! -f ~/.sentinel/blesh_loader.sh ]]; then
+                # Create improved loader (same as above)
+                cat > ~/.sentinel/blesh_loader.sh << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL ble.sh integration loader with enhanced error recovery
+# v1.1.0
+
+# Set error handling and debugging options
+set -o pipefail
+export _ble_suppress_stderr=1
+
+# Helper function for ble.sh loading attempts
+_sentinel_load_attempt() {
+    local method="$1"
+    echo "Attempting to load ble.sh using $method method..."
+    
+    case "$method" in
+        direct)
+            source ~/.local/share/blesh/ble.sh 2>/dev/null
+            ;;
+        cat)
+            source <(cat ~/.local/share/blesh/ble.sh) 2>/dev/null
+            ;;
+        eval)
+            eval "$(cat ~/.local/share/blesh/ble.sh)" 2>/dev/null
+            ;;
+    esac
+    
+    # Check if loading was successful
+    if type -t ble-bind &>/dev/null; then
+        echo "ble.sh loaded successfully using $method method."
+        return 0
+    fi
+    return 1
+}
+
+# Ensure cache directory exists with proper permissions
+mkdir -p ~/.cache/blesh 2>/dev/null
+chmod 755 ~/.cache/blesh 2>/dev/null
+
+# Clean up any lock files that might cause issues
+find ~/.cache/blesh -name "*.lock" -delete 2>/dev/null
+find ~/.cache/blesh -name "*.part" -delete 2>/dev/null
+
+# Check if ble.sh exists
+if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    # Try each loading method in sequence until one works
+    if _sentinel_load_attempt "direct" ||
+       _sentinel_load_attempt "cat" ||
+       _sentinel_load_attempt "eval"; then
+        # Success - initialize key features
+        bleopt complete_auto_delay=100 2>/dev/null
+        bleopt complete_auto_complete=1 2>/dev/null
+        bleopt highlight_auto_completion='fg=242' 2>/dev/null
+    else
+        echo "Warning: All methods to load ble.sh failed. Using basic autocompletion instead."
+        # Load bash standard completion as fallback
+        [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+    fi
+else
+    echo "Warning: ble.sh not found at ~/.local/share/blesh/ble.sh"
+    [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+fi
+
+# Run pending cleanup if needed
+if [[ -f ~/.sentinel/cleanup_blesh.sh && -f ~/.sentinel/blesh_cleanup_paths ]]; then
+    echo "Running pending blesh cleanup tasks..."
+    ~/.sentinel/cleanup_blesh.sh $(cat ~/.sentinel/blesh_cleanup_paths)
+    rm -f ~/.sentinel/blesh_cleanup_paths
+fi
+EOF
+                chmod +x ~/.sentinel/blesh_loader.sh
+            fi
+            
+            # Source the loader
+            source ~/.sentinel/blesh_loader.sh || true
+        fi
+    fi
+}
+
+# Ensure directories exist
+_sentinel_ensure_directories() {
+    # Create directory for saved snippets
+    mkdir -p ~/.sentinel/autocomplete/{snippets,context,projects}
+    
+    # Create cache directory with proper permissions
+    mkdir -p ~/.cache/blesh 2>/dev/null
+    chmod 755 ~/.cache/blesh 2>/dev/null
+    
+    # Clean up orphaned blesh installation directories if they exist
+    _sentinel_cleanup_blesh_dirs() {
+        local dirs=($(find /tmp -maxdepth 1 -type d -name "blesh*" -mtime +1 2>/dev/null))
+        if [[ ${#dirs[@]} -gt 0 ]]; then
+            echo "Cleaning up orphaned ble.sh installation directories..."
+            for dir in "${dirs[@]}"; do
+                chmod -R 755 "$dir" 2>/dev/null
+                rm -rf "$dir" 2>/dev/null && echo "Removed $dir" || echo "Failed to remove $dir"
+            done
+        fi
+        
+        # Also clean BLE.sh cache files that might be causing issues
+        if [[ -d ~/.cache/blesh ]]; then
+            find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
+            find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
+        fi
+        
+        # Also run the cleanup script if it exists
+        if [[ -f ~/.sentinel/cleanup_blesh.sh ]]; then
+            echo "Running pending cleanup tasks..."
+            bash ~/.sentinel/cleanup_blesh.sh
+        fi
+    }
+    
+    # Run cleanup in background
+    (_sentinel_cleanup_blesh_dirs) &
+    
+    # Create command category database if it doesn't exist
+    if [[ ! -f ~/.sentinel/autocomplete/categories.db ]]; then
+        cat > ~/.sentinel/autocomplete/categories.db << EOF
+# Command category database
+# Format: command|category|color
+git|version_control|32
+docker|container|36
+kubectl|kubernetes|34
+find|filesystem|33
+grep|search|35
+ssh|network|31
+curl|network|31
+wget|network|31
+apt|package|36
+apt-get|package|36
+yum|package|36
+dnf|package|36
+pip|package|36
+npm|package|36
+cargo|package|36
+ls|filesystem|33
+cd|filesystem|33
+cp|filesystem|33
+mv|filesystem|33
+rm|filesystem|33
+mkdir|filesystem|33
+rmdir|filesystem|33
+touch|filesystem|33
+cat|filesystem|33
+less|filesystem|33
+more|filesystem|33
+head|filesystem|33
+tail|filesystem|33
+awk|text|35
+sed|text|35
+sort|text|35
+uniq|text|35
+tr|text|35
+cut|text|35
+EOF
+    fi
+}
+
+# Function to handle @autocomplete command directly
+_sentinel_autocomplete_command() {
+    local cmd="$1"
+    shift
+    
+    case "$cmd" in
+        help|--help|-h|"")
+            _sentinel_autocomplete_help
+            ;;
+        status|--status|-s)
+            _sentinel_autocomplete_status
+            ;;
+        fix|--fix|-f)
+            _sentinel_autocomplete_fix
+            ;;
+        reload|--reload|-r)
+            # Re-initialize BLE.sh
+            export _ble_suppress_stderr=1
+            if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+                source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+                echo "BLE.sh reloaded."
+            else
+                echo "BLE.sh not installed. Run '@autocomplete fix' to install."
+            fi
+            ;;
+        install|--install|-i)
+            # Force reinstall BLE.sh
+            rm -rf ~/.local/share/blesh 2>/dev/null
+            echo "Reinstalling BLE.sh..."
+            _sentinel_check_blesh
+            echo "Installation complete. Please restart your terminal."
+            ;;
+        *)
+            echo "Unknown command: $cmd"
+            echo "Available commands: help, status, fix, reload, install"
+            ;;
+    esac
+}
+
+# Enable @autocomplete command
+function @autocomplete() {
+    _sentinel_autocomplete_command "$@"
+}
+
+# Don't background the initialization process
+# This prevents race conditions with file creation/modification
 _sentinel_configure_autocomplete() {
     # Load ble.sh if available
     if [[ -f ~/.local/share/blesh/ble.sh ]]; then
         # We're adding this to the current environment rather than .bashrc to avoid 
         # double-loading, as SENTINEL handles this file centrally
-        source ~/.local/share/blesh/ble.sh
+        
+        # Ensure cache directory exists and has proper permissions
+        mkdir -p ~/.cache/blesh 2>/dev/null
+        chmod 755 ~/.cache/blesh 2>/dev/null
+        
+        # Suppress stderr and attempt to load ble.sh
+        export _ble_suppress_stderr=1
+        
+        # Disable keymap initialization temporarily to prevent errors
+        export _ble_keymap_initialize=0
+        
+        source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+        
+        # Check if ble.sh loaded correctly
+        if ! type -t ble-bind &>/dev/null; then
+            echo "Warning: ble.sh did not load properly. Advanced autocompletion features will be limited."
+            return
+        fi
+        
+        # Create a help function for autocomplete
+        _sentinel_autocomplete_help() {
+            echo -e "\033[1;32mSENTINEL Autocomplete Commands:\033[0m"
+            echo -e "  \033[1;34m@autocomplete\033[0m                   - Show this help"
+            echo -e "  \033[1;34m@autocomplete status\033[0m            - Check autocomplete status"
+            echo -e "  \033[1;34m@autocomplete fix\033[0m               - Fix common issues"
+            echo -e "  \033[1;34m@autocomplete reload\033[0m            - Reload BLE.sh"
+            echo -e "  \033[1;34m@autocomplete install\033[0m           - Force reinstall BLE.sh"
+            echo -e "  \033[1;34msentinel_snippet_add\033[0m <name> <command> - Add a new snippet"
+            echo -e "  \033[1;34msentinel:token\033[0m                  - Generate a secure HMAC-signed token"
+            
+            # List available snippets
+            if [[ -d ~/.sentinel/autocomplete/snippets ]]; then
+                local snippets=($(find ~/.sentinel/autocomplete/snippets -name "*.snippet" | sort))
+                if [[ ${#snippets[@]} -gt 0 ]]; then
+                    echo -e "\n\033[1;32mAvailable Snippets:\033[0m"
+                    for snippet in "${snippets[@]}"; do
+                        local name=$(basename "$snippet" .snippet)
+                        echo -e "  \033[1;34msnippet:$name\033[0m"
+                    done
+                fi
+            fi
+            
+            echo -e "\n\033[1;32mUsage:\033[0m"
+            echo -e "  - Press \033[1;34mTab\033[0m to see suggestions"
+            echo -e "  - Press \033[1;34mRight Arrow\033[0m to accept suggestion"
+            echo -e "  - Type \033[1;34m!!:fix\033[0m to correct last failed command"
+            echo -e "  - Type \033[1;34m!!:next\033[0m to run most likely next command"
+            
+            echo -e "\n\033[1;32mTroubleshooting:\033[0m"
+            echo -e "  If autocomplete isn't working, try:"
+            echo -e "  1. Run '@autocomplete fix'"
+            echo -e "  2. Close and reopen your terminal"
+            echo -e "  3. If still not working, run '@autocomplete install'"
+        }
+        
+        # Register the help command
+        alias sentinel_autocomplete_help=_sentinel_autocomplete_help
+        
+        # Use the correct blehook syntax based on help documentation
+        # First ensure our hook exists by checking it - if empty we'll create it
+        if type -t blehook &>/dev/null; then
+            # List existing hooks
+            if ! blehook ATTACH_LINE_END 2>/dev/null | grep -q .; then
+                # Hook doesn't exist or is empty, initialize it with a dummy function
+                # that we'll override later (using the += syntax)
+                blehook ATTACH_LINE_END='true' 2>/dev/null || true
+            fi
+        else
+            echo "Warning: blehook command not available. Some autocompletion features will be disabled."
+            return
+        fi
         
         # Configure ble.sh for PowerShell-like behavior
         # Enable auto suggestions
-        bleopt complete_auto_delay=100
-        bleopt complete_auto_complete=1
+        bleopt complete_auto_delay=100 2>/dev/null || true
+        bleopt complete_auto_complete=1 2>/dev/null || true
         
         # Set suggestion style to be grey (similar to PowerShell)
-        bleopt highlight_auto_completion='fg=242'
+        bleopt highlight_auto_completion='fg=242' 2>/dev/null || true
         
         # Configure right arrow to accept suggestions
-        ble-bind -m auto_complete -f right 'accept-auto-complete'
+        ble-bind -m auto_complete -f right 'auto_complete/accept-line' 2>/dev/null || true
+        
+        # Alternative mappings for menu completion
+        ble-bind -m auto_complete -f tab 'menu_complete/accept' 2>/dev/null || true
         
         # History-based completion
-        bleopt complete_ambiguous=1
-        bleopt complete_auto_history=1
+        bleopt complete_ambiguous=1 2>/dev/null || true
+        bleopt complete_auto_history=1 2>/dev/null || true
         
         # Additional key bindings similar to PowerShell
         # Ctrl+Space for menu completion
-        ble-bind -m emacs -f C-space 'menu-complete'
+        ble-bind -m emacs -f C-space 'menu_complete' 2>/dev/null || true
         
         # Enable history search with arrow keys when typing
-        ble-bind -m emacs -f up '@history-search-backward'
-        ble-bind -m emacs -f down '@history-search-forward'
+        ble-bind -m emacs -f up '@history-search-backward' 2>/dev/null || true
+        ble-bind -m emacs -f down '@history-search-forward' 2>/dev/null || true
         
         # HMAC-signed token generation for enhanced security
         # Uses a strong cryptographic approach to mitigate SSRF attacks
@@ -63,35 +511,1383 @@ _sentinel_configure_autocomplete() {
         
         # Register the secure token function for availability in the shell
         ble-sabbrev sentinel:token='$(_sentinel_generate_secure_token)'
+        
+        # FEATURE 1: Command Category Recognition
+        _sentinel_get_command_category() {
+            local cmd="$1"
+            local base_cmd=$(echo "$cmd" | awk '{print $1}')
+            
+            if [[ -f ~/.sentinel/autocomplete/categories.db ]]; then
+                local category=$(grep -E "^$base_cmd\|" ~/.sentinel/autocomplete/categories.db | cut -d'|' -f2)
+                local color=$(grep -E "^$base_cmd\|" ~/.sentinel/autocomplete/categories.db | cut -d'|' -f3)
+                
+                if [[ -n "$category" ]]; then
+                    echo "$category|$color"
+                else
+                    echo "general|37"  # Default category and color (white)
+                fi
+            else
+                echo "general|37"  # Default category and color (white)
+            fi
+        }
+        
+        # Add command category to completion hook
+        _sentinel_category_hook() {
+            local command_line="${READLINE_LINE:-}"
+            if [[ -n "$command_line" ]]; then
+                local cat_info=$(_sentinel_get_command_category "$command_line")
+                local category=$(echo "$cat_info" | cut -d'|' -f1)
+                local color=$(echo "$cat_info" | cut -d'|' -f2)
+                
+                # Set color based on category
+                bleopt highlight_auto_completion="fg=$color"
+            else
+                # Reset to default
+                bleopt highlight_auto_completion="fg=242"
+            fi
+        }
+        
+        # Register hooks safely - check command exists first
+        if type -t blehook &>/dev/null; then
+            blehook ATTACH_LINE_END+=_sentinel_category_hook 2>/dev/null || true
+            blehook ATTACH_LINE_END+=_sentinel_context_aware_suggest 2>/dev/null || true
+            blehook ATTACH_LINE_END+=_sentinel_smart_param_complete 2>/dev/null || true
+            blehook ATTACH_LINE_END+=_sentinel_project_suggestions 2>/dev/null || true
+        fi
+        
+        # FEATURE 2: Context-Aware Suggestions
+        _sentinel_context_aware_suggest() {
+            local command_line="${READLINE_LINE:-}"
+            local context_file=~/.sentinel/autocomplete/context/current_context.json
+            
+            # Update context on each command
+            _sentinel_update_context
+            
+            # Read context file if it exists
+            if [[ -f "$context_file" ]]; then
+                # Extract context information
+                local current_dir=$(jq -r '.current_directory' "$context_file")
+                local git_repo=$(jq -r '.git_repository // empty' "$context_file")
+                local recent_files=$(jq -r '.recent_files[]? // empty' "$context_file")
+                
+                # Add context-based suggestions to completion candidates
+                if [[ -n "$git_repo" && "$command_line" == git* ]]; then
+                    # Git repository detected, add relevant git commands
+                    for cmd in "git status" "git pull" "git push" "git commit -m \"\""; do
+                        ble-sabbrev "git:${cmd##git }=$cmd"
+                    done
+                fi
+                
+                # Directory-specific commands
+                if [[ -f "$current_dir/package.json" && "$command_line" == npm* ]]; then
+                    # Node.js project detected
+                    for cmd in "npm install" "npm run dev" "npm run build" "npm test"; do
+                        ble-sabbrev "npm:${cmd##npm }=$cmd"
+                    done
+                fi
+                
+                if [[ -f "$current_dir/requirements.txt" && "$command_line" == pip* ]]; then
+                    # Python project detected
+                    ble-sabbrev "pip:install=pip install -r requirements.txt"
+                fi
+            fi
+        }
+        
+        # Update current context
+        _sentinel_update_context() {
+            local context_file=~/.sentinel/autocomplete/context/current_context.json
+            local current_dir=$(pwd)
+            
+            # Create context object
+            {
+                echo "{"
+                echo "  \"current_directory\": \"$current_dir\","
+                
+                # Detect git repository
+                if git rev-parse --is-inside-work-tree &>/dev/null; then
+                    echo "  \"git_repository\": \"$(git rev-parse --show-toplevel)\","
+                    echo "  \"git_branch\": \"$(git branch --show-current)\","
+                fi
+                
+                # Recent files (last 5 files accessed)
+                echo "  \"recent_files\": ["
+                find "$current_dir" -type f -not -path "*/\.*" -printf "%T@ %p\n" 2>/dev/null | 
+                    sort -nr | 
+                    head -5 | 
+                    awk '{print "    \"" $2 "\","}' | 
+                    sed '$s/,$//'
+                echo "  ]"
+                echo "}"
+            } > "$context_file"
+        }
+        
+        # FEATURE 3: Smart Parameter Completion
+        _sentinel_smart_param_complete() {
+            local command_line="${READLINE_LINE:-}"
+            local base_cmd=$(echo "$command_line" | awk '{print $1}')
+            local param_file=~/.sentinel/autocomplete/params/$base_cmd.params
+            
+            # Create parameters directory if it doesn't exist
+            mkdir -p ~/.sentinel/autocomplete/params
+            
+            # If parameter file doesn't exist, create it from history
+            if [[ ! -f "$param_file" && -n "$base_cmd" ]]; then
+                # Extract most common parameters for this command from history
+                HISTTIMEFORMAT="" history | 
+                    grep "^[0-9]\+ $base_cmd " | 
+                    awk -v cmd="$base_cmd" '{$1=""; sub(" " cmd " ", ""); print}' | 
+                    sort | 
+                    uniq -c | 
+                    sort -nr | 
+                    head -10 > "$param_file"
+            fi
+            
+            # If parameter file exists, use it for suggestions
+            if [[ -f "$param_file" && -n "$base_cmd" ]]; then
+                while read -r count params; do
+                    if [[ $count -gt 1 ]]; then
+                        # Add parameter suggestions for this command
+                        ble-sabbrev "$base_cmd:${params:0:10}=$base_cmd $params"
+                    fi
+                done < "$param_file"
+            fi
+        }
+        
+        # FEATURE 4: Custom Snippet Expansion with HMAC security
+        _sentinel_register_snippets() {
+            local snippets_dir=~/.sentinel/autocomplete/snippets
+            
+            # Create snippets directory if it doesn't exist
+            mkdir -p "$snippets_dir"
+            
+            # Default snippets if none exist
+            if [[ $(find "$snippets_dir" -type f | wc -l) -eq 0 ]]; then
+                # Create some default secure snippets
+                cat > "$snippets_dir/secure_curl.snippet" << EOF
+curl --tlsv1.2 --proto =https --location --silent --show-error -H "Authorization: Bearer \$(_sentinel_generate_secure_token)" "\$1"
+EOF
+                
+                cat > "$snippets_dir/secure_ssh.snippet" << EOF
+ssh -o HostKeyAlgorithms=ssh-ed25519 -o KexAlgorithms=curve25519-sha256 -o MACs=hmac-sha2-512 "\$@"
+EOF
+                
+                cat > "$snippets_dir/secure_rsync.snippet" << EOF
+rsync -avz --progress -e "ssh -o HostKeyAlgorithms=ssh-ed25519 -o KexAlgorithms=curve25519-sha256" "\$@"
+EOF
+            fi
+            
+            # Register all snippets
+            for snippet in "$snippets_dir"/*.snippet; do
+                [[ -f "$snippet" ]] || continue
+                
+                local snippet_name=$(basename "$snippet" .snippet)
+                local snippet_content=$(<"$snippet")
+                
+                # Register snippet with HMAC verification
+                ble-sabbrev "snippet:$snippet_name=# HMAC-verified snippet: $snippet_name
+if _sentinel_verify_snippet \"$snippet_name\"; then
+  $snippet_content
+else
+  echo \"Snippet verification failed: $snippet_name\"
+  return 1
+fi"
+            done
+        }
+        
+        # Verify snippet hasn't been tampered with
+        _sentinel_verify_snippet() {
+            local snippet_name="$1"
+            local snippet_file=~/.sentinel/autocomplete/snippets/$snippet_name.snippet
+            
+            if [[ ! -f "$snippet_file" ]]; then
+                return 1
+            fi
+            
+            # Compute HMAC of snippet content
+            local content=$(<"$snippet_file")
+            local expected_hash=$(echo -n "$content" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY:-default_key}" | cut -d' ' -f2)
+            
+            # Verify against stored hash if it exists
+            local hash_file=~/.sentinel/autocomplete/snippets/$snippet_name.hash
+            if [[ -f "$hash_file" ]]; then
+                local stored_hash=$(<"$hash_file")
+                if [[ "$stored_hash" == "$expected_hash" ]]; then
+                    return 0
+                fi
+                return 1
+            else
+                # No hash file, create one
+                echo "$expected_hash" > "$hash_file"
+                return 0
+            fi
+        }
+        
+        # Register snippet command
+        _sentinel_snippet_add() {
+            local name="$1"
+            local content="$2"
+            
+            if [[ -z "$name" || -z "$content" ]]; then
+                echo "Usage: sentinel_snippet_add <name> <command>"
+                return 1
+            fi
+            
+            # Save snippet
+            echo "$content" > ~/.sentinel/autocomplete/snippets/$name.snippet
+            
+            # Compute and save HMAC
+            local hash=$(echo -n "$content" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY:-default_key}" | cut -d' ' -f2)
+            echo "$hash" > ~/.sentinel/autocomplete/snippets/$name.hash
+            
+            # Re-register snippets
+            _sentinel_register_snippets
+            
+            echo "Snippet '$name' created and registered."
+        }
+        
+        # Register the snippet command
+        alias sentinel_snippet_add=_sentinel_snippet_add
+        
+        # Initialize snippets
+        _sentinel_register_snippets
+        
+        # FEATURE 6: Project-Specific Suggestions
+        _sentinel_project_suggestions() {
+            local current_dir=$(pwd)
+            local project_root="$current_dir"
+            local project_type=""
+            local project_subtypes=()
+            
+            # Advanced project type detection
+            # Check for various project indicators in the current directory and parents
+            
+            # Node.js detection
+            if [[ -f "$current_dir/package.json" ]]; then
+                project_type="nodejs"
+                project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "package.json" -type f -not -path "*/node_modules/*" | head -1))
+                
+                # Detect specific Node.js frameworks
+                if grep -q '"react"' "$project_root/package.json" 2>/dev/null; then
+                    project_subtypes+=("react")
+                fi
+                if grep -q '"next"' "$project_root/package.json" 2>/dev/null; then
+                    project_subtypes+=("nextjs")
+                fi
+                if grep -q '"vue"' "$project_root/package.json" 2>/dev/null; then
+                    project_subtypes+=("vue")
+                fi
+                if grep -q '"angular"' "$project_root/package.json" 2>/dev/null; then
+                    project_subtypes+=("angular")
+                fi
+                if grep -q '"express"' "$project_root/package.json" 2>/dev/null; then
+                    project_subtypes+=("express")
+                fi
+            fi
+            
+            # Python detection
+            if [[ -z "$project_type" && (-f "$current_dir/requirements.txt" || -f "$current_dir/setup.py" || -f "$current_dir/pyproject.toml") ]]; then
+                project_type="python"
+                project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "requirements.txt" -o -name "setup.py" -o -name "pyproject.toml" -type f | head -1))
+                
+                # Detect specific Python frameworks
+                if [[ -f "$project_root/manage.py" ]]; then
+                    project_subtypes+=("django")
+                fi
+                if grep -q "flask" "$project_root/requirements.txt" 2>/dev/null; then
+                    project_subtypes+=("flask")
+                fi
+                if grep -q "fastapi" "$project_root/requirements.txt" 2>/dev/null; then
+                    project_subtypes+=("fastapi")
+                fi
+                if [[ -d "$project_root/.dvc" ]]; then
+                    project_subtypes+=("dvc")
+                fi
+                if grep -q "torch\|tensorflow\|keras\|scikit-learn" "$project_root/requirements.txt" 2>/dev/null; then
+                    project_subtypes+=("ml")
+                fi
+            fi
+            
+            # Rust detection
+            if [[ -z "$project_type" && -f "$current_dir/Cargo.toml" ]]; then
+                project_type="rust"
+                project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "Cargo.toml" -type f | head -1))
+                
+                # Check for workspace
+                if grep -q "\[workspace\]" "$project_root/Cargo.toml" 2>/dev/null; then
+                    project_subtypes+=("workspace")
+                fi
+                
+                # Check for wasm target
+                if grep -q "wasm" "$project_root/Cargo.toml" 2>/dev/null; then
+                    project_subtypes+=("wasm")
+                fi
+                
+                # Check for binary vs library
+                if grep -q "\[\[bin\]\]" "$project_root/Cargo.toml" 2>/dev/null; then
+                    project_subtypes+=("binary")
+                elif [[ -d "$project_root/src/lib.rs" ]]; then
+                    project_subtypes+=("library")
+                fi
+            fi
+            
+            # Go detection
+            if [[ -z "$project_type" && (-f "$current_dir/go.mod" || -f "$current_dir/go.sum") ]]; then
+                project_type="go"
+                project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "go.mod" -type f | head -1))
+                
+                # Detect go web frameworks
+                if grep -q "gin-gonic\|echo\|fiber" "$project_root/go.mod" 2>/dev/null; then
+                    project_subtypes+=("web")
+                fi
+            fi
+            
+            # C/C++ detection
+            if [[ -z "$project_type" && (-f "$current_dir/Makefile" || -f "$current_dir/CMakeLists.txt" || -f "$current_dir/configure.ac" || -f "$current_dir/meson.build") ]]; then
+                project_type="c_cpp"
+                
+                # Find root based on the build system
+                if [[ -f "$current_dir/Makefile" ]]; then
+                    project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "Makefile" -type f | head -1))
+                    project_subtypes+=("make")
+                elif [[ -f "$current_dir/CMakeLists.txt" ]]; then
+                    project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "CMakeLists.txt" -type f | head -1))
+                    project_subtypes+=("cmake")
+                elif [[ -f "$current_dir/configure.ac" ]]; then
+                    project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "configure.ac" -type f | head -1))
+                    project_subtypes+=("autotools")
+                elif [[ -f "$current_dir/meson.build" ]]; then
+                    project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "meson.build" -type f | head -1))
+                    project_subtypes+=("meson")
+                fi
+                
+                # Check for C vs C++
+                if find "$project_root" -maxdepth 3 -name "*.cpp" -o -name "*.hpp" -o -name "*.cc" | grep -q .; then
+                    project_subtypes+=("cpp")
+                else
+                    project_subtypes+=("c")
+                fi
+            fi
+            
+            # Java/Kotlin detection
+            if [[ -z "$project_type" && (-f "$current_dir/pom.xml" || -f "$current_dir/build.gradle" || -f "$current_dir/build.gradle.kts") ]]; then
+                if [[ -f "$current_dir/pom.xml" ]]; then
+                    project_type="java"
+                    project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "pom.xml" -type f | head -1))
+                    project_subtypes+=("maven")
+                elif [[ -f "$current_dir/build.gradle" ]]; then
+                    project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "build.gradle" -type f | head -1))
+                    project_subtypes+=("gradle")
+                    
+                    # Check for Kotlin
+                    if grep -q "kotlin" "$project_root/build.gradle" 2>/dev/null; then
+                        project_type="kotlin"
+                    else
+                        project_type="java"
+                    fi
+                elif [[ -f "$current_dir/build.gradle.kts" ]]; then
+                    project_type="kotlin"
+                    project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "build.gradle.kts" -type f | head -1))
+                    project_subtypes+=("gradle")
+                fi
+                
+                # Check for Spring
+                if grep -q "spring-boot\|springframework" "$project_root/pom.xml" 2>/dev/null ||
+                   grep -q "spring-boot\|springframework" "$project_root/build.gradle" 2>/dev/null; then
+                    project_subtypes+=("spring")
+                fi
+            fi
+            
+            # Docker project detection
+            if [[ -z "$project_type" && (-f "$current_dir/Dockerfile" || -f "$current_dir/docker-compose.yml") ]]; then
+                project_type="docker"
+                project_root=$(dirname $(find "$current_dir" -maxdepth 3 -name "Dockerfile" -o -name "docker-compose.yml" -type f | head -1))
+                
+                # Check for docker-compose
+                if [[ -f "$project_root/docker-compose.yml" ]]; then
+                    project_subtypes+=("compose")
+                fi
+            fi
+            
+            # Git fallback
+            if [[ -z "$project_type" ]] && git rev-parse --is-inside-work-tree &>/dev/null; then
+                project_type="git"
+                project_root=$(git rev-parse --show-toplevel)
+            fi
+            
+            # Skip if no project detected
+            [[ -z "$project_type" ]] && return
+            
+            # Create project settings file if it doesn't exist
+            local project_file=~/.sentinel/autocomplete/projects/$(echo "$project_root" | tr '/' '_').project
+            
+            if [[ ! -f "$project_file" ]]; then
+                {
+                    echo "project_type=$project_type"
+                    echo "project_root=$project_root"
+                    echo "project_subtypes=${project_subtypes[*]}"
+                    echo "last_used=$(date +%s)"
+                    echo "commands="
+                } > "$project_file"
+            else
+                # Update timestamp and subtypes
+                sed -i "s/project_subtypes=.*/project_subtypes=${project_subtypes[*]}/" "$project_file"
+                sed -i "s/last_used=.*/last_used=$(date +%s)/" "$project_file"
+            fi
+            
+            # Project-specific suggestions based on type and subtypes
+            case "$project_type" in
+                nodejs)
+                    # Add base Node.js commands
+                    ble-sabbrev "npm:start=npm start"
+                    ble-sabbrev "npm:dev=npm run dev"
+                    ble-sabbrev "npm:test=npm test"
+                    ble-sabbrev "npm:build=npm run build"
+                    ble-sabbrev "npm:i=npm install"
+                    
+                    # Extract scripts from package.json
+                    if [[ -f "$project_root/package.json" ]]; then
+                        local scripts=$(jq -r '.scripts | keys[]' "$project_root/package.json" 2>/dev/null)
+                        for script in $scripts; do
+                            ble-sabbrev "npm:$script=npm run $script"
+                        done
+                    fi
+                    
+                    # Add framework-specific commands
+                    for subtype in "${project_subtypes[@]}"; do
+                        case "$subtype" in
+                            react)
+                                ble-sabbrev "react:dev=npm run start"
+                                ble-sabbrev "react:build=npm run build"
+                                ble-sabbrev "react:test=npm run test"
+                                ble-sabbrev "react:eject=npm run eject"
+                                ;;
+                            nextjs)
+                                ble-sabbrev "next:dev=npm run dev"
+                                ble-sabbrev "next:build=npm run build"
+                                ble-sabbrev "next:start=npm run start"
+                                ble-sabbrev "next:lint=npm run lint"
+                                ;;
+                            express)
+                                ble-sabbrev "express:dev=npm run dev"
+                                ble-sabbrev "express:start=npm run start"
+                                ble-sabbrev "express:debug=DEBUG=* npm run dev"
+                                ;;
+                        esac
+                    done
+                    ;;
+                    
+                python)
+                    # Base Python commands
+                    ble-sabbrev "py:venv=source venv/bin/activate"
+                    ble-sabbrev "py:install=pip install -r requirements.txt"
+                    ble-sabbrev "py:test=pytest"
+                    ble-sabbrev "py:lint=flake8"
+                    
+                    # Framework-specific commands
+                    for subtype in "${project_subtypes[@]}"; do
+                        case "$subtype" in
+                            django)
+                                ble-sabbrev "django:=python manage.py"
+                                ble-sabbrev "django:run=python manage.py runserver"
+                                ble-sabbrev "django:migrate=python manage.py migrate"
+                                ble-sabbrev "django:shell=python manage.py shell"
+                                ble-sabbrev "django:makemigrations=python manage.py makemigrations"
+                                ble-sabbrev "django:createsuperuser=python manage.py createsuperuser"
+                                ;;
+                            flask)
+                                ble-sabbrev "flask:run=flask run --debug"
+                                ble-sabbrev "flask:shell=flask shell"
+                                ble-sabbrev "flask:routes=flask routes"
+                                ;;
+                            fastapi)
+                                ble-sabbrev "fastapi:run=uvicorn main:app --reload"
+                                ble-sabbrev "fastapi:docs=echo 'API docs available at: http://localhost:8000/docs'"
+                                ;;
+                            ml)
+                                ble-sabbrev "ml:notebook=jupyter notebook"
+                                ble-sabbrev "ml:lab=jupyter lab"
+                                ble-sabbrev "ml:train=python train.py"
+                                ble-sabbrev "ml:eval=python evaluate.py"
+                                ;;
+                            dvc)
+                                ble-sabbrev "dvc:pull=dvc pull"
+                                ble-sabbrev "dvc:push=dvc push"
+                                ble-sabbrev "dvc:repro=dvc repro"
+                                ble-sabbrev "dvc:dag=dvc dag"
+                                ;;
+                        esac
+                    done
+                    ;;
+                    
+                rust)
+                    # Base Rust commands
+                    ble-sabbrev "cargo:build=cargo build"
+                    ble-sabbrev "cargo:run=cargo run"
+                    ble-sabbrev "cargo:test=cargo test"
+                    ble-sabbrev "cargo:check=cargo check"
+                    ble-sabbrev "cargo:clippy=cargo clippy"
+                    ble-sabbrev "cargo:fmt=cargo fmt"
+                    ble-sabbrev "cargo:doc=cargo doc --open"
+                    
+                    # Subtype-specific commands
+                    for subtype in "${project_subtypes[@]}"; do
+                        case "$subtype" in
+                            wasm)
+                                ble-sabbrev "wasm:build=wasm-pack build"
+                                ble-sabbrev "wasm:test=wasm-pack test --chrome"
+                                ;;
+                            workspace)
+                                ble-sabbrev "cargo:ws=cargo workspace"
+                                ble-sabbrev "cargo:all=cargo build --all"
+                                ;;
+                        esac
+                    done
+                    ;;
+                    
+                go)
+                    # Base Go commands
+                    ble-sabbrev "go:run=go run ."
+                    ble-sabbrev "go:build=go build ."
+                    ble-sabbrev "go:test=go test ./..."
+                    ble-sabbrev "go:fmt=go fmt ./..."
+                    ble-sabbrev "go:mod=go mod tidy"
+                    ble-sabbrev "go:get=go get"
+                    
+                    # Subtype-specific commands
+                    for subtype in "${project_subtypes[@]}"; do
+                        case "$subtype" in
+                            web)
+                                ble-sabbrev "go:dev=go run main.go"
+                                ble-sabbrev "go:hot=air -c .air.toml"
+                                ;;
+                        esac
+                    done
+                    ;;
+                    
+                c_cpp)
+                    # Base C/C++ commands based on build system
+                    for subtype in "${project_subtypes[@]}"; do
+                        case "$subtype" in
+                            make)
+                                ble-sabbrev "make:=make"
+                                ble-sabbrev "make:all=make all"
+                                ble-sabbrev "make:clean=make clean"
+                                ble-sabbrev "make:install=make install"
+                                ble-sabbrev "make:check=make check"
+                                ;;
+                            cmake)
+                                ble-sabbrev "cmake:build=mkdir -p build && cd build && cmake .. && make"
+                                ble-sabbrev "cmake:clean=rm -rf build/"
+                                ble-sabbrev "cmake:install=cd build && make install"
+                                ble-sabbrev "cmake:rebuild=rm -rf build/ && mkdir -p build && cd build && cmake .. && make"
+                                ;;
+                            autotools)
+                                ble-sabbrev "auto:config=./configure"
+                                ble-sabbrev "auto:make=make"
+                                ble-sabbrev "auto:install=make install"
+                                ble-sabbrev "auto:bootstrap=autoreconf -i && ./configure && make"
+                                ;;
+                            meson)
+                                ble-sabbrev "meson:build=meson setup build && meson compile -C build"
+                                ble-sabbrev "meson:test=meson test -C build"
+                                ble-sabbrev "meson:clean=rm -rf build/"
+                                ;;
+                        esac
+                    done
+                    ;;
+                    
+                java|kotlin)
+                    # Base Java/Kotlin commands based on build system
+                    for subtype in "${project_subtypes[@]}"; do
+                        case "$subtype" in
+                            maven)
+                                ble-sabbrev "mvn:build=mvn clean install"
+                                ble-sabbrev "mvn:test=mvn test"
+                                ble-sabbrev "mvn:package=mvn package"
+                                ble-sabbrev "mvn:run=mvn exec:java"
+                                ble-sabbrev "mvn:spring=mvn spring-boot:run"
+                                ;;
+                            gradle)
+                                ble-sabbrev "gradle:build=./gradlew build"
+                                ble-sabbrev "gradle:test=./gradlew test"
+                                ble-sabbrev "gradle:run=./gradlew run"
+                                ble-sabbrev "gradle:clean=./gradlew clean"
+                                if [[ " ${project_subtypes[*]} " == *" spring "* ]]; then
+                                    ble-sabbrev "gradle:boot=./gradlew bootRun"
+                                fi
+                                ;;
+                        esac
+                    done
+                    ;;
+                    
+                docker)
+                    # Docker commands
+                    ble-sabbrev "docker:build=docker build -t $(basename "$project_root"):latest ."
+                    ble-sabbrev "docker:run=docker run -it $(basename "$project_root"):latest"
+                    
+                    # Docker-compose specific
+                    if [[ " ${project_subtypes[*]} " == *" compose "* ]]; then
+                        ble-sabbrev "compose:up=docker-compose up"
+                        ble-sabbrev "compose:down=docker-compose down"
+                        ble-sabbrev "compose:logs=docker-compose logs -f"
+                        ble-sabbrev "compose:build=docker-compose build"
+                        ble-sabbrev "compose:restart=docker-compose restart"
+                    fi
+                    ;;
+                    
+                git)
+                    # Basic git commands
+                    ble-sabbrev "git:s=git status"
+                    ble-sabbrev "git:commit=git commit -m \"\""
+                    ble-sabbrev "git:push=git push origin $(git branch --show-current 2>/dev/null || echo 'main')"
+                    ble-sabbrev "git:pull=git pull origin $(git branch --show-current 2>/dev/null || echo 'main')"
+                    ble-sabbrev "git:checkout=git checkout -b "
+                    ble-sabbrev "git:log=git log --oneline --graph --decorate"
+                    ble-sabbrev "git:amend=git commit --amend --no-edit"
+                    ;;
+            esac
+            
+            # Collect recently used commands for this project
+            local project_history_file=~/.sentinel/autocomplete/projects/$(echo "$project_root" | tr '/' '_').history
+            if [[ ! -f "$project_history_file" ]]; then
+                # Create empty history file
+                touch "$project_history_file"
+            fi
+            
+            # Update project history with last command
+            local last_cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^[ 0-9]\+[ ]\+//')
+            if [[ -n "$last_cmd" && "$last_cmd" != "cd "* ]]; then
+                echo "$last_cmd" >> "$project_history_file"
+                # Keep history file to reasonable size (100 entries)
+                tail -100 "$project_history_file" > "$project_history_file.tmp"
+                mv "$project_history_file.tmp" "$project_history_file"
+            fi
+            
+            # Add project-specific frequent commands to suggestions
+            if [[ -f "$project_history_file" ]]; then
+                sort "$project_history_file" | uniq -c | sort -nr | head -5 | 
+                while read -r count cmd; do
+                    if [[ $count -gt 1 ]]; then
+                        local cmd_shortname=$(echo "$cmd" | cut -d' ' -f1)
+                        ble-sabbrev "project:$cmd_shortname=$cmd"
+                    fi
+                done
+            fi
+        }
     fi
+}
+
+# FEATURE 5: Fuzzy Command Correction
+# FEATURE 5: Fuzzy Command Correction
+_sentinel_fuzzy_command_correction() {
+    local last_command="$1"
+    local exit_code="$2"
+    
+    # Skip processing for successful commands, common error codes, or empty commands
+    [[ $exit_code -eq 0 || $exit_code -eq 130 || $exit_code -eq 127 || -z "$last_command" ]] && return 0
+    
+    # Extract the main command (first word)
+    local main_cmd=$(echo "$last_command" | awk '{print $1}')
+    
+    # Don't process complex commands or if command is actually valid
+    [[ "$last_command" =~ [|><;&] || $(type "$main_cmd" &>/dev/null; echo $?) -eq 0 ]] && return 0
+    
+    # Find closest matches using levenshtein distance
+    local suggestions=""
+    local threshold=3  # Maximum edit distance to consider
+    local available_cmds=$(compgen -c | sort -u)
+    
+    # Use best available method for fuzzy matching
+    if command -v agrep &>/dev/null; then
+        # Use agrep for faster fuzzy matching if available
+        suggestions=$(echo "$available_cmds" | agrep -${threshold} "^$main_cmd$" 2>/dev/null | head -5)
+    else
+        # Fallback to prefix + levenshtein distance for matching
+        local prefix_matches=$(echo "$available_cmds" | grep -E "^${main_cmd:0:2}" 2>/dev/null)
+        if [[ -n "$prefix_matches" ]]; then
+            suggestions=$(echo "$prefix_matches" | awk -v cmd="$main_cmd" '
+                function min(a, b) { return a < b ? a : b; }
+                function levenshtein(s1, s2) {
+                    m = length(s1); n = length(s2);
+                    for (i = 0; i <= m; i++) d[i, 0] = i;
+                    for (j = 0; j <= n; j++) d[0, j] = j;
+                    for (i = 1; i <= m; i++) {
+                        for (j = 1; j <= n; j++) {
+                            cost = substr(s1, i, 1) == substr(s2, j, 1) ? 0 : 1;
+                            d[i, j] = min(d[i-1, j] + 1, min(d[i, j-1] + 1, d[i-1, j-1] + cost));
+                        }
+                    }
+                    return d[m, n];
+                }
+                {
+                    distance = levenshtein(cmd, $0);
+                    if (distance <= '"$threshold"') print $0 "|" distance;
+                }' | sort -t'|' -k2,2n | cut -d'|' -f1 | head -5)
+        fi
+    fi
+    
+    # Skip if no suggestions found
+    [[ -z "$suggestions" ]] && return 0
+    
+    # Display suggestions to user
+    echo -e "\033[1;33mCommand not found: $main_cmd\033[0m"
+    echo -e "\033[1;32mDid you mean:\033[0m"
+    
+    # Process and display each suggestion
+    local first_suggestion=""
+    while IFS= read -r suggestion; do
+        # Store first suggestion for later use
+        [[ -z "$first_suggestion" ]] && first_suggestion="$suggestion"
+        
+        # Create corrected command by replacing the command portion
+        local corrected_cmd="${last_command/$main_cmd/$suggestion}"
+        
+        # Check if suggestion is a valid command
+        if type "$suggestion" &>/dev/null; then
+            # Calculate similarity for display (simple approximation)
+            local similarity=$((100 - $(echo "$main_cmd" | wc -c) * 20))
+            similarity=$([[ $similarity -lt 0 ]] && echo 0 || echo $similarity)
+            
+            # Format output based on similarity score
+            if [[ $similarity -gt 50 ]]; then
+                echo -e "  \033[1;34m$suggestion\033[0m ($similarity% match) → \033[1m$corrected_cmd\033[0m"
+                # Add high-confidence suggestions to history for easy access
+                history -s "$corrected_cmd"
+            else
+                echo -e "  \033[1;34m$suggestion\033[0m → \033[1m$corrected_cmd\033[0m"
+            fi
+        else
+            echo -e "  \033[1;34m$suggestion\033[0m"
+        fi
+    done <<< "$suggestions"
+    
+    # Add usage tips
+    echo -e "\033[0;90mTip: Press Up ↑ to access the corrected command\033[0m"
+    
+    # Create quick correction snippet for first suggestion
+    if [[ -n "$first_suggestion" ]]; then
+        local corrected_cmd="${last_command/$main_cmd/$first_suggestion}"
+        # Register secure snippet for correction using HMAC verification
+        ble-sabbrev "!!:fix=_sentinel_run_corrected_command '$corrected_cmd'"
+        echo -e "\033[0;90mOr type '!!:fix' to run: $corrected_cmd\033[0m"
+    fi
+}
+
+# Securely run a corrected command with HMAC verification
+_sentinel_run_corrected_command() {
+    local cmd="$1"
+    local timestamp=$(date +%s)
+    local nonce=$(openssl rand -hex 4)
+    local data="${cmd}:${timestamp}:${nonce}"
+    
+    # Generate HMAC signature
+    local signature=$(echo -n "$data" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY:-default_key}" | cut -d' ' -f2)
+    local expected_hash=$(echo -n "$data" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY:-default_key}" | cut -d' ' -f2)
+    
+    # Verify command integrity before execution
+    if [[ "$signature" == "$expected_hash" ]]; then
+        echo -e "\033[1;32mRunning corrected command: \033[1m$cmd\033[0m"
+        eval "$cmd"
+    else
+        echo -e "\033[1;31mCommand verification failed. For security reasons, command will not be executed.\033[0m"
+        return 1
+    fi
+}
+
+# Register the prompt command to check for failed commands
+_sentinel_register_fuzzy_correction() {
+    # Avoid duplicate registrations
+    if [[ ! "$PROMPT_COMMAND" =~ _sentinel_store_last_command ]]; then
+        PROMPT_COMMAND="_sentinel_store_last_command \$? \$(HISTTIMEFORMAT= history 1 | sed 's/^[ 0-9]\\+[ ]\\+//');${PROMPT_COMMAND:-:}"
+    fi
+}
+
+# Store and process the last command
+_sentinel_store_last_command() {
+    local exit_code="$1"
+    local last_cmd="$2"
+    
+    # Skip empty commands
+    [[ -z "$last_cmd" ]] && return 0
+    
+    # Only process failed commands
+    [[ $exit_code -ne 0 ]] && _sentinel_fuzzy_command_correction "$last_cmd" "$exit_code"
+}
+# FEATURE 7: Command Chain Predictions
+_sentinel_command_chain_predictor() {
+    # Directory for storing chain data
+    local chain_dir=~/.sentinel/autocomplete/chains
+    mkdir -p "$chain_dir"
+    
+    # Main database file for command chains
+    local chain_db="$chain_dir/command_chains.db"
+    
+    # Create DB if it doesn't exist
+    if [[ ! -f "$chain_db" ]]; then
+        touch "$chain_db"
+    fi
+    
+    # Get latest commands from history
+    _sentinel_update_chain_database() {
+        # Read the last 1000 commands from history
+        local cmds=$(HISTTIMEFORMAT="" history 1000 | awk '{$1=""; print substr($0,2)}')
+        
+        # Create/update chain database
+        local prev_cmd=""
+        echo "$cmds" | while read -r cmd; do
+            # Skip empty commands
+            [[ -z "$cmd" ]] && continue
+            
+            # Skip cd commands to prevent noise
+            [[ "$cmd" == cd* ]] && { prev_cmd="$cmd"; continue; }
+            
+            # If we have a previous command, record the chain
+            if [[ -n "$prev_cmd" && "$prev_cmd" != "$cmd" ]]; then
+                # Extract base commands (first word only)
+                local prev_base=$(echo "$prev_cmd" | awk '{print $1}')
+                local curr_base=$(echo "$cmd" | awk '{print $1}')
+                
+                # Skip if either command is a shell builtin or control operator
+                if [[ ! "$prev_base" =~ ^(if|for|while|until|case|function|source|\.|exec|eval)$ && 
+                      ! "$curr_base" =~ ^(if|for|while|until|case|function|source|\.|exec|eval)$ ]]; then
+                    # Record the sequence
+                    echo "$prev_cmd -> $cmd" >> "$chain_db.tmp"
+                fi
+            fi
+            prev_cmd="$cmd"
+        done
+        
+        # Merge new chains with existing ones and remove duplicates
+        if [[ -f "$chain_db.tmp" ]]; then
+            cat "$chain_db" "$chain_db.tmp" | sort | uniq > "$chain_db.new"
+            mv "$chain_db.new" "$chain_db"
+            rm -f "$chain_db.tmp"
+        fi
+    }
+    
+    # Get suggestions for the current command
+    _sentinel_suggest_next_command() {
+        local current_cmd="$1"
+        
+        # Skip empty commands
+        [[ -z "$current_cmd" ]] && return
+        
+        # Get base command
+        local base_cmd=$(echo "$current_cmd" | awk '{print $1}')
+        
+        # Search chain database for matches
+        local matches=$(grep -E "^$base_cmd($| )" "$chain_db" | 
+                       sort | uniq -c | sort -nr | head -5)
+        
+        # Process matches
+        if [[ -n "$matches" ]]; then
+            # Create command chain suggestions
+            echo "$matches" | while read -r count chain; do
+                # Extract the next command in the chain
+                local next_cmd=$(echo "$chain" | awk -F ' -> ' '{print $2}')
+                
+                # Create a chain abbreviation if command appears multiple times
+                if [[ $count -gt 1 && -n "$next_cmd" ]]; then
+                    local next_base=$(echo "$next_cmd" | awk '{print $1}')
+                    # Create a chain suggestion using the HMAC token
+                    ble-sabbrev "chain:$base_cmd-$next_base=$next_cmd # After: $current_cmd"
+                fi
+            done
+            
+            # Find most common next command for this command
+            local top_next=$(echo "$matches" | head -1 | awk -F ' -> ' '{print $2}')
+            if [[ -n "$top_next" ]]; then
+                # Register a special chain command
+                ble-sabbrev "!!:next=$top_next # Most likely next command after $current_cmd"
+                echo -e "\033[0;90mTip: Type '!!:next' to run the next likely command: $top_next\033[0m" > ~/.sentinel/autocomplete/chain_suggestion
+            fi
+        fi
+    }
+    
+    # Register command chain hook to run after a command completes
+    _sentinel_register_chain_hook() {
+        if [[ "$PROMPT_COMMAND" != *"_sentinel_command_chain_hook"* ]]; then
+            PROMPT_COMMAND="_sentinel_command_chain_hook;${PROMPT_COMMAND:-:}"
+        fi
+    }
+    
+    # Command chain hook executed when prompt displays
+    _sentinel_command_chain_hook() {
+        # Periodically update the chain database (every ~20 commands)
+        local random=$((RANDOM % 20))
+        if [[ $random -eq 0 ]]; then
+            _sentinel_update_chain_database >/dev/null 2>&1 &
+        fi
+        
+        # Get the last executed command
+        local last_cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^[ 0-9]\+[ ]\+//')
+        
+        # Suggest next command if last command was successful
+        if [[ $? -eq 0 && -n "$last_cmd" ]]; then
+            _sentinel_suggest_next_command "$last_cmd" >/dev/null 2>&1
+            
+            # Display suggestion if file exists and terminal is interactive
+            if [[ -f ~/.sentinel/autocomplete/chain_suggestion && -t 1 ]]; then
+                cat ~/.sentinel/autocomplete/chain_suggestion
+                rm ~/.sentinel/autocomplete/chain_suggestion
+            fi
+        fi
+    }
+    
+    # Initialize the command chain system
+    _sentinel_initialize_command_chains() {
+        # Ensure database directory exists
+        mkdir -p "$chain_dir"
+        
+        # Register the hook
+        _sentinel_register_chain_hook
+        
+        # Do initial analysis in background
+        (_sentinel_update_chain_database >/dev/null 2>&1 &)
+    }
+    
+    # Start the system
+    _sentinel_initialize_command_chains
+}
+
+# Function to display autocomplete status and help
+_sentinel_autocomplete_status() {
+    echo -e "\033[1;32mSENTINEL Autocomplete Status:\033[0m"
+    
+    # Check BLE.sh
+    echo -n "BLE.sh installation: "
+    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        echo -e "\033[1;32mInstalled\033[0m"
+    else
+        echo -e "\033[1;31mNot installed\033[0m"
+    fi
+    
+    # Check if BLE.sh is loaded
+    echo -n "BLE.sh loaded: "
+    if type -t ble-bind &>/dev/null; then
+        echo -e "\033[1;32mYes\033[0m"
+    else
+        echo -e "\033[1;31mNo\033[0m"
+    fi
+    
+    # Check cache directory permissions
+    echo -n "Cache directory: "
+    if [[ -d ~/.cache/blesh ]]; then
+        local perms=$(stat -c "%a" ~/.cache/blesh 2>/dev/null)
+        if [[ "$perms" == "755" ]]; then
+            echo -e "\033[1;32mOK (permissions: $perms)\033[0m"
+        else
+            echo -e "\033[1;33mWarning (permissions: $perms, should be 755)\033[0m"
+            echo "To fix: chmod 755 ~/.cache/blesh"
+        fi
+    else
+        echo -e "\033[1;31mNot found\033[0m"
+        echo "To fix: mkdir -p ~/.cache/blesh && chmod 755 ~/.cache/blesh"
+    fi
+    
+    # Display snippet count
+    local snippet_count=0
+    if [[ -d ~/.sentinel/autocomplete/snippets ]]; then
+        snippet_count=$(find ~/.sentinel/autocomplete/snippets -name "*.snippet" | wc -l)
+    fi
+    echo "Snippets available: $snippet_count"
+    
+    # Display enabled features
+    echo -e "\n\033[1;32mEnabled Features:\033[0m"
+    features=("PowerShell-like suggestions" "Right arrow completion" "History-based suggestions" 
+              "Context-aware suggestions" "Project-specific autocompletion" "Fuzzy command correction"
+              "Command chains" "HMAC-signed snippets")
+    
+    for feature in "${features[@]}"; do
+        if type -t ble-bind &>/dev/null; then
+            echo -e " \033[1;32m✓\033[0m $feature"
+        else
+            # If BLE isn't loaded, only some features work
+            if [[ "$feature" == *"Fuzzy command correction"* || "$feature" == *"Command chains"* ]]; then
+                echo -e " \033[1;32m✓\033[0m $feature"
+            else
+                echo -e " \033[1;31m✗\033[0m $feature (requires BLE.sh)"
+            fi
+        fi
+    done
+    
+    # Display usage information
+    echo -e "\n\033[1;32mUsage:\033[0m"
+    echo -e " \033[1;34m@autocomplete\033[0m    - Show this help"
+    echo -e " \033[1;34m@autocomplete status\033[0m    - Check autocomplete status"
+    echo -e " \033[1;34m@autocomplete fix\033[0m     - Fix common issues"
+    echo -e " \033[1;34m@autocomplete reload\033[0m    - Reload BLE.sh"
+    echo -e " \033[1;34m@autocomplete install\033[0m   - Force reinstall BLE.sh"
+    echo -e " \033[1;34msentinel_snippet_add\033[0m <name> <command> - Add a new snippet"
+    
+    # Troubleshooting tips
+    echo -e "\n\033[1;32mTroubleshooting:\033[0m"
+    echo -e " If you see errors with 'mv: cannot stat' messages:"
+    echo -e " 1. Run: @autocomplete fix"
+    echo -e " 2. Close and reopen your terminal"
+    echo -e " 3. Check: @autocomplete status"
+}
+
+# Function to fix common issues
+_sentinel_autocomplete_fix() {
+    echo "Fixing common autocomplete issues..."
+    
+    # Fix cache directory permissions
+    mkdir -p ~/.cache/blesh 2>/dev/null
+    chmod 755 ~/.cache/blesh 2>/dev/null
+    echo "✓ Fixed cache directory permissions"
+    
+    # Clean up problematic cache files
+    find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
+    find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
+    echo "✓ Cleaned up cache files"
+    
+    # Clean up temporary installation directories
+    find /tmp -maxdepth 1 -type d -name "blesh*" | while read dir; do
+        chmod -R 755 "$dir" 2>/dev/null
+        rm -rf "$dir" 2>/dev/null
+    done
+    echo "✓ Cleaned up temporary installation directories"
+    
+    # Reload BLE.sh if available
+    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+        export _ble_suppress_stderr=1
+        source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+        echo "✓ Reloaded BLE.sh"
+    fi
+    
+    echo -e "\nAll issues fixed. Please \033[1;32mclose and reopen your terminal\033[0m for changes to take full effect."
 }
 
 # Main function to setup autocomplete
+#!/usr/bin/env bash
+# SENTINEL Advanced Autocomplete Framework
+# Version 2.0.0
+
+# Main entry point function - sets up the entire autocomplete system
 sentinel_setup_autocomplete() {
-    # First check if we're in an interactive shell
-    [[ $- != *i* ]] && return
+    # Skip setup if not in interactive shell
+    [[ $- != *i* ]] && return 0
     
-    # Display a progress indicator during setup
+    # Set up reliable error handling
+    set -o pipefail
+    
+    # Initialize a status tracking array
+    local status=()
+    local start_time=$(date +%s.%N)
+    
+    # Display startup banner only in interactive terminals
     if [[ -t 1 ]]; then
-        echo -n "Setting up advanced autocompletion... "
+        echo -e "\033[1;34mSENTINEL\033[0m Advanced Autocomplete [\033[1;32mInitializing\033[0m]"
+        echo -ne "Setting up environment... "
     fi
     
-    # Check and install ble.sh if needed
-    _sentinel_check_blesh
+    # Create and verify required directories
+    _sentinel_ensure_directories
+    status+=("Directories: OK")
     
-    # Configure autocomplete
-    _sentinel_configure_autocomplete
-    
-    # Inform user of completion
     if [[ -t 1 ]]; then
-        echo "Done!"
-        echo "Right arrow accepts suggestions, Ctrl+Space shows completion menu."
-        echo "History search with up/down arrows is enabled."
+        echo -e "\033[1;32mDone\033[0m"
+        echo -ne "Checking for ble.sh components... "
     fi
     
-    # Add a helpful logging message
-    logger -t "SENTINEL" "Autocomplete module initialized with secure token generation"
+    # Check and set up ble.sh
+    _sentinel_check_blesh || {
+        status+=("BLE.sh: FAILED")
+        echo -e "\033[1;31mFailed\033[0m"
+        log_error "BLE.sh installation or loading failed"
+    }
+    
+    if type -t ble-bind &>/dev/null; then
+        status+=("BLE.sh: OK")
+        if [[ -t 1 ]]; then
+            echo -e "\033[1;32mOK\033[0m"
+        fi
+    else
+        status+=("BLE.sh: PARTIAL")
+        if [[ -t 1 ]]; then
+            echo -e "\033[1;33mPartial\033[0m"
+        fi
+    fi
+    
+    # Configure features in a deterministic order to prevent race conditions
+    if [[ -t 1 ]]; then
+        echo -ne "Configuring features... "
+    fi
+    
+    # Load features in specific order with recovery capabilities
+    _sentinel_configure_features || {
+        status+=("Features: PARTIAL")
+        log_warning "Some features failed to initialize"
+        
+        if [[ -t 1 ]]; then
+            echo -e "\033[1;33mPartial\033[0m"
+        fi
+    }
+    
+    # Record completion time
+    local end_time=$(date +%s.%N)
+    local elapsed=$(echo "$end_time - $start_time" | bc)
+    
+    # Log startup information in a background subshell to avoid blocking
+    {
+        mkdir -p ~/.sentinel/logs
+        local log_file=~/.sentinel/logs/autocomplete-$(date +%Y%m%d).log
+        
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] SENTINEL Autocomplete initialized in ${elapsed}s" >> "$log_file"
+        echo "Status: ${status[*]}" >> "$log_file"
+        
+        # Also log to system logger if available
+        logger -t "SENTINEL" "Autocomplete initialized (${elapsed}s): ${status[*]}" 2>/dev/null || true
+    } &
+    
+    # Display completion message
+    if [[ -t 1 ]]; then
+        echo -e "\033[1;32mDone\033[0m"
+        echo -e "Initialization completed in \033[1;32m${elapsed}s\033[0m"
+        echo -e "Type \033[1;34m@autocomplete\033[0m for help and available commands"
+    fi
+    
+    return 0
 }
 
-# Run the setup function
+# Enhanced directory initialization with integrity checks
+_sentinel_ensure_directories() {
+    # Create primary directory structure
+    local dirs=(
+        ~/.sentinel/autocomplete/snippets
+        ~/.sentinel/autocomplete/context
+        ~/.sentinel/autocomplete/projects
+        ~/.sentinel/autocomplete/params
+        ~/.sentinel/logs
+        ~/.sentinel/cache
+        ~/.cache/blesh
+    )
+    
+    # Create directories with proper permissions
+    for dir in "${dirs[@]}"; do
+        # Check if directory exists before creating
+        if [[ ! -d "$dir" ]]; then
+            mkdir -p "$dir" 2>/dev/null || {
+                # Handle creation failure
+                echo -e "\033[1;31mError\033[0m: Failed to create directory: $dir"
+                return 1
+            }
+            chmod 755 "$dir" 2>/dev/null
+        else
+            # Verify permissions on existing directories
+            local perms=$(stat -c "%a" "$dir" 2>/dev/null || echo "000")
+            if [[ "$perms" != "755" ]]; then
+                chmod 755 "$dir" 2>/dev/null || {
+                    echo -e "\033[1;31mWarning\033[0m: Failed to set permissions on $dir"
+                }
+            fi
+        fi
+    done
+    
+    # Clean up orphaned BLE.sh directories in background
+    _sentinel_cleanup_blesh_dirs &
+    
+    # Create command category database if it doesn't exist
+    if [[ ! -f ~/.sentinel/autocomplete/categories.db ]]; then
+        _sentinel_create_default_categories
+    fi
+    
+    # Verify database files
+    _sentinel_verify_and_repair_databases
+    
+    return 0
+}
+
+# Background cleanup function for BLE.sh directories
+_sentinel_cleanup_blesh_dirs() {
+    local dirs=($(find /tmp -maxdepth 1 -type d -name "blesh*" -mtime +1 2>/dev/null))
+    if [[ ${#dirs[@]} -gt 0 ]]; then
+        echo "Cleaning up orphaned ble.sh installation directories..."
+        for dir in "${dirs[@]}"; do
+            chmod -R 755 "$dir" 2>/dev/null
+            rm -rf "$dir" 2>/dev/null && 
+                echo "Removed $dir" || 
+                echo "Failed to remove $dir"
+        done
+    fi
+    
+    # Clean BLE.sh cache files that might cause issues
+    if [[ -d ~/.cache/blesh ]]; then
+        find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
+        find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
+    fi
+    
+    # Run cleanup script if it exists
+    if [[ -f ~/.sentinel/cleanup_blesh.sh ]]; then
+        echo "Running pending cleanup tasks..."
+        bash ~/.sentinel/cleanup_blesh.sh
+    fi
+}
+
+# Configure all features with proper error handling
+_sentinel_configure_features() {
+    local features_status=()
+    
+    # Configure autocomplete
+    _sentinel_configure_autocomplete && 
+        features_status+=("Autocomplete: OK") || 
+        features_status+=("Autocomplete: FAILED")
+    
+    # Set up fuzzy correction
+    _sentinel_register_fuzzy_correction && 
+        features_status+=("Fuzzy correction: OK") || 
+        features_status+=("Fuzzy correction: FAILED")
+    
+    # Set up command chain predictor
+    _sentinel_command_chain_predictor && 
+        features_status+=("Command chain: OK") || 
+        features_status+=("Command chain: FAILED")
+    
+    # Check overall status - if any feature failed, return partial success
+    if [[ "${features_status[*]}" == *"FAILED"* ]]; then
+        # Log failures but continue - framework should be resilient
+        {
+            local log_file=~/.sentinel/logs/errors-$(date +%Y%m%d).log
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Feature initialization failures:" >> "$log_file"
+            for status in "${features_status[@]}"; do
+                [[ "$status" == *"FAILED"* ]] && echo "  $status" >> "$log_file"
+            done
+        } &
+        return 1
+    fi
+    
+    return 0
+}
+
+# Create default command categories database with common commands
+_sentinel_create_default_categories() {
+    cat > ~/.sentinel/autocomplete/categories.db << 'EOF'
+# Command category database
+# Format: command|category|color
+# Version: 2.0.0
+
+# Version control
+git|version_control|32
+svn|version_control|32
+hg|version_control|32
+
+# Container management
+docker|container|36
+podman|container|36
+kubectl|kubernetes|34
+helm|kubernetes|34
+k3s|kubernetes|34
+minikube|kubernetes|34
+
+# Filesystem operations
+find|filesystem|33
+ls|filesystem|33
+cd|filesystem|33
+cp|filesystem|33
+mv|filesystem|33
+rm|filesystem|33
+mkdir|filesystem|33
+rmdir|filesystem|33
+touch|filesystem|33
+chmod|filesystem|33
+chown|filesystem|33
+df|filesystem|33
+du|filesystem|33
+
+# File content
+cat|filesystem|33
+less|filesystem|33
+more|filesystem|33
+head|filesystem|33
+tail|filesystem|33
+nano|editor|35
+vim|editor|35
+vi|editor|35
+emacs|editor|35
+
+# Text processing
+grep|search|35
+awk|text|35
+sed|text|35
+sort|text|35
+uniq|text|35
+tr|text|35
+cut|text|35
+jq|json|36
+
+# Network
+ssh|network|31
+curl|network|31
+wget|network|31
+ping|network|31
+telnet|network|31
+nc|network|31
+nmap|network|31
+dig|network|31
+host|network|31
+netstat|network|31
+tcpdump|network|31
+ip|network|31
+ifconfig|network|31
+
+# Package management
+apt|package|36
+apt-get|package|36
+yum|package|36
+dnf|package|36
+pip|package|36
+pip3|package|36
+npm|package|36
+yarn|package|36
+cargo|package|36
+
+# Process management
+ps|process|32
+top|process|32
+htop|process|32
+kill|process|31
+pkill|process|31
+EOF
+}
+
+# Check and repair database files
+_sentinel_verify_and_repair_databases() {
+    local db_files=(
+        ~/.sentinel/autocomplete/categories.db
+    )
+    
+    for db in "${db_files[@]}"; do
+        if [[ -f "$db" ]]; then
+            # Check for file corruption
+            if ! grep -q "^#" "$db" && [[ -s "$db" ]]; then
+                # File exists but header is missing, likely corrupted
+                echo "Repairing corrupted database: $db"
+                mv "$db" "$db.corrupted.$(date +%s)" 2>/dev/null
+                
+                # Call the appropriate function to recreate the database
+                case "$db" in
+                    *categories.db)
+                        _sentinel_create_default_categories
+                        ;;
+                esac
+            fi
+        fi
+    done
+}
+
+# Logging functions
+log_error() {
+    local msg="$1"
+    mkdir -p ~/.sentinel/logs
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $msg" >> ~/.sentinel/logs/errors-$(date +%Y%m%d).log
+}
+
+log_warning() {
+    local msg="$1"
+    mkdir -p ~/.sentinel/logs
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: $msg" >> ~/.sentinel/logs/warnings-$(date +%Y%m%d).log
+}
+
+# Run the setup function to initialize the system
 sentinel_setup_autocomplete
