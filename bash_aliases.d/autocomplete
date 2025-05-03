@@ -1190,7 +1190,7 @@ _sentinel_fuzzy_command_correction() {
     local main_cmd=$(echo "$last_command" | awk '{print $1}')
     
     # Don't process complex commands or if command is actually valid
-    [[ "$last_command" =~ [|><;&] || $(type "$main_cmd" &>/dev/null; echo $?) -eq 0 ]] && return 0
+   [[ "$last_command" =~ [|><;&] ]] || type "$main_cmd" &>/dev/null && return 0
     
     # Find closest matches using levenshtein distance
     local suggestions=""
