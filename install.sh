@@ -306,21 +306,23 @@ _sentinel_generate_token() {
     echo "${data}:${hmac}"
 }
 
-# Background tasks with progress tracking
-{
-    # Load ble.sh if available
-    if [[ -f ~/.local/share/blesh/ble.sh ]]; then
-        source ~/.local/share/blesh/ble.sh 2>/dev/null
+# Load autocomplete features if they exist
+if [[ -f ~/.bashrc ]]; then
+    # Make sure aliases are loaded
+    if [[ -f ~/.bash_aliases ]]; then
+        source ~/.bash_aliases
     fi
     
-    # Activate autocomplete functions if they exist
-    type -t _sentinel_configure_autocomplete &>/dev/null && _sentinel_configure_autocomplete
-    type -t _sentinel_register_fuzzy_correction &>/dev/null && _sentinel_register_fuzzy_correction
-    type -t _sentinel_command_chain_predictor &>/dev/null && _sentinel_command_chain_predictor
+    # Load specific autocomplete functionality
+    if [[ -f ~/.bash_aliases.d/autocomplete ]]; then
+        source ~/.bash_aliases.d/autocomplete
+    fi
     
-    # Log success
-    logger -t "SENTINEL" "Autocomplete module initialized with enhanced features" 2>/dev/null || true
-} &
+    # Try to activate the autocomplete system
+    if type -t sentinel_setup_autocomplete &>/dev/null; then
+        sentinel_setup_autocomplete &>/dev/null
+    fi
+}
 
 # Return secure token for verification
 _sentinel_token=$(_sentinel_generate_token)
@@ -338,214 +340,12 @@ EOF
         echo -e "${GREEN}Added integration activator to ~/.bashrc${NC}"
     fi
     
-    # Create the @autocomplete command implementation
-    local autocomplete_script="${HOME}/.bash_aliases.d/autocomplete"
-    mkdir -p "$(dirname "$autocomplete_script")" 2>/dev/null
-    
-    # Only add the @autocomplete command if it doesn't already exist
-    if [ ! -f "$autocomplete_script" ] || ! grep -q "@autocomplete()" "$autocomplete_script"; then
-        cat >> "$autocomplete_script" << 'EOF'
-# Function to handle @autocomplete command directly
-_sentinel_autocomplete_command() {
-    local cmd="$1"
-    shift
-    
-    case "$cmd" in
-        help|--help|-h|"")
-            # Show help information
-            echo -e "\033[1;32mSENTINEL Autocomplete Commands:\033[0m"
-            echo -e "  \033[1;34m@autocomplete\033[0m                   - Show this help"
-            echo -e "  \033[1;34m@autocomplete status\033[0m            - Check autocomplete status"
-            echo -e "  \033[1;34m@autocomplete fix\033[0m               - Fix common issues"
-            echo -e "  \033[1;34m@autocomplete reload\033[0m            - Reload BLE.sh"
-            echo -e "  \033[1;34m@autocomplete install\033[0m           - Force reinstall BLE.sh"
-            
-            echo -e "\n\033[1;32mUsage:\033[0m"
-            echo -e "  - Press \033[1;34mTab\033[0m to see suggestions"
-            echo -e "  - Press \033[1;34mRight Arrow\033[0m to accept suggestion"
-            echo -e "  - Type \033[1;34m!!:fix\033[0m to correct last failed command"
-            echo -e "  - Type \033[1;34m!!:next\033[0m to run most likely next command"
-            
-            echo -e "\n\033[1;32mTroubleshooting:\033[0m"
-            echo -e "  If autocomplete isn't working, try:"
-            echo -e "  1. Run '@autocomplete fix'"
-            echo -e "  2. Close and reopen your terminal"
-            echo -e "  3. If still not working, run '@autocomplete install'"
-            ;;
-        status|--status|-s)
-            # Show status information
-            echo -e "\033[1;32mSENTINEL Autocomplete Status:\033[0m"
-            
-            # Check BLE.sh installation
-            echo -n "BLE.sh installation: "
-            if [[ -f ~/.local/share/blesh/ble.sh ]]; then
-                echo -e "\033[1;32mInstalled\033[0m"
-            else
-                echo -e "\033[1;31mNot installed\033[0m"
-            fi
-            
-            # Check if BLE.sh is loaded
-            echo -n "BLE.sh loaded: "
-            if type -t ble-bind &>/dev/null; then
-                echo -e "\033[1;32mYes\033[0m"
-            else
-                echo -e "\033[1;31mNo\033[0m"
-            fi
-            
-            # Check cache directory permissions
-            echo -n "Cache directory: "
-            if [[ -d ~/.cache/blesh ]]; then
-                local perms=$(stat -c "%a" ~/.cache/blesh 2>/dev/null)
-                if [[ "$perms" == "755" ]]; then
-                    echo -e "\033[1;32mOK (permissions: $perms)\033[0m"
-                else
-                    echo -e "\033[1;33mWarning (permissions: $perms, should be 755)\033[0m"
-                    echo "To fix: chmod 755 ~/.cache/blesh"
-                fi
-            else
-                echo -e "\033[1;31mNot found\033[0m"
-                echo "To fix: mkdir -p ~/.cache/blesh && chmod 755 ~/.cache/blesh"
-            fi
-            ;;
-        fix|--fix|-f)
-            # Fix common issues
-            echo "Fixing common autocomplete issues..."
-            
-            # Fix cache directory permissions
-            mkdir -p ~/.cache/blesh 2>/dev/null
-            chmod 755 ~/.cache/blesh 2>/dev/null
-            echo "✓ Fixed cache directory permissions"
-            
-            # Clean up problematic cache files
-            find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
-            find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
-            echo "✓ Cleaned up cache files"
-            
-            # Clean up temporary installation directories
-            find /tmp -maxdepth 1 -type d -name "blesh*" | while read dir; do
-                chmod -R 755 "$dir" 2>/dev/null
-                rm -rf "$dir" 2>/dev/null
-            done
-            echo "✓ Cleaned up temporary installation directories"
-            
-            # Reload BLE.sh if available
-            if [[ -f ~/.sentinel/blesh_loader.sh ]]; then
-                source ~/.sentinel/blesh_loader.sh 2>/dev/null || true
-                echo "✓ Reloaded BLE.sh using loader script"
-            elif [[ -f ~/.local/share/blesh/ble.sh ]]; then
-                export _ble_suppress_stderr=1
-                export _ble_keymap_initialize=0
-                source ~/.local/share/blesh/ble.sh 2>/dev/null || true
-                echo "✓ Reloaded BLE.sh directly"
-            fi
-            
-            echo -e "\nAll issues fixed. Please \033[1;32mclose and reopen your terminal\033[0m for changes to take full effect."
-            ;;
-        reload|--reload|-r)
-            # Re-initialize BLE.sh
-            if [[ -f ~/.sentinel/blesh_loader.sh ]]; then
-                source ~/.sentinel/blesh_loader.sh 2>/dev/null || true
-                echo "BLE.sh reloaded using loader script."
-            elif [[ -f ~/.local/share/blesh/ble.sh ]]; then
-                export _ble_suppress_stderr=1
-                export _ble_keymap_initialize=0
-                source ~/.local/share/blesh/ble.sh 2>/dev/null || true
-                echo "BLE.sh reloaded directly."
-            else
-                echo "BLE.sh not installed. Run '@autocomplete fix' to install."
-            fi
-            ;;
-        install|--install|-i)
-            # Force reinstall BLE.sh
-            rm -rf ~/.local/share/blesh 2>/dev/null
-            echo "Reinstalling BLE.sh..."
-            
-            # Create a temporary directory for installation
-            local tmp_dir="/tmp/blesh_reinstall_$$_$(date +%s)"
-            mkdir -p "$tmp_dir"
-            
-            # Clone the repository
-            echo "  Cloning BLE.sh repository..."
-            git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null
-            
-            if [[ $? -eq 0 ]]; then
-                # Install BLE.sh
-                echo "  Installing BLE.sh..."
-                mkdir -p ~/.local/share/blesh
-                make -C "$tmp_dir" install PREFIX=~/.local 2>/tmp/blesh_make.log
-                
-                if [[ $? -eq 0 ]]; then
-                    echo "✓ BLE.sh installed successfully"
-                else
-                    echo "✗ Failed to install BLE.sh. See /tmp/blesh_make.log for details"
-                fi
-                
-                # Clean up
-                rm -rf "$tmp_dir" 2>/dev/null
-            else
-                echo "✗ Failed to clone BLE.sh repository"
-            fi
-            
-            echo "Installation complete. Please restart your terminal."
-            ;;
-        *)
-            echo "Unknown command: $cmd"
-            echo "Available commands: help, status, fix, reload, install"
-            ;;
-    esac
+    echo -e "${GREEN}Shell integration fixed successfully${NC}"
 }
 
-# Enable @autocomplete command
-function @autocomplete() {
-    _sentinel_autocomplete_command "$@"
-}
-
-# Enhanced autocomplete configuration
-configure_autocomplete() {
-    echo -e "\n${BLUE}${BOLD}Step 7: Configuring Autocomplete System${NC}"
-    
-    # Define POSTCUSTOM variable
-    local POSTCUSTOM="${HOME}/.bashrc.postcustom"
-    
-    # Check for dialog availability
-    local has_dialog=0
-    if command -v dialog &>/dev/null; then
-        has_dialog=1
-    fi
-    
-    # Determine configuration mode
-    local config_mode="basic"
-    if [ $has_dialog -eq 1 ]; then
-        # Offer configuration options via dialog
-        dialog --title "SENTINEL Autocomplete Configuration" --menu "How would you like to configure the autocomplete system?" 15 60 3 \
-            "basic" "Basic setup (recommended)" \
-            "full" "Full interactive setup" \
-            "skip" "Skip autocomplete setup" 2> /tmp/sentinel_config_choice
-        
-        config_mode=$(cat /tmp/sentinel_config_choice)
-        rm -f /tmp/sentinel_config_choice
-        
-        # Handle empty choice (if user cancels)
-        if [ -z "$config_mode" ]; then
-            config_mode="basic"
-        fi
-    fi
-    
-    # Skip configuration if requested
-    if [ "$config_mode" = "skip" ]; then
-        echo -e "${YELLOW}Skipping autocomplete configuration.${NC}"
-        echo -e "${YELLOW}You can configure it later by running the installation script again.${NC}"
-        return 0
-    fi
-    
-    # Create required directories
-    for dir in "snippets" "context" "projects" "params"; do
-        create_directory "${HOME}/.sentinel/autocomplete/${dir}"
-    done
-    
-    # Enhanced blesh_loader script with improved error handling and cache management
-    local blesh_loader="${HOME}/.sentinel/blesh_loader.sh"
-    cat > "$blesh_loader" << 'EOF'
+# Enhanced blesh_loader script with improved error handling and cache management
+local blesh_loader="${HOME}/.sentinel/blesh_loader.sh"
+cat > "$blesh_loader" << 'EOF'
 #!/usr/bin/env bash
 # SENTINEL ble.sh integration loader
 # This script loads ble.sh with proper error handling
@@ -553,6 +353,10 @@ configure_autocomplete() {
 # Ensure cache directory exists with proper permissions
 mkdir -p ~/.cache/blesh 2>/dev/null
 chmod 755 ~/.cache/blesh 2>/dev/null
+
+# Clean up any lock files that might cause issues
+find ~/.cache/blesh -name "*.lock" -delete 2>/dev/null
+find ~/.cache/blesh -name "*.part" -delete 2>/dev/null
 
 # Try to load ble.sh
 if [[ -f ~/.local/share/blesh/ble.sh ]]; then
@@ -573,296 +377,25 @@ if [[ -f ~/.local/share/blesh/ble.sh ]]; then
         fi
     fi
 fi
-EOF
-    chmod 700 "$blesh_loader"
-    
-    # Create path_manager fix script
-    local path_manager="${HOME}/.sentinel/fix_path_manager.sh"
-    cat > "$path_manager" << 'EOF'
-#!/usr/bin/env bash
-# Fix for path_manager.sh loading issues
 
-# Create a simplified version of the PATH management functionality
-PATH_CONFIG_FILE="${HOME}/.sentinel_paths"
-
-# Initialize path config file if it doesn't exist
-[[ ! -f "${PATH_CONFIG_FILE}" ]] && touch "${PATH_CONFIG_FILE}"
-
-# Load paths from configuration
-load_custom_paths() {
-    if [[ -f "${PATH_CONFIG_FILE}" ]]; then
-        while IFS= read -r path_entry; do
-            # Skip comments and empty lines
-            [[ -z "${path_entry}" || "${path_entry}" =~ ^# ]] && continue
-            
-            # Only add if directory exists and isn't already in PATH
-            if [[ -d "${path_entry}" && ":${PATH}:" != *":${path_entry}:"* ]]; then
-                export PATH="${path_entry}:${PATH}"
-            fi
-        done < "${PATH_CONFIG_FILE}"
-    fi
-}
-
-# Load custom paths
-load_custom_paths
-EOF
-    chmod 700 "$path_manager"
+# Configure ble.sh features if available
+if type -t ble-bind &>/dev/null; then
+    # Configure auto suggestions with PowerShell-like behavior
+    bleopt complete_auto_delay=100 2>/dev/null || true
+    bleopt complete_auto_complete=1 2>/dev/null || true
     
-    # Update .bashrc to include autocomplete components
-    local bashrc="${HOME}/.bashrc"
-    if [ -f "$bashrc" ] && ! grep -q "~/.sentinel/blesh_loader.sh" "$bashrc"; then
-        echo -e "\n# SENTINEL ble.sh integration" >> "$bashrc"
-        echo 'if [[ -f ~/.sentinel/blesh_loader.sh ]]; then' >> "$bashrc"
-        echo '    source ~/.sentinel/blesh_loader.sh' >> "$bashrc"
-        echo 'fi' >> "$bashrc"
-    fi
+    # Set suggestion style to be grey (similar to PowerShell)
+    bleopt highlight_auto_completion='fg=242' 2>/dev/null || true
     
-    if [ -f "$bashrc" ] && ! grep -q "~/.sentinel/fix_path_manager.sh" "$bashrc"; then
-        echo -e "\n# SENTINEL path_manager fix" >> "$bashrc"
-        echo 'if [[ -f ~/.sentinel/fix_path_manager.sh ]]; then' >> "$bashrc"
-        echo '    source ~/.sentinel/fix_path_manager.sh' >> "$bashrc"
-        echo 'fi' >> "$bashrc"
-    fi
+    # Configure right arrow to accept suggestions
+    ble-bind -m auto_complete -f right 'auto_complete/accept-line' 2>/dev/null || true
     
-    # Check if ble.sh is installed
-    local install_blesh=0
-    if [ ! -d "${HOME}/.local/share/blesh" ]; then
-        if [ "$config_mode" = "full" ] && [ $has_dialog -eq 1 ]; then
-            dialog --title "Install ble.sh" --yesno "ble.sh is not installed.\nWould you like to install it now?" 8 50
-            if [ $? -eq 0 ]; then
-                install_blesh=1
-            fi
-        else
-            # For basic mode, always try to install
-            install_blesh=1
-        fi
-    fi
-    
-    # Install ble.sh if needed
-    if [ $install_blesh -eq 1 ]; then
-        echo -e "${YELLOW}Installing ble.sh...${NC}"
-        
-        # Create temporary directory
-        local tmp_dir="/tmp/blesh_$RANDOM"
-        mkdir -p "$tmp_dir"
-        
-        # Clone repository
-        if [ "$config_mode" = "full" ] && [ $has_dialog -eq 1 ]; then
-            # Show progress in dialog
-            (
-                echo "10"; sleep 0.2
-                echo "# Cloning ble.sh repository..."
-                
-                git clone --depth 1 https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null
-                
-                echo "50"; sleep 0.2
-                echo "# Installing ble.sh..."
-                
-                make -C "$tmp_dir" install PREFIX=~/.local 2>/dev/null
-                
-                echo "90"; sleep 0.2
-                echo "# Cleaning up..."
-                
-                rm -rf "$tmp_dir"
-                
-                echo "100"; sleep 0.5
-            ) | dialog --title "Installing ble.sh" --gauge "Please wait..." 10 70 0
-        else
-            # Standard installation output
-            git clone --depth 1 https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null || {
-                echo -e "${RED}Failed to clone ble.sh repository.${NC}"
-                echo -e "${YELLOW}You can try again by running the installation script later.${NC}"
-            }
-            
-            # Install if cloned successfully
-            if [ -d "$tmp_dir" ]; then
-                make -C "$tmp_dir" install PREFIX=~/.local 2>/dev/null || {
-                    echo -e "${RED}Failed to install ble.sh.${NC}"
-                    echo -e "${YELLOW}You can try again by running the installation script later.${NC}"
-                }
-                
-                # Clean up
-                rm -rf "$tmp_dir"
-            fi
-        fi
-    fi
-    
-    # Additional configurations for full mode
-    if [ "$config_mode" = "full" ] && [ $has_dialog -eq 1 ]; then
-        # Option to enable secure operations
-        dialog --title "Security Configuration" --yesno "Would you like to enable HMAC-based verification for secure operations?" 8 60
-        if [ $? -eq 0 ]; then
-            # Generate a secure key
-            local hmac_key=$(openssl rand -hex 16 2>/dev/null || echo "$(hostname)_$(date +%s)")
-            local sentinel_auth_key="${HOME}/.sentinel/auth_key"
-            
-            mkdir -p "$(dirname "$sentinel_auth_key")" 2>/dev/null
-            echo "$hmac_key" > "$sentinel_auth_key"
-            chmod 600 "$sentinel_auth_key"
-            
-            # Add to environment
-            if [ -f "$POSTCUSTOM" ] && ! grep -q "SENTINEL_AUTH_KEY" "$POSTCUSTOM"; then
-                echo "# Security configuration" >> "$POSTCUSTOM"
-                echo "export SENTINEL_AUTH_KEY=\"$hmac_key\"" >> "$POSTCUSTOM"
-            fi
-        fi
-    fi
-    
-    # Create the fix_autocomplete function in bash_functions.d
-    local fix_autocomplete="${HOME}/.bash_functions.d/fix_autocomplete.sh"
-    mkdir -p "${HOME}/.bash_functions.d" 2>/dev/null
-    
-    cat > "$fix_autocomplete" << 'EOF'
-#!/usr/bin/env bash
-# SENTINEL Autocomplete Fix Function
-
-fix_autocomplete() {
-    local GREEN='\033[0;32m'
-    local YELLOW='\033[0;33m'
-    local RED='\033[0;31m'
-    local NC='\033[0m'
-
-    echo -e "${YELLOW}Fixing autocomplete issues...${NC}"
-    
-    # Fix permissions
-    echo "Setting correct permissions..."
-    find ~/.bash_functions.d/ -type f -exec chmod +x {} \; 2>/dev/null
-    find ~/.bash_aliases.d/ -type f -exec chmod +x {} \; 2>/dev/null
-    find ~/.bash_modules.d/ -type f -exec chmod +x {} \; 2>/dev/null
-    find ~/.bash_completion.d/ -type f -exec chmod +x {} \; 2>/dev/null
-    
-    # Create directories
-    echo "Creating required directories..."
-    mkdir -p ~/.sentinel/autocomplete/snippets 2>/dev/null
-    mkdir -p ~/.sentinel/autocomplete/context 2>/dev/null
-    mkdir -p ~/.sentinel/autocomplete/projects 2>/dev/null
-    mkdir -p ~/.sentinel/autocomplete/params 2>/dev/null
-    
-    # Check if ble.sh is installed
-    echo "Checking ble.sh installation..."
-    if [[ ! -f ~/.local/share/blesh/ble.sh ]]; then
-        echo -e "${YELLOW}ble.sh not found. Installing...${NC}"
-        
-        # Create temporary directory
-        local tmp_dir="/tmp/blesh_fix_$RANDOM"
-        mkdir -p "$tmp_dir"
-        
-        # Clone repository
-        git clone --depth 1 https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null
-        
-        if [[ $? -eq 0 ]]; then
-            # Install ble.sh
-            make -C "$tmp_dir" install PREFIX=~/.local 2>/dev/null
-            
-            if [[ $? -eq 0 ]]; then
-                echo -e "${GREEN}✓ ble.sh installed successfully${NC}"
-            else
-                echo -e "${RED}✗ Failed to install ble.sh${NC}"
-            fi
-            
-            # Clean up
-            rm -rf "$tmp_dir"
-        else
-            echo -e "${RED}✗ Failed to clone ble.sh repository${NC}"
-        fi
-    else
-        echo -e "${GREEN}✓ ble.sh is already installed${NC}"
-    fi
-    
-    # Update or create loader scripts
-    echo "Creating ble.sh loader script..."
-    cat > ~/.sentinel/blesh_loader.sh << 'EOFINNER'
-#!/usr/bin/env bash
-# SENTINEL ble.sh integration loader
-# This script loads ble.sh with proper error handling
-
-# Try to load ble.sh
-if [[ -f ~/.local/share/blesh/ble.sh ]]; then
-    # Try the standard loading method first
-    source ~/.local/share/blesh/ble.sh 2>/dev/null
-    
-    # Check if it worked
-    if ! type -t ble-bind &>/dev/null; then
-        echo "Warning: ble.sh did not load properly. Trying alternative loading method..."
-        # Try alternative loading with a different approach
-        source <(cat ~/.local/share/blesh/ble.sh) 2>/dev/null
-        
-        # If still not working, fall back to basic completion
-        if ! type -t ble-bind &>/dev/null; then
-            echo "Warning: ble.sh could not be loaded. Using basic autocompletion instead."
-            # Load bash standard completion as fallback
-            [[ -f /etc/bash_completion ]] && source /etc/bash_completion
-        fi
-    fi
+    # History-based completion
+    bleopt complete_ambiguous=1 2>/dev/null || true
+    bleopt complete_auto_history=1 2>/dev/null || true
 fi
-EOFINNER
-    chmod +x ~/.sentinel/blesh_loader.sh
-    
-    echo "Creating path_manager fix script..."
-    cat > ~/.sentinel/fix_path_manager.sh << 'EOFINNER'
-#!/usr/bin/env bash
-# Fix for path_manager.sh loading issues
-
-# Create a simplified version of the PATH management functionality
-PATH_CONFIG_FILE="${HOME}/.sentinel_paths"
-
-# Initialize path config file if it doesn't exist
-[[ ! -f "${PATH_CONFIG_FILE}" ]] && touch "${PATH_CONFIG_FILE}"
-
-# Load paths from configuration
-load_custom_paths() {
-    if [[ -f "${PATH_CONFIG_FILE}" ]]; then
-        while IFS= read -r path_entry; do
-            # Skip comments and empty lines
-            [[ -z "${path_entry}" || "${path_entry}" =~ ^# ]] && continue
-            
-            # Only add if directory exists and isn't already in PATH
-            if [[ -d "${path_entry}" && ":${PATH}:" != *":${path_entry}:"* ]]; then
-                export PATH="${path_entry}:${PATH}"
-            fi
-        done < "${PATH_CONFIG_FILE}"
-    fi
-}
-
-# Load custom paths
-load_custom_paths
-EOFINNER
-    chmod +x ~/.sentinel/fix_path_manager.sh
-    
-    # Update .bashrc if needed
-    if ! grep -q "~/.sentinel/blesh_loader.sh" ~/.bashrc; then
-        echo '# SENTINEL ble.sh integration' >> ~/.bashrc
-        echo 'if [[ -f ~/.sentinel/blesh_loader.sh ]]; then' >> ~/.bashrc
-        echo '    source ~/.sentinel/blesh_loader.sh' >> ~/.bashrc
-        echo 'fi' >> ~/.bashrc
-    fi
-    
-    if ! grep -q "~/.sentinel/fix_path_manager.sh" ~/.bashrc; then
-        echo '# SENTINEL path_manager fix' >> ~/.bashrc
-        echo 'if [[ -f ~/.sentinel/fix_path_manager.sh ]]; then' >> ~/.bashrc
-        echo '    source ~/.sentinel/fix_path_manager.sh' >> ~/.bashrc
-        echo 'fi' >> ~/.bashrc
-    fi
-    
-    # Clean up temporary files
-    find /tmp -maxdepth 1 -type d -name "blesh*" -exec rm -rf {} \; 2>/dev/null || true
-    
-    echo -e "${GREEN}✓ Autocomplete fixes have been applied successfully!${NC}"
-    echo -e "${YELLOW}Please restart your terminal for changes to take effect, or run:${NC}"
-    echo -e "source ~/.sentinel/blesh_loader.sh"
-    echo -e "source ~/.sentinel/fix_path_manager.sh"
-}
 EOF
-    chmod 700 "$fix_autocomplete"
-    
-    # Create an alias for the fix function
-    if [ -f "$POSTCUSTOM" ] && ! grep -q "fix_autocomplete" "$POSTCUSTOM"; then
-        echo "alias autocomplete_fix='fix_autocomplete'" >> "$POSTCUSTOM"
-    fi
-    
-    echo -e "${GREEN}Autocomplete configuration completed.${NC}"
-    echo -e "${YELLOW}For fixing autocomplete issues later, run: autocomplete_fix${NC}"
-}
+chmod 700 "$blesh_loader"
 
 # Main installation function
 install_sentinel() {
@@ -936,7 +469,7 @@ install_sentinel() {
     fi
     
     echo -e "\n${BLUE}${BOLD}Step 8: Configuring Autocomplete System${NC}"
-    configure_autocomplete
+    fix_shell_integration
     
     echo -e "\n${BLUE}${BOLD}Step 9: Fixing Shell Integration${NC}"
     fix_shell_integration
