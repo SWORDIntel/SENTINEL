@@ -172,8 +172,7 @@ check_internet_and_update() {
     fi
 }
 
-# Alias to source .bashrc and run the update only when 'sourcebash' is called
-alias sourcebash='source ~/.bashrc && check_internet_and_update && echo ".bashrc sourced and apt updated if connected."'
+# Note: sourcebash alias has been moved to bash_aliases file
 
 # Secure file deletion function that overrides rm
 rm() {
@@ -443,6 +442,26 @@ sentinel_quiet() {
 
 # Load additional functions from function directory
 loadRcDir "${HOME}/.bash_functions.d"
+
+# Quick alias setup
+function qalias() {
+  if [[ -z "$1" || -z "$2" ]]; then
+    echo "Usage: qalias <alias_name> <command>"
+    return 1
+  fi
+  
+  local alias_name="$1"
+  shift
+  local alias_cmd="$*"
+  
+  # Add to aliases file
+  echo "alias $alias_name='$alias_cmd'" >> ~/.bash_aliases
+  
+  # Load it immediately
+  alias "$alias_name"="$alias_cmd"
+  
+  echo "Alias '$alias_name' created and activated"
+}
 
 # Ensure the script is sourced correctly - only need this check once
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

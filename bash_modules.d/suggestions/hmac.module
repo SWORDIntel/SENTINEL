@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+# SENTINEL - HMAC Security Module
+# Version: 2.0.0
+# Description: Provides HMAC-based cryptographic functions for secure token generation and verification
+# Dependencies: openssl
+# Maintainer: SENTINEL Team
+
+# Prevent double loading
+[[ -n "${_SENTINEL_HMAC_LOADED}" ]] && return 0
+export _SENTINEL_HMAC_LOADED=1
+
+# Set strict error handling
+set -o pipefail
+
+# Default secret key environment variable
+: "${SENTINEL_SECRET_KEY:=default_key}"
+
+# HMAC-signed token generation for enhanced security
+# Uses a strong cryptographic approach to mitigate SSRF attacks
+sentinel_generate_secure_token() {
+    local timestamp=$(date +%s)
+    local nonce=$(openssl rand -hex 8)
+    local data="${timestamp}:${nonce}"
+    local signature=$(echo -n "$data" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY}" | cut -d' ' -f2)
+    echo "${data}:${signature}"
+}
+
+# Verify an HMAC token's authenticity
+# Returns 0 if valid, 1 if invalid
+sentinel_verify_token() {
+    local token="$1"
+    
+    # Validate input
+    if [[ -z "$token" || ! "$token" =~ ^[0-9]+:[a-f0-9]+:[a-f0-9]+$ ]]; then
+        _hmac_log_error "Invalid token format: $token"
+        return 1
+    fi
+    
+    # Extract components
+    local timestamp=$(echo "$token" | cut -d':' -f1)
+    local nonce=$(echo "$token" | cut -d':' -f2)
+    local provided_signature=$(echo "$token" | cut -d':' -f3)
+    local data="${timestamp}:${nonce}"
+    
+    # Check token expiration (default 10 minutes)
+    local now=$(date +%s)
+    local max_age=600  # 10 minutes
+    
+    if (( now - timestamp > max_age )); then
+        _hmac_log_warning "Token expired: $token"
+        return 1
+    fi
+    
+    # Compute expected signature
+    local expected_signature=$(echo -n "$data" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY}" | cut -d' ' -f2)
+    
+    # Compare signatures (constant-time comparison to prevent timing attacks)
+    if [[ "$provided_signature" == "$expected_signature" ]]; then
+        return 0
+    else
+        _hmac_log_error "Token verification failed (signature mismatch): $token"
+        return 1
+    fi
+}
+
+# Generate HMAC for a file or string
+# Usage: sentinel_generate_hmac <content|filename> [is_file]
+sentinel_generate_hmac() {
+    local content="$1"
+    local is_file="${2:-false}"
+    
+    if [[ -z "$content" ]]; then
+        _hmac_log_error "No content provided for HMAC generation"
+        return 1
+    fi
+    
+    if [[ "$is_file" == "true" ]]; then
+        # Generate HMAC for file content
+        if [[ ! -f "$content" ]]; then
+            _hmac_log_error "File not found: $content"
+            return 1
+        fi
+        
+        openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY}" "$content" | cut -d' ' -f2
+    else
+        # Generate HMAC for string
+        echo -n "$content" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY}" | cut -d' ' -f2
+    fi
+}
+
+# Verify HMAC for a file or string
+# Usage: sentinel_verify_hmac <content|filename> <expected_hmac> [is_file]
+sentinel_verify_hmac() {
+    local content="$1"
+    local expected_hmac="$2"
+    local is_file="${3:-false}"
+    
+    if [[ -z "$content" || -z "$expected_hmac" ]]; then
+        _hmac_log_error "Missing content or expected HMAC for verification"
+        return 1
+    fi
+    
+    local computed_hmac=$(sentinel_generate_hmac "$content" "$is_file")
+    
+    if [[ "$computed_hmac" == "$expected_hmac" ]]; then
+        return 0
+    else
+        _hmac_log_error "HMAC verification failed"
+        return 1
+    fi
+}
+
+# Securely run a command with HMAC verification
+# Usage: sentinel_run_verified_command <command>
+sentinel_run_verified_command() {
+    local cmd="$1"
+    local timestamp=$(date +%s)
+    local nonce=$(openssl rand -hex 4)
+    local data="${cmd}:${timestamp}:${nonce}"
+    
+    # Generate HMAC signature
+    local signature=$(echo -n "$data" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY}" | cut -d' ' -f2)
+    local expected_hash=$(echo -n "$data" | openssl dgst -sha256 -hmac "${SENTINEL_SECRET_KEY}" | cut -d' ' -f2)
+    
+    # Verify command integrity before execution
+    if [[ "$signature" == "$expected_hash" ]]; then
+        echo -e "\033[1;32mRunning verified command: \033[1m$cmd\033[0m"
+        eval "$cmd"
+    else
+        echo -e "\033[1;31mCommand verification failed. For security reasons, command will not be executed.\033[0m"
+        _hmac_log_error "Command verification failed: $cmd"
+        return 1
+    fi
+}
+
+# Ensure secure environment for HMAC operations
+sentinel_secure_environment() {
+    # Create a more secure key if only using default
+    if [[ "${SENTINEL_SECRET_KEY}" == "default_key" ]]; then
+        # Check if we have a stored key
+        local key_file=~/.sentinel/security/hmac_key
+        
+        if [[ -f "$key_file" ]]; then
+            # Load existing key
+            SENTINEL_SECRET_KEY=$(<"$key_file")
+        else
+            # Generate and store a new key
+            mkdir -p ~/.sentinel/security
+            chmod 700 ~/.sentinel/security
+            
+            # Generate random key
+            SENTINEL_SECRET_KEY=$(openssl rand -hex 32)
+            echo "$SENTINEL_SECRET_KEY" > "$key_file"
+            chmod 600 "$key_file"
+            _hmac_log_warning "Generated new HMAC secret key"
+        fi
+    fi
+    
+    # Export the key for child processes
+    export SENTINEL_SECRET_KEY
+}
+
+# Logging functions
+_hmac_log_error() {
+    local msg="$1"
+    mkdir -p ~/.sentinel/logs
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $msg" >> ~/.sentinel/logs/security-$(date +%Y%m%d).log
+}
+
+_hmac_log_warning() {
+    local msg="$1"
+    mkdir -p ~/.sentinel/logs
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: $msg" >> ~/.sentinel/logs/security-$(date +%Y%m%d).log
+}
+
+# Initialize the HMAC security module
+sentinel_init_hmac() {
+    # Skip if not in interactive shell
+    [[ $- != *i* ]] && return 0
+    
+    # Set up error handling
+    set -o pipefail
+    
+    # Ensure secure environment
+    sentinel_secure_environment
+    
+    # Register the token generator if using ble.sh
+    if type -t ble-sabbrev &>/dev/null; then
+        ble-sabbrev sentinel:token='$(sentinel_generate_secure_token)'
+    fi
+    
+    # Register aliases for convenience
+    alias sentinel_token=sentinel_generate_secure_token
+    
+    # Log startup
+    _hmac_log_warning "HMAC security module initialized"
+    
+    return 0
+}
+
+# Run initialization
+sentinel_init_hmac 

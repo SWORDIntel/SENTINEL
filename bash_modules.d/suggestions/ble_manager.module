@@ -1,0 +1,408 @@
+#!/usr/bin/env bash
+# SENTINEL - BLE.sh Manager Module
+# Version: 2.0.0
+# Description: Handles installation, configuration, and management of BLE.sh (Bash Line Editor)
+# Dependencies: git, make
+# Maintainer: SENTINEL Team
+
+# Prevent double loading
+[[ -n "${_SENTINEL_BLE_MANAGER_LOADED}" ]] && return 0
+export _SENTINEL_BLE_MANAGER_LOADED=1
+
+# Set strict error handling
+set -o pipefail
+
+# Check if BLE.sh is installed
+sentinel_is_blesh_installed() {
+    [[ -f ~/.local/share/blesh/ble.sh ]]
+}
+
+# Check if BLE.sh is loaded
+sentinel_is_blesh_loaded() {
+    type -t ble-bind &>/dev/null
+}
+
+# Install BLE.sh if not already installed
+sentinel_install_blesh() {
+    # Skip if already installed
+    sentinel_is_blesh_installed && return 0
+    
+    # Clean up existing installations
+    echo "Cleaning up any existing ble.sh directories..."
+    (
+        # Find and remove existing blesh directories in a background subshell
+        find /tmp -maxdepth 1 -type d -name "blesh*" 2>/dev/null | 
+        while read -r dir; do
+            echo "Removing $dir..."
+            find "$dir" -type f -name "*.lock" -delete 2>/dev/null || true
+            find "$dir" -type f -not -readable -exec chmod +r {} \; 2>/dev/null || true
+            chmod -R 755 "$dir" 2>/dev/null || true
+            rm -rf "$dir" 2>/dev/null || true
+        done
+    ) &
+    
+    # Use a unique timestamp-based temporary directory
+    local tmp_dir="/tmp/blesh_$$_$(date +%s)"
+    
+    # Clone and install ble.sh
+    echo "Cloning ble.sh to $tmp_dir..."
+    if git clone --recursive --depth 1 --shallow-submodules https://github.com/akinomyoga/ble.sh.git "$tmp_dir" 2>/dev/null; then
+        mkdir -p ~/.local/share/blesh
+        
+        echo "Compiling and installing ble.sh..."
+        # Capture both stdout and stderr from make to the log file
+        if make -C "$tmp_dir" install PREFIX=~/.local > /tmp/blesh_make.log 2>&1; then
+            echo "ble.sh installation successful."
+        else
+            echo "Error during ble.sh compilation. See /tmp/blesh_make.log for details."
+            rm -rf "$tmp_dir" 2>/dev/null || true
+            return 1
+        fi
+        
+        # Clean up temporary directory and handle errors gracefully
+        if ! rm -rf "$tmp_dir" 2>/dev/null; then
+            echo "Warning: Could not remove temporary directory $tmp_dir."
+            echo "Scheduling cleanup for next login."
+            
+            # Create a cleanup script with safeguards against path errors
+            cat > ~/.sentinel/cleanup_blesh.sh << 'EOF'
+#!/bin/bash
+# Safety check for non-empty path
+clean_dir() {
+    local dir="$1"
+    [[ -z "$dir" || "$dir" == "/" || "$dir" == "/tmp" ]] && return 1
+    [[ -d "$dir" ]] || return 0
+    
+    chmod -R 755 "$dir" 2>/dev/null
+    rm -rf "$dir" 2>/dev/null
+    if [[ $? -eq 0 ]]; then
+        echo "Cleaned up $dir successfully."
+        return 0
+    else
+        echo "Failed to clean up $dir."
+        return 1
+    fi
+}
+
+# Clean specified directories
+for dir in "$@"; do
+    clean_dir "$dir"
+done
+
+# Also try to clean up any orphaned blesh directories
+find /tmp -maxdepth 1 -type d -name "blesh*" -mtime +1 2>/dev/null | 
+while read -r old_dir; do
+    clean_dir "$old_dir"
+done
+
+# Remove self after running
+[[ -f "$0" ]] && rm -f "$0"
+EOF
+            chmod +x ~/.sentinel/cleanup_blesh.sh
+            
+            # Schedule cleanup with specific paths
+            echo "$tmp_dir /tmp/blesh" > ~/.sentinel/blesh_cleanup_paths
+        fi
+        
+        # Create improved loader
+        sentinel_create_blesh_loader
+        
+        return 0
+    else
+        echo "Failed to clone ble.sh repository. Advanced autocompletion will be limited."
+        # Clean up in background
+        (chmod -R 755 /tmp/blesh* 2>/dev/null; rm -rf /tmp/blesh* 2>/dev/null) &
+        return 1
+    fi
+}
+
+# Create BLE.sh loader file
+sentinel_create_blesh_loader() {
+    cat > ~/.sentinel/blesh_loader.sh << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL ble.sh integration loader with enhanced error recovery
+# v1.1.0
+
+# Set error handling and debugging options
+set -o pipefail
+export _ble_suppress_stderr=1
+
+# Helper function for ble.sh loading attempts
+_sentinel_load_attempt() {
+    local method="$1"
+    echo "Attempting to load ble.sh using $method method..."
+    
+    case "$method" in
+        direct)
+            source ~/.local/share/blesh/ble.sh 2>/dev/null
+            ;;
+        cat)
+            source <(cat ~/.local/share/blesh/ble.sh) 2>/dev/null
+            ;;
+        eval)
+            eval "$(cat ~/.local/share/blesh/ble.sh)" 2>/dev/null
+            ;;
+    esac
+    
+    # Check if loading was successful
+    if type -t ble-bind &>/dev/null; then
+        echo "ble.sh loaded successfully using $method method."
+        return 0
+    fi
+    return 1
+}
+
+# Ensure cache directory exists with proper permissions
+mkdir -p ~/.cache/blesh 2>/dev/null
+chmod 755 ~/.cache/blesh 2>/dev/null
+
+# Clean up any lock files that might cause issues
+find ~/.cache/blesh -name "*.lock" -delete 2>/dev/null
+find ~/.cache/blesh -name "*.part" -delete 2>/dev/null
+
+# Check if ble.sh exists
+if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    # Try each loading method in sequence until one works
+    if _sentinel_load_attempt "direct" ||
+       _sentinel_load_attempt "cat" ||
+       _sentinel_load_attempt "eval"; then
+        # Success - initialize key features
+        bleopt complete_auto_delay=100 2>/dev/null
+        bleopt complete_auto_complete=1 2>/dev/null
+        bleopt highlight_auto_completion='fg=242' 2>/dev/null
+    else
+        echo "Warning: All methods to load ble.sh failed. Using basic autocompletion instead."
+        # Load bash standard completion as fallback
+        [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+    fi
+else
+    echo "Warning: ble.sh not found at ~/.local/share/blesh/ble.sh"
+    [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+fi
+
+# Run pending cleanup if needed
+if [[ -f ~/.sentinel/cleanup_blesh.sh && -f ~/.sentinel/blesh_cleanup_paths ]]; then
+    echo "Running pending blesh cleanup tasks..."
+    ~/.sentinel/cleanup_blesh.sh $(cat ~/.sentinel/blesh_cleanup_paths)
+    rm -f ~/.sentinel/blesh_cleanup_paths
+fi
+EOF
+    chmod +x ~/.sentinel/blesh_loader.sh
+}
+
+# Load BLE.sh
+sentinel_load_blesh() {
+    # Skip if already loaded
+    sentinel_is_blesh_loaded && return 0
+    
+    # Check if installed
+    if sentinel_is_blesh_installed; then
+        # Make sure loader exists
+        if [[ ! -f ~/.sentinel/blesh_loader.sh ]]; then
+            sentinel_create_blesh_loader
+        fi
+        
+        # Source the loader
+        source ~/.sentinel/blesh_loader.sh || true
+        
+        return 0
+    else
+        _ble_log_warning "BLE.sh not installed. Call sentinel_install_blesh to install."
+        return 1
+    fi
+}
+
+# Reload BLE.sh 
+sentinel_reload_blesh() {
+    # Ensure cache directory exists with proper permissions
+    mkdir -p ~/.cache/blesh 2>/dev/null
+    chmod 755 ~/.cache/blesh 2>/dev/null
+    
+    # Clean up cache files
+    find ~/.cache/blesh -name "*.lock" -delete 2>/dev/null
+    find ~/.cache/blesh -name "*.part" -delete 2>/dev/null
+    
+    # Re-initialize BLE.sh
+    export _ble_suppress_stderr=1
+    
+    if sentinel_is_blesh_installed; then
+        source ~/.local/share/blesh/ble.sh 2>/dev/null || true
+        echo "BLE.sh reloaded."
+        return 0
+    else
+        echo "BLE.sh not installed. Run sentinel_install_blesh to install."
+        return 1
+    fi
+}
+
+# Configure BLE.sh if available
+sentinel_configure_blesh() {
+    # Skip if ble.sh is not available
+    if ! sentinel_is_blesh_loaded; then
+        _ble_log_warning "BLE.sh not loaded - configuration skipped"
+        return 1
+    fi
+    
+    # Configure ble.sh for PowerShell-like behavior
+    # Enable auto suggestions
+    bleopt complete_auto_delay=100 2>/dev/null || true
+    bleopt complete_auto_complete=1 2>/dev/null || true
+    
+    # Set suggestion style to be grey (similar to PowerShell)
+    bleopt highlight_auto_completion='fg=242' 2>/dev/null || true
+    
+    # Configure right arrow to accept suggestions
+    ble-bind -m auto_complete -f right 'auto_complete/accept-line' 2>/dev/null || true
+    
+    # Alternative mappings for menu completion
+    ble-bind -m auto_complete -f tab 'menu_complete/accept' 2>/dev/null || true
+    
+    # History-based completion
+    bleopt complete_ambiguous=1 2>/dev/null || true
+    bleopt complete_auto_history=1 2>/dev/null || true
+    
+    # Additional key bindings similar to PowerShell
+    # Ctrl+Space for menu completion
+    ble-bind -m emacs -f C-space 'menu_complete' 2>/dev/null || true
+    
+    # Enable history search with arrow keys when typing
+    ble-bind -m emacs -f up '@history-search-backward' 2>/dev/null || true
+    ble-bind -m emacs -f down '@history-search-forward' 2>/dev/null || true
+    
+    return 0
+}
+
+# Fix common BLE.sh issues
+sentinel_fix_blesh() {
+    echo "Fixing common BLE.sh issues..."
+    
+    # Fix cache directory permissions
+    mkdir -p ~/.cache/blesh 2>/dev/null
+    chmod 755 ~/.cache/blesh 2>/dev/null
+    echo "✓ Fixed cache directory permissions"
+    
+    # Clean up problematic cache files
+    find ~/.cache/blesh -name "*.part" -type f -delete 2>/dev/null
+    find ~/.cache/blesh -name "*.lock" -type f -delete 2>/dev/null
+    echo "✓ Cleaned up cache files"
+    
+    # Clean up temporary installation directories
+    find /tmp -maxdepth 1 -type d -name "blesh*" | while read -r dir; do
+        chmod -R 755 "$dir" 2>/dev/null
+        rm -rf "$dir" 2>/dev/null
+    done
+    echo "✓ Cleaned up temporary installation directories"
+    
+    # Reload BLE.sh if available
+    if sentinel_is_blesh_installed; then
+        sentinel_reload_blesh
+        echo "✓ Reloaded BLE.sh"
+    fi
+    
+    echo -e "\nAll issues fixed. Please \033[1;32mclose and reopen your terminal\033[0m for changes to take full effect."
+    
+    return 0
+}
+
+# Get BLE.sh status information
+sentinel_blesh_status() {
+    echo -e "\033[1;32mBLE.sh Status:\033[0m"
+    
+    # Check installation
+    echo -n "Installation: "
+    if sentinel_is_blesh_installed; then
+        echo -e "\033[1;32mInstalled\033[0m"
+    else
+        echo -e "\033[1;31mNot installed\033[0m"
+    fi
+    
+    # Check if loaded
+    echo -n "Loaded: "
+    if sentinel_is_blesh_loaded; then
+        echo -e "\033[1;32mYes\033[0m"
+    else
+        echo -e "\033[1;31mNo\033[0m"
+    fi
+    
+    # Check cache directory permissions
+    echo -n "Cache directory: "
+    if [[ -d ~/.cache/blesh ]]; then
+        local perms=$(stat -c "%a" ~/.cache/blesh 2>/dev/null)
+        if [[ "$perms" == "755" ]]; then
+            echo -e "\033[1;32mOK (permissions: $perms)\033[0m"
+        else
+            echo -e "\033[1;33mWarning (permissions: $perms, should be 755)\033[0m"
+            echo "To fix: chmod 755 ~/.cache/blesh"
+        fi
+    else
+        echo -e "\033[1;31mNot found\033[0m"
+        echo "To fix: mkdir -p ~/.cache/blesh && chmod 755 ~/.cache/blesh"
+    fi
+    
+    # Display troubleshooting options
+    echo -e "\n\033[1;32mTroubleshooting:\033[0m"
+    echo -e " 1. Run: sentinel_fix_blesh"
+    echo -e " 2. Close and reopen your terminal"
+    echo -e " 3. If still not working, run: sentinel_reload_blesh"
+    echo -e " 4. For a fresh installation, run: sentinel_install_blesh"
+    
+    return 0
+}
+
+# Logging functions
+_ble_log_error() {
+    local msg="$1"
+    mkdir -p ~/.sentinel/logs
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $msg" >> ~/.sentinel/logs/blesh-$(date +%Y%m%d).log
+}
+
+_ble_log_warning() {
+    local msg="$1"
+    mkdir -p ~/.sentinel/logs
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: $msg" >> ~/.sentinel/logs/blesh-$(date +%Y%m%d).log
+}
+
+# Initialize the BLE.sh manager
+sentinel_init_ble_manager() {
+    # Skip if not in interactive shell
+    [[ $- != *i* ]] && return 0
+    
+    # Set up error handling
+    set -o pipefail
+    
+    # Ensure required directories exist
+    mkdir -p ~/.sentinel/logs
+    
+    # Create cache directory with proper permissions
+    mkdir -p ~/.cache/blesh 2>/dev/null
+    chmod 755 ~/.cache/blesh 2>/dev/null
+    
+    # Clean up in background if needed (this won't block loading)
+    (
+        if [[ -f ~/.sentinel/cleanup_blesh.sh && -f ~/.sentinel/blesh_cleanup_paths ]]; then
+            echo "Running pending blesh cleanup tasks..."
+            ~/.sentinel/cleanup_blesh.sh $(cat ~/.sentinel/blesh_cleanup_paths)
+            rm -f ~/.sentinel/blesh_cleanup_paths
+        fi
+    ) &
+    
+    # Load BLE.sh if installed
+    if sentinel_is_blesh_installed; then
+        sentinel_load_blesh
+        
+        # Configure if loaded successfully
+        if sentinel_is_blesh_loaded; then
+            sentinel_configure_blesh
+            _ble_log_warning "BLE.sh loaded and configured successfully"
+        else
+            _ble_log_warning "BLE.sh failed to load"
+        fi
+    else
+        _ble_log_warning "BLE.sh not installed"
+    fi
+    
+    return 0
+}
+
+# Run initialization
+sentinel_init_ble_manager 

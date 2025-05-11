@@ -471,6 +471,133 @@ if [ -d "${HOME}/.cache/sentinel_tokens" ]; then
     }
 fi
 
+# Step 5D: Clean up aliases and additional generated files
+echo -e "\n${BLUE}${BOLD}Step 5D: Cleaning up aliases and generated files${NC}"
+
+# Check for virtual environments outside the main sentinel directory
+VENV_LOCATIONS=(
+    "${HOME}/.sentinel/venv"
+    "${HOME}/.venv/sentinel"
+    "${HOME}/venv/sentinel"
+    "${HOME}/.local/share/sentinel/venv"
+)
+
+for venv_dir in "${VENV_LOCATIONS[@]}"; do
+    if [ -d "$venv_dir" ]; then
+        echo -e "${YELLOW}Found Python virtual environment: $venv_dir${NC}"
+        read -p "$(echo -e "${YELLOW}Remove this virtual environment? [y/N] ${NC}")" remove_venv
+        case "$remove_venv" in
+            'Y'|'y'|'yes')
+                echo -e "${YELLOW}Removing virtual environment: $venv_dir${NC}"
+                rm -rf "$venv_dir" 2>/dev/null && {
+                    echo "Removed virtual environment: $venv_dir" >> "$LOG_FILE"
+                } || {
+                    echo -e "${RED}Failed to remove virtual environment: $venv_dir${NC}"
+                    echo "Failed to remove virtual environment: $venv_dir" >> "$LOG_FILE"
+                }
+                ;;
+            *)
+                echo -e "${GREEN}Keeping virtual environment: $venv_dir${NC}"
+                ;;
+        esac
+    fi
+done
+
+# Check for SENTINEL-specific aliases in .bashrc.postcustom
+if [ -f "${HOME}/.bashrc.postcustom" ]; then
+    echo -e "${YELLOW}Checking for SENTINEL aliases in .bashrc.postcustom...${NC}"
+    # Extract SENTINEL-related aliases
+    SENTINEL_ALIASES=$(grep -E "alias (sentinel|schat|sg|distcc-|secure-logout|cyber)" "${HOME}/.bashrc.postcustom" || true)
+    
+    if [ -n "$SENTINEL_ALIASES" ]; then
+        echo -e "${YELLOW}Found SENTINEL aliases in .bashrc.postcustom:${NC}"
+        echo "$SENTINEL_ALIASES" | sed 's/^/  /'
+        
+        read -p "$(echo -e "${YELLOW}Remove these aliases? [y/N] ${NC}")" remove_aliases
+        case "$remove_aliases" in
+            'Y'|'y'|'yes')
+                echo -e "${YELLOW}Removing SENTINEL aliases from .bashrc.postcustom...${NC}"
+                # Make a backup
+                cp "${HOME}/.bashrc.postcustom" "${BAK_DIR}/bashrc.postcustom.$(date +%Y%m%d%H%M%S)"
+                # Remove aliases
+                grep -v -E "alias (sentinel|schat|sg|distcc-|secure-logout|cyber)" "${HOME}/.bashrc.postcustom" > "${HOME}/.bashrc.postcustom.new"
+                mv "${HOME}/.bashrc.postcustom.new" "${HOME}/.bashrc.postcustom"
+                echo "Removed SENTINEL aliases from .bashrc.postcustom" >> "$LOG_FILE"
+                ;;
+            *)
+                echo -e "${GREEN}Keeping aliases in .bashrc.postcustom${NC}"
+                ;;
+        esac
+    else
+        echo -e "${GREEN}No SENTINEL aliases found in .bashrc.postcustom${NC}"
+    fi
+fi
+
+# Check for log files generated during SENTINEL operation
+LOG_LOCATIONS=(
+    "${HOME}/logs/sentinel_*.log"
+    "${HOME}/.local/share/sentinel/logs"
+    "${HOME}/.cache/sentinel"
+    "${HOME}/.cache/sentinel_*"
+    "${HOME}/.sentinel_history"
+    "${HOME}/.sentinel_logs"
+)
+
+for log_pattern in "${LOG_LOCATIONS[@]}"; do
+    log_files=$(find "${HOME}" -path "$log_pattern" 2>/dev/null || true)
+    if [ -n "$log_files" ]; then
+        echo -e "${YELLOW}Found SENTINEL log files:${NC}"
+        echo "$log_files" | sed 's/^/  /'
+        
+        read -p "$(echo -e "${YELLOW}Remove these log files? [y/N] ${NC}")" remove_logs
+        case "$remove_logs" in
+            'Y'|'y'|'yes')
+                echo -e "${YELLOW}Removing SENTINEL log files...${NC}"
+                for log_file in $log_files; do
+                    rm -rf "$log_file" 2>/dev/null && {
+                        echo "Removed log file: $log_file" >> "$LOG_FILE"
+                    } || {
+                        echo -e "${RED}Failed to remove: $log_file${NC}"
+                        echo "Failed to remove log file: $log_file" >> "$LOG_FILE"
+                    }
+                done
+                ;;
+            *)
+                echo -e "${GREEN}Keeping log files${NC}"
+                ;;
+        esac
+    fi
+done
+
+# Check for any models or data files that might have been downloaded
+MODEL_LOCATIONS=(
+    "${HOME}/.sentinel/models"
+    "${HOME}/.local/share/sentinel/models"
+    "${HOME}/Downloads/sentinel_models"
+    "${HOME}/.cache/sentinel_models"
+)
+
+for model_dir in "${MODEL_LOCATIONS[@]}"; do
+    if [ -d "$model_dir" ]; then
+        echo -e "${YELLOW}Found SENTINEL model directory: $model_dir${NC}"
+        read -p "$(echo -e "${YELLOW}Remove this model directory? [y/N] ${NC}")" remove_models
+        case "$remove_models" in
+            'Y'|'y'|'yes')
+                echo -e "${YELLOW}Removing model directory: $model_dir${NC}"
+                rm -rf "$model_dir" 2>/dev/null && {
+                    echo "Removed model directory: $model_dir" >> "$LOG_FILE"
+                } || {
+                    echo -e "${RED}Failed to remove model directory: $model_dir${NC}"
+                    echo "Failed to remove model directory: $model_dir" >> "$LOG_FILE"
+                }
+                ;;
+            *)
+                echo -e "${GREEN}Keeping model directory: $model_dir${NC}"
+                ;;
+        esac
+    fi
+done
+
 # Step 6: Finalize uninstallation
 echo -e "\n${BLUE}${BOLD}Step 6: Finalizing uninstallation${NC}"
 echo -e "${GREEN}${BOLD}SENTINEL has been successfully uninstalled.${NC}"

@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+# SENTINEL - Centralized Logging Module
+# Version: 2.0.0
+# Description: Provides standardized logging functions for all SENTINEL modules
+# Dependencies: None
+# Maintainer: SENTINEL Team
+
+# Prevent double loading
+[[ -n "${_SENTINEL_LOGGING_LOADED}" ]] && return 0
+export _SENTINEL_LOGGING_LOADED=1
+
+# Set strict error handling
+set -o pipefail
+
+# Base directory for logs
+SENTINEL_LOG_DIR=~/.sentinel/logs
+
+# Log levels
+SENTINEL_LOG_LEVEL_DEBUG=0
+SENTINEL_LOG_LEVEL_INFO=1
+SENTINEL_LOG_LEVEL_WARNING=2
+SENTINEL_LOG_LEVEL_ERROR=3
+SENTINEL_LOG_LEVEL_CRITICAL=4
+
+# Default log level (can be overridden by setting SENTINEL_LOG_LEVEL)
+: "${SENTINEL_LOG_LEVEL:=1}"  # Default to INFO
+
+# Log retention period in days
+: "${SENTINEL_LOG_RETENTION_DAYS:=30}"
+
+# Configure colorized output
+: "${SENTINEL_LOG_COLORS_ENABLED:=true}"
+
+# Log rotation size in KB
+: "${SENTINEL_LOG_ROTATION_SIZE:=1024}"  # 1MB
+
+# Standard logging function
+# Usage: sentinel_log <level> <component> <message>
+sentinel_log() {
+    local level="$1"
+    local component="$2"
+    local message="$3"
+    local log_file="$SENTINEL_LOG_DIR/${component}-$(date +%Y%m%d).log"
+    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    local level_name=""
+    local color_code=""
+    
+    # Skip logging if level is below configured threshold
+    [[ $level -lt $SENTINEL_LOG_LEVEL ]] && return 0
+    
+    # Create log directory if it doesn't exist
+    mkdir -p "$SENTINEL_LOG_DIR"
+    
+    # Determine level name and color
+    case $level in
+        $SENTINEL_LOG_LEVEL_DEBUG)
+            level_name="DEBUG"
+            color_code="36"  # Cyan
+            ;;
+        $SENTINEL_LOG_LEVEL_INFO)
+            level_name="INFO"
+            color_code="32"  # Green
+            ;;
+        $SENTINEL_LOG_LEVEL_WARNING)
+            level_name="WARNING"
+            color_code="33"  # Yellow
+            ;;
+        $SENTINEL_LOG_LEVEL_ERROR)
+            level_name="ERROR"
+            color_code="31"  # Red
+            ;;
+        $SENTINEL_LOG_LEVEL_CRITICAL)
+            level_name="CRITICAL"
+            color_code="35"  # Purple
+            ;;
+        *)
+            level_name="UNKNOWN"
+            color_code="37"  # White
+            ;;
+    esac
+    
+    # Format log entry
+    local log_entry="[$timestamp] [$level_name] $message"
+    
+    # Write to log file
+    echo "$log_entry" >> "$log_file"
+    
+    # Show in console if interactive and high enough level (ERROR+)
+    if [[ $level -ge $SENTINEL_LOG_LEVEL_ERROR && -t 1 ]]; then
+        if [[ "$SENTINEL_LOG_COLORS_ENABLED" == "true" ]]; then
+            echo -e "\033[1;${color_code}m${log_entry}\033[0m" >&2
+        else
+            echo "$log_entry" >&2
+        fi
+    fi
+    
+    # Check for log rotation
+    if [[ -f "$log_file" ]]; then
+        local file_size=$(du -k "$log_file" | cut -f1)
+        if [[ $file_size -gt $SENTINEL_LOG_ROTATION_SIZE ]]; then
+            local archive_file="$log_file.$(date +%Y%m%d%H%M%S).gz"
+            gzip -c "$log_file" > "$archive_file"
+            > "$log_file"  # Truncate the original file
+            echo "[$timestamp] [INFO] Log rotated to $archive_file" >> "$log_file"
+        fi
+    fi
+}
+
+# Convenience logging functions
+sentinel_log_debug() {
+    local component="$1"
+    local message="$2"
+    sentinel_log $SENTINEL_LOG_LEVEL_DEBUG "$component" "$message"
+}
+
+sentinel_log_info() {
+    local component="$1"
+    local message="$2"
+    sentinel_log $SENTINEL_LOG_LEVEL_INFO "$component" "$message"
+}
+
+sentinel_log_warning() {
+    local component="$1"
+    local message="$2"
+    sentinel_log $SENTINEL_LOG_LEVEL_WARNING "$component" "$message"
+}
+
+sentinel_log_error() {
+    local component="$1"
+    local message="$2"
+    sentinel_log $SENTINEL_LOG_LEVEL_ERROR "$component" "$message"
+}
+
+sentinel_log_critical() {
+    local component="$1"
+    local message="$2"
+    sentinel_log $SENTINEL_LOG_LEVEL_CRITICAL "$component" "$message"
+}
+
+# Clean up old log files
+# Usage: sentinel_cleanup_logs [retention_days]
+sentinel_cleanup_logs() {
+    local retention_days="${1:-$SENTINEL_LOG_RETENTION_DAYS}"
+    
+    if [[ ! -d "$SENTINEL_LOG_DIR" ]]; then
+        return 0
+    fi
+    
+    # Find and delete log files older than retention_days
+    find "$SENTINEL_LOG_DIR" -type f -name "*.log*" -mtime "+${retention_days}" -delete 2>/dev/null
+    
+    # Log the cleanup
+    sentinel_log_info "logging" "Cleaned up log files older than $retention_days days"
+    
+    return 0
+}
+
+# Display recent log entries
+# Usage: sentinel_show_logs [component] [lines=20]
+sentinel_show_logs() {
+    local component="${1:-*}"
+    local lines="${2:-20}"
+    local log_pattern="$SENTINEL_LOG_DIR/${component}-*.log"
+    
+    if [[ ! -d "$SENTINEL_LOG_DIR" ]]; then
+        echo "No logs found."
+        return 1
+    fi
+    
+    # Find the most recent log file for the component
+    local latest_log=$(ls -t $log_pattern 2>/dev/null | head -1)
+    
+    if [[ -z "$latest_log" ]]; then
+        echo "No logs found for component: $component"
+        return 1
+    fi
+    
+    # Display the logs with colors
+    if [[ "$SENTINEL_LOG_COLORS_ENABLED" == "true" && -t 1 ]]; then
+        # Add color highlighting based on log level
+        tail -n $lines "$latest_log" | sed -E \
+            -e 's/\[(DEBUG)\]/\[\\033[1;36m\1\\033[0m\]/g' \
+            -e 's/\[(INFO)\]/\[\\033[1;32m\1\\033[0m\]/g' \
+            -e 's/\[(WARNING)\]/\[\\033[1;33m\1\\033[0m\]/g' \
+            -e 's/\[(ERROR)\]/\[\\033[1;31m\1\\033[0m\]/g' \
+            -e 's/\[(CRITICAL)\]/\[\\033[1;35m\1\\033[0m\]/g' | 
+            xargs -0 echo -e
+    else
+        # Plain output without colors
+        tail -n $lines "$latest_log"
+    fi
+    
+    return 0
+}
+
+# Log an exception (error with trace)
+# Usage: sentinel_log_exception <component> <message> [exit_code]
+sentinel_log_exception() {
+    local component="$1"
+    local message="$2"
+    local exit_code="${3:-1}"
+    
+    # Generate a backtrace
+    local -a backtrace=()
+    local -i frame=0
+    
+    # Build backtrace array
+    while caller $frame; do
+        ((frame++))
+    done | while read -r line func file; do
+        backtrace+=("  at $func ($file:$line)")
+    done
+    
+    # Format exception message with backtrace
+    local exception_msg="$message\nBacktrace:\n${backtrace[*]}"
+    
+    # Log the exception
+    sentinel_log_error "$component" "$exception_msg"
+    
+    # Return the specified exit code
+    return $exit_code
+}
+
+# Initialize logging
+sentinel_init_logging() {
+    # Skip if not in interactive shell
+    [[ $- != *i* ]] && return 0
+    
+    # Create log directory
+    mkdir -p "$SENTINEL_LOG_DIR"
+    
+    # Run log cleanup in background
+    (sentinel_cleanup_logs >/dev/null 2>&1 &)
+    
+    # Log startup
+    sentinel_log_info "logging" "Logging system initialized (level=${SENTINEL_LOG_LEVEL})"
+    
+    return 0
+}
+
+# Run initialization
+sentinel_init_logging 

@@ -284,12 +284,8 @@ fi
 
 # Color aliases if color is supported
 if [[ "$color_prompt" == "yes" ]]; then
-  alias ls='ls --color=auto'
-  alias grep='grep --color=auto'
-  alias fgrep='fgrep --color=auto'
-  alias egrep='egrep --color=auto'
-  alias diff='diff --color=auto'
-  alias ip='ip -color=auto'
+  # Color aliases are now defined in bash_aliases
+  :
 fi
 # Advanced VCS status functions with caching
 function __git_info() {
@@ -506,25 +502,6 @@ function j() {
   fi
 }
 
-# Quick alias setup
-function qalias() {
-  if [[ -z "$1" || -z "$2" ]]; then
-    eerror "Usage: qalias <alias_name> <command>"
-    return 1
-  fi
-  
-  local alias_name="$1"
-  shift
-  local alias_cmd="$*"
-  
-  # Add to aliases file
-  echo "alias $alias_name='$alias_cmd'" >> ~/.bash_aliases
-  
-  # Load it immediately
-  alias "$alias_name"="$alias_cmd"
-  
-  emsg "Alias '$alias_name' created and activated"
-}
 # Modular bashrc extensions
 if [[ "${CONFIG[MODULES]}" == "1" ]]; then
   # Module registry
@@ -626,52 +603,6 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
 fi
 # Core aliases
 if [[ "${CONFIG[USER_ALIASES]}" == "1" ]]; then
-  # File operations
-  alias ll='ls -alF'
-  alias la='ls -A'
-  alias l='ls -CF'
-  alias ls-readdir='ls --color=none --format commas'
-  alias l1='ls -1'
-  alias la1='ls -a -1'
-  
-  # Navigation
-  alias ..='cd ..'
-  alias ...='cd ../..'
-  alias ....='cd ../../..'
-  
-  # System info
-  alias sysinfo='echo "CPU:"; lscpu | grep "Model name"; echo -e "\nMemory:"; free -h; echo -e "\nDisk:"; df -h'
-  alias meminfo='free -h'
-  alias cpuinfo='lscpu'
-  
-  # Network
-  alias myip='curl -s https://ipinfo.io/ip'
-  alias ports='netstat -tulanp'
-  alias iptables-list='sudo iptables -L -n -v --line-numbers'
-  
-  # Process management
-  alias psg='ps aux | grep -v grep | grep -i -e VSZ -e'
-  
-  # Security
-  alias check-listening='netstat -plunt'
-  alias open-ports='ss -tulpn'
-  
-  # Git shortcuts
-  alias gs='git status'
-  alias gd='git diff'
-  alias gl='git log --oneline --graph --decorate --all'
-  
-  # System update shortcuts (for various distros)
-  alias update-system='if command -v apt &>/dev/null; then 
-                         sudo apt update && sudo apt upgrade -y; 
-                       elif command -v dnf &>/dev/null; then 
-                         sudo dnf upgrade -y;
-                       elif command -v yum &>/dev/null; then
-                         sudo yum update -y;
-                       elif command -v pacman &>/dev/null; then
-                         sudo pacman -Syu;
-                       fi'
-  
   # Load user aliases if present
   if [[ -f ~/.bash_aliases ]]; then
     # shellcheck source=~/.bash_aliases

@@ -1,143 +1,205 @@
-﻿# SENTINEL Suggestions Module
+﻿# SENTINEL Modular Autocomplete System
 
-The SENTINEL Suggestions module provides intelligent command suggestions based on your shell usage patterns. It uses machine learning to analyze your command history and provide relevant suggestions.
+The SENTINEL Autocomplete System has been redesigned with a modular architecture to improve:
 
-## Features
+- Maintainability
+- Debugging capabilities
+- Extensibility
+- Security
 
-- **Command Auto-Learning**: Learns from your command history automatically
-- **Contextual Suggestions**: Recommends commands based on what you're typing
-- **Frequency Analysis**: Prioritizes commands you use most often
-- **Pattern Recognition**: Identifies common command patterns and sequences
-- **Cross-Platform**: Works on both Linux and Windows (with appropriate fixes)
+## Module Structure
 
-## Technical Implementation
+The system is organized into the following modules:
 
-The suggestions system uses a Markov chain model to learn from command history. This allows it to:
+- **autocomplete.module**: Main orchestration module
+- **logging.module**: Centralized logging system with log rotation and levels
+- **ble_manager.module**: BLE.sh installation, configuration, and management
+- **hmac.module**: Security module for cryptographic functions
+- **snippets.module**: Secure command snippet storage and expansion
+- **fuzzy_correction.module**: Intelligent command correction
+- **command_chains.module**: Command prediction based on usage patterns
+- **project_suggestions.module**: Context-aware project suggestions
 
-1. Analyze sequence patterns in command usage
-2. Understand command relationships and common workflows
-3. Generate statistically probable next commands
-4. Adapt to your unique usage patterns over time
+## Core Features
 
-## Installation
+1. **Centralized Logging System**
+   - Standardized logging across all modules
+   - Log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+   - Automatic log rotation
+   - Log retention policies
+   - Console output for high-priority messages
 
-### Prerequisites
+2. **BLE.sh Integration**
+   - Automatic installation and configuration
+   - Robust error handling and recovery
+   - Performance optimizations
+   - Fallback mechanisms when BLE.sh isn't available
 
-- Python 3.7 or higher
-- Virtual environment (recommended)
+3. **Secure HMAC Verification**
+   - Cryptographically signed tokens and snippets
+   - Protection against tampering
+   - Secure key management
 
-### Setup
+4. **Intelligent Command Correction**
+   - Suggests corrections for mistyped commands
+   - Levenshtein distance calculations
+   - Quick fix commands (`!!:fix`)
 
-1. Ensure you have activated your Python virtual environment:
-   ```bash
-   source .venv/bin/activate  # Linux/macOS
-   .\.venv\Scripts\Activate.ps1  # Windows PowerShell
-   ```
+5. **Context-Aware Suggestions**
+   - Project type detection (Python, Node.js, Rust, etc.)
+   - Framework-specific suggestions
+   - Directory context awareness
 
-2. Install required dependencies:
-   ```bash
-   pip install markovify numpy
-   ```
+6. **Command Chain Prediction**
+   - Predicts likely next commands
+   - Based on command usage patterns
+   - Quick execution with `!!:next`
 
-3. Enable the module in your SENTINEL environment:
-   ```bash
-   echo "source bash_modules.d/suggestions/init.sh" >> bash_modules
-   ```
+7. **Secure Snippet Management**
+   - Cryptographically verified snippets
+   - Protection against accidental or malicious changes
+   - Easy snippet management
 
 ## Usage
 
-### Getting Command Suggestions
+The primary interface remains the same with some enhancements:
 
-To get a suggestion for a command you're trying to remember:
+- `@autocomplete`: Show help
+- `@autocomplete status`: Show system status
+- `@autocomplete fix`: Fix common issues
+- `@autocomplete reload`: Reload BLE.sh
+- `@autocomplete install`: Force reinstall BLE.sh
+- `@autocomplete logs [component] [lines]`: View recent logs
 
-```bash
-sentinel_suggest [partial_command]
-```
+## Logging Usage
 
-Examples:
-```bash
-$ sentinel_suggest git
-Suggested commands:
-1. git status
-2. git pull
-3. git push origin master
-
-$ sentinel_suggest find .
-Suggested commands:
-1. find . -name "*.txt"
-2. find . -type f -size +10M
-3. find . -mtime -7 -type f
-```
-
-### Training the Model
-
-The suggestion model trains automatically based on your command history. However, you can manually trigger a retraining:
+The logging module provides powerful functions for standardized logging:
 
 ```bash
-sentinel_train
+# Basic logging functions by level
+sentinel_log_debug "component" "Debug message"
+sentinel_log_info "component" "Info message"
+sentinel_log_warning "component" "Warning message"
+sentinel_log_error "component" "Error message"
+sentinel_log_critical "component" "Critical message"
+
+# View recent logs
+sentinel_show_logs "component" 50  # Show last 50 lines
 ```
 
-This will:
-1. Read your command history
-2. Build a new Markov model
-3. Save the model for future suggestions
+## BLE.sh Management
 
-## Configuration
-
-Edit `bash_modules.d/suggestions/config.sh` to customize behavior:
+The BLE.sh manager provides tools for working with BLE.sh:
 
 ```bash
-# Number of command history entries to analyze
-SENTINEL_HISTORY_DEPTH=1000
+# Check BLE.sh status
+sentinel_blesh_status
 
-# Number of suggestions to show
-SENTINEL_SUGGESTION_COUNT=3
+# Reload BLE.sh
+sentinel_reload_blesh
 
-# Path to store the trained model
-SENTINEL_MODEL_PATH="$HOME/.sentinel/models/command_model.json"
+# Fix common issues
+sentinel_fix_blesh
 
-# Whether to include timestamps in analysis
-SENTINEL_USE_TIMESTAMPS=true
+# Manual installation
+sentinel_install_blesh
 ```
 
-## Windows Compatibility
+## Legacy Support
 
-When using on Windows:
+The previous monolithic version is still available in legacy mode:
 
-1. Ensure you've run the Windows Code Fixes: `.\Windows Code Fixes\run_fixes.ps1`
-2. Use appropriate path separators in configuration
-3. Make sure Python is properly installed and accessible
+```bash
+@autocomplete --legacy-mode
+```
 
-## Privacy
+## Extending
 
-The suggestions module:
-- Only processes your local command history
-- Stores models locally on your machine
-- Does not send data to external services
-- Can be disabled at any time
+To create a new module:
+
+1. Create a file named `your_feature.module` in the suggestions directory
+2. Follow the module template pattern
+3. Add the module to the loading list in `autocomplete.module`
+
+## Security Considerations
+
+The modular design uses HMAC verification to ensure integrity of:
+
+- Stored snippets
+- Command corrections
+- Secure tokens
+
+This helps prevent tampering and reduces the risk of command injection attacks.
+
+## Module Dependencies
+
+The modules have the following dependency chain:
+
+```
+logging.module <- ble_manager.module <- hmac.module <- [all other modules]
+               |
+               \-- autocomplete.module
+```
+
+The logging module must be loaded first as all other modules depend on it for logging.
+
+## Features
+
+- PowerShell-like greyed-out suggestions that appear as you type
+- Right arrow to accept suggestion
+- History-based autocompletion
+- Improved tab completion behavior
+- Command category recognition
+- Context-aware suggestions
+- Smart parameter completion
+- Custom snippet expansion
+- Project-specific suggestions based on language/framework detection
+- Fuzzy command correction
+- Command chain prediction
+- HMAC-signed security tokens
+
+## Dependencies
+
+- **ble.sh** (Bash Line Editor) - Automatically installed if not present
+- **bash** - Requires Bash 4.0+
+- **openssl** - Used for HMAC token generation
+
+## Security Features
+
+The autocomplete system includes several security enhancements:
+
+1. HMAC-signed tokens for secure operations
+2. Cryptographic verification of command snippets
+3. Enhanced TLS configuration for security-related command snippets
+4. Path traversal prevention in utilities
 
 ## Troubleshooting
 
-If suggestions aren't working properly:
+If autocomplete isn't working as expected:
 
-1. Check that the module is enabled: `grep suggestions bash_modules`
-2. Verify the model file exists: `ls -la ~/.sentinel/models/`
-3. Ensure Python dependencies are installed: `pip list | grep markovify`
-4. Try regenerating the model: `sentinel_train --force`
+1. Run `@autocomplete status` to check the system status
+2. Run `@autocomplete fix` to fix common issues
+3. Close and reopen your terminal
+4. If still not working, run `@autocomplete install` to reinstall ble.sh
 
-## How It Works
+## Project-Specific Suggestions
 
-1. **Data Collection**: Reads your command history from `.bash_history`
-2. **Preprocessing**: Cleans and normalizes command data
-3. **Model Training**: Builds a Markov chain model based on command sequences
-4. **Suggestion Generation**: Uses the model to predict likely commands given input
-5. **Continuous Learning**: Updates the model as you use new commands
+The system automatically detects many project types including:
 
-## Contributing
+- Node.js (with framework detection for React, Next.js, etc.)
+- Python (with framework detection for Django, Flask, FastAPI, etc.)
+- Rust (with workspace, binary/library detection)
+- Go
+- C/C++ (with build system detection)
+- Java/Kotlin (with Maven/Gradle detection)
+- Docker
 
-Contributions to improve the suggestions system are welcome. Consider:
+Each project type gets customized command suggestions relevant to that environment.
 
-- Enhancing the prediction algorithm
-- Improving cross-platform compatibility
-- Adding support for more complex command patterns
-- Creating integrations with other shell tools 
+## Implementation Notes
+
+- All modules use proper error handling
+- Background operations are carefully managed to prevent hangs
+- Directory permissions are enforced for security
+- Each module can function independently if needed
+- Fallbacks are provided when ble.sh isn't available 

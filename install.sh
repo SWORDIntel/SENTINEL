@@ -261,13 +261,119 @@ EOF
 fix_file_permissions() {
     echo -e "${BLUE}${BOLD}Fixing file permissions${NC}"
     
-    # Fix line endings in shell scripts if dos2unix is available
-    if command -v dos2unix &>/dev/null; then
-        echo -e "${YELLOW}Fixing line endings in scripts...${NC}"
-        find ./bash_modules.d/ -type f -exec dos2unix {} \; 2>/dev/null
-        find ./contrib/ -name "*.py" -exec dos2unix {} \; 2>/dev/null
-        find ./bash_functions.d/ -type f -exec dos2unix {} \; 2>/dev/null
-        find ./bash_aliases.d/ -type f -exec dos2unix {} \; 2>/dev/null
+    # Install dos2unix if not available
+    if ! command -v dos2unix &> /dev/null; then
+        echo -e "${YELLOW}dos2unix is not installed. Attempting to install it for better line ending support...${NC}"
+        
+        # Try to install dos2unix based on package manager
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y dos2unix
+        elif command -v dnf &> /dev/null; then
+            sudo dnf install -y dos2unix
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y dos2unix
+        elif command -v pacman &> /dev/null; then
+            sudo pacman -S --noconfirm dos2unix
+        else
+            echo -e "${YELLOW}Could not determine package manager. Will use Python method as fallback.${NC}"
+        fi
+    fi
+
+    # Determine method for fixing line endings
+    local USE_PYTHON=0
+    if ! command -v dos2unix &> /dev/null; then
+        if command -v python3 &> /dev/null; then
+            echo -e "${YELLOW}Using Python for line ending conversion (dos2unix not available).${NC}"
+            USE_PYTHON=1
+        else
+            echo -e "${YELLOW}Neither dos2unix nor Python 3 is available. Will use sed method.${NC}"
+            USE_PYTHON=2
+        fi
+    else
+        echo -e "${GREEN}Using dos2unix for line ending conversion.${NC}"
+    fi
+    
+    # Function to fix line endings for a single file with enhanced detection and backup
+    fix_line_endings_for_file() {
+        local file="$1"
+        local fixed=0
+        
+        # Create log directory
+        mkdir -p "${HOME}/.sentinel/logs" 2>/dev/null
+        
+        # Check if file has CRLF using grep
+        if grep -q $'\r' "$file" 2>/dev/null; then
+            echo -e "  ${YELLOW}Fixing line endings:${NC} $file"
+            
+            # Create backup if it doesn't exist
+            if [[ ! -f "${file}.bak-winformat" ]]; then
+                cp "$file" "${file}.bak-winformat"
+            fi
+            
+            # Apply the appropriate method
+            if [ $USE_PYTHON -eq 1 ]; then
+                # Python method
+                python3 -c "
+import sys
+with open('$file', 'rb') as f:
+    content = f.read()
+with open('$file', 'wb') as f:
+    f.write(content.replace(b'\r\n', b'\n'))
+"
+            elif [ $USE_PYTHON -eq 2 ]; then
+                # Sed method
+                sed -i 's/\r$//' "$file"
+            else
+                # dos2unix method
+                dos2unix "$file"
+            fi
+            
+            # Log the fixed file
+            echo "$file" >> "${HOME}/.sentinel/logs/line_endings_fix.log"
+            fixed=1
+        fi
+        
+        return $fixed
+    }
+    
+    # Initialize log file
+    echo "SENTINEL Line Endings Fix Log" > "${HOME}/.sentinel/logs/line_endings_fix.log"
+    echo "Started: $(date)" >> "${HOME}/.sentinel/logs/line_endings_fix.log"
+    
+    # Counter variables
+    local TOTAL_FILES=0
+    local FIXED_FILES=0
+    
+    echo -e "${YELLOW}Scanning for line ending issues...${NC}"
+    
+    # Process bash and shell scripts (more comprehensive than previous implementation)
+    while IFS= read -r file; do
+        TOTAL_FILES=$((TOTAL_FILES + 1))
+        if fix_line_endings_for_file "$file"; then
+            FIXED_FILES=$((FIXED_FILES + 1))
+        fi
+    done < <(find . -type f \( -name "*.sh" -o -name ".bash*" -o -name "bash_*" -o -path "*/bash_*/*" -o -path "*/.bash_*/*" \) 2>/dev/null)
+    
+    # Process completion files
+    while IFS= read -r file; do
+        TOTAL_FILES=$((TOTAL_FILES + 1))
+        if fix_line_endings_for_file "$file"; then
+            FIXED_FILES=$((FIXED_FILES + 1))
+        fi
+    done < <(find . -type f -path "*/bash_completion.d/*" 2>/dev/null)
+    
+    # Add summary to log
+    echo "" >> "${HOME}/.sentinel/logs/line_endings_fix.log"
+    echo "Summary:" >> "${HOME}/.sentinel/logs/line_endings_fix.log"
+    echo "  Total files processed: $TOTAL_FILES" >> "${HOME}/.sentinel/logs/line_endings_fix.log"
+    echo "  Files fixed: $FIXED_FILES" >> "${HOME}/.sentinel/logs/line_endings_fix.log"
+    echo "Completed: $(date)" >> "${HOME}/.sentinel/logs/line_endings_fix.log"
+    
+    # Print summary
+    if [ $FIXED_FILES -gt 0 ]; then
+        echo -e "${YELLOW}Fixed line endings in $FIXED_FILES files (out of $TOTAL_FILES checked).${NC}"
+    else
+        echo -e "${GREEN}No line ending issues found in $TOTAL_FILES files.${NC}"
     fi
     
     # Set correct permissions on executable files
@@ -284,17 +390,79 @@ fix_file_permissions() {
 
 # Enhanced shell integration fix function
 fix_shell_integration() {
-    echo -e "${BLUE}${BOLD}Fixing shell integration${NC}"
+    echo -e "${BLUE}${BOLD}Fixing shell integration and autocomplete${NC}"
     
     # Create activation script
     local activation_script="${HOME}/.sentinel/activate_integration.sh"
     mkdir -p "$(dirname "$activation_script")" 2>/dev/null
+    
+    # Create path manager script for consistency across environments
+    local path_manager="${HOME}/.sentinel/fix_path_manager.sh"
+    cat > "$path_manager" << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL Path Manager
+# Ensures consistent PATH across different environments
+
+# Check if we are already initialized
+if [[ -n "$SENTINEL_PATH_FIXED" ]]; then
+    return 0
+fi
+
+# Ensure unique paths by removing duplicates
+clean_path() {
+    local old_PATH="$1"
+    local new_PATH=""
+    local IFS=":"
+    
+    for dir in $old_PATH; do
+        if [[ ! $new_PATH =~ (^|:)$dir(:|$) ]]; then
+            if [[ -z "$new_PATH" ]]; then
+                new_PATH="$dir"
+            else
+                new_PATH="$new_PATH:$dir"
+            fi
+        fi
+    done
+    
+    echo "$new_PATH"
+}
+
+# Important paths to ensure they exist
+CRITICAL_PATHS=(
+    "$HOME/.local/bin"
+    "$HOME/bin"
+    "$HOME/.sentinel/bin"
+    "/usr/local/bin"
+    "/usr/bin"
+    "/bin"
+)
+
+# Add critical paths if they don't exist
+for p in "${CRITICAL_PATHS[@]}"; do
+    if [[ -d "$p" && ! $PATH =~ (^|:)$p(:|$) ]]; then
+        PATH="$p:$PATH"
+    fi
+done
+
+# Clean the PATH to remove duplicates
+PATH=$(clean_path "$PATH")
+export PATH
+
+# Mark as initialized
+export SENTINEL_PATH_FIXED=1
+EOF
+    chmod 700 "$path_manager"
     
     # Create script with enhanced security features
     cat > "$activation_script" << 'EOF'
 #!/usr/bin/env bash
 # SENTINEL Integration Activator
 # Auto-generated by SENTINEL Installer
+
+# First, fix the PATH to ensure all necessary directories are included
+if [[ -f ~/.sentinel/fix_path_manager.sh ]]; then
+    source ~/.sentinel/fix_path_manager.sh
+fi
 
 # Generate HMAC-signed token for security
 _sentinel_generate_token() {
@@ -306,9 +474,9 @@ _sentinel_generate_token() {
     echo "${data}:${hmac}"
 }
 
-# Load autocomplete features if they exist
-if [[ -f ~/.bashrc ]]; then
-    # Make sure aliases are loaded
+# Function to setup and activate autocomplete
+setup_and_activate_autocomplete() {
+    # Load aliases which contain autocomplete functions
     if [[ -f ~/.bash_aliases ]]; then
         source ~/.bash_aliases
     fi
@@ -322,7 +490,39 @@ if [[ -f ~/.bashrc ]]; then
     if type -t sentinel_setup_autocomplete &>/dev/null; then
         sentinel_setup_autocomplete &>/dev/null
     fi
+    
+    # Check if blesh loader exists and load it
+    if [[ -f ~/.sentinel/blesh_loader.sh ]]; then
+        source ~/.sentinel/blesh_loader.sh &>/dev/null
+    fi
 }
+
+# Check compatibility before activating
+check_shell_compatibility() {
+    local shell_issues=0
+    
+    # Check if bash version is sufficient (4.3+)
+    if [[ -z "${BASH_VERSINFO[0]}" || ${BASH_VERSINFO[0]} -lt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -lt 3) ]]; then
+        echo "Warning: SENTINEL works best with Bash 4.3+. Current version: $BASH_VERSION"
+        shell_issues=1
+    fi
+    
+    # Check if necessary commands exist
+    for cmd in grep sed find readlink dirname; do
+        if ! command -v $cmd &>/dev/null; then
+            echo "Warning: Required command '$cmd' not found!"
+            shell_issues=1
+        fi
+    done
+    
+    return $shell_issues
+}
+
+# Check shell compatibility
+check_shell_compatibility
+
+# Setup and activate autocomplete
+setup_and_activate_autocomplete
 
 # Return secure token for verification
 _sentinel_token=$(_sentinel_generate_token)
@@ -331,24 +531,133 @@ EOF
 
     chmod 700 "$activation_script"
     
-    # Add to bashrc if not already there
-    if ! grep -q "~/.sentinel/activate_integration.sh" ~/.bashrc; then
-        echo -e "\n# SENTINEL integration activator" >> ~/.bashrc
-        echo 'if [[ -f ~/.sentinel/activate_integration.sh ]]; then' >> ~/.bashrc
-        echo '    source ~/.sentinel/activate_integration.sh &>/dev/null' >> ~/.bashrc
-        echo 'fi' >> ~/.bashrc
-        echo -e "${GREEN}Added integration activator to ~/.bashrc${NC}"
-    fi
+    # Create a robust autocomplete fixer function in bash_functions.d
+    mkdir -p "${HOME}/.bash_functions.d" 2>/dev/null
+    local autocomplete_fixer="${HOME}/.bash_functions.d/fix_autocomplete.sh"
     
-    echo -e "${GREEN}Shell integration fixed successfully${NC}"
+    cat > "$autocomplete_fixer" << 'EOF'
+#!/usr/bin/env bash
+# SENTINEL Autocomplete Fixer
+# This function helps resolve common autocomplete issues
+
+fix_autocomplete() {
+    local GREEN='\033[0;32m'
+    local YELLOW='\033[0;33m'
+    local RED='\033[0;31m'
+    local NC='\033[0m'
+    
+    echo -e "${YELLOW}Fixing autocomplete issues...${NC}"
+    
+    # Ensure required directories exist
+    mkdir -p ~/.sentinel/autocomplete/snippets 2>/dev/null
+    mkdir -p ~/.sentinel/autocomplete/context 2>/dev/null
+    mkdir -p ~/.sentinel/autocomplete/projects 2>/dev/null
+    mkdir -p ~/.sentinel/autocomplete/params 2>/dev/null
+    
+    # Fix permissions
+    chmod 700 ~/.sentinel/autocomplete 2>/dev/null
+    find ~/.sentinel/autocomplete -type d -exec chmod 700 {} \; 2>/dev/null
+    find ~/.sentinel/autocomplete -type f -exec chmod 600 {} \; 2>/dev/null
+    
+    # Ensure autocomplete alias file exists and is loaded
+    if [[ ! -f ~/.bash_aliases.d/autocomplete ]]; then
+        echo -e "${YELLOW}Autocomplete alias file missing, creating it...${NC}"
+        mkdir -p ~/.bash_aliases.d 2>/dev/null
+        
+        cat > ~/.bash_aliases.d/autocomplete << 'EOL'
+#!/usr/bin/env bash
+# SENTINEL Autocomplete Functions
+
+# Setup autocomplete function
+sentinel_setup_autocomplete() {
+    # Create required directories
+    mkdir -p ~/.sentinel/autocomplete/snippets 2>/dev/null
+    mkdir -p ~/.sentinel/autocomplete/context 2>/dev/null
+    mkdir -p ~/.sentinel/autocomplete/projects 2>/dev/null
+    mkdir -p ~/.sentinel/autocomplete/params 2>/dev/null
+    
+    # Load ble.sh if available (enhanced autocompletion)
+    if [[ -f ~/.sentinel/blesh_loader.sh ]]; then
+        source ~/.sentinel/blesh_loader.sh &>/dev/null
+    fi
 }
 
-# Enhanced blesh_loader script with improved error handling and cache management
-local blesh_loader="${HOME}/.sentinel/blesh_loader.sh"
-cat > "$blesh_loader" << 'EOF'
+# Main autocomplete command - help and control
+@autocomplete() {
+    local cmd="${1:-help}"
+    shift 2>/dev/null
+    
+    case "$cmd" in
+        help)
+            echo "SENTINEL Autocomplete System"
+            echo "Usage: @autocomplete [command]"
+            echo ""
+            echo "Commands:"
+            echo "  status      - Check current autocomplete status"
+            echo "  fix         - Fix common autocomplete issues"
+            echo "  reload      - Reload autocomplete configuration"
+            echo "  clear       - Clear autocomplete cache"
+            ;;
+        status)
+            echo "SENTINEL Autocomplete Status:"
+            if type -t ble-bind &>/dev/null; then
+                echo "✅ Enhanced autocomplete (ble.sh) is active"
+            else
+                echo "❌ Enhanced autocomplete is not active"
+            fi
+            
+            if [[ -d ~/.sentinel/autocomplete ]]; then
+                echo "✅ Autocomplete directories exist"
+            else
+                echo "❌ Autocomplete directories missing"
+            fi
+            ;;
+        fix)
+            if type -t fix_autocomplete &>/dev/null; then
+                fix_autocomplete
+            else
+                echo "Fix function not available. Please source ~/.bashrc first."
+            fi
+            ;;
+        reload)
+            sentinel_setup_autocomplete
+            echo "Autocomplete configuration reloaded."
+            ;;
+        clear)
+            rm -rf ~/.sentinel/autocomplete/context/* 2>/dev/null
+            echo "Autocomplete cache cleared."
+            ;;
+        *)
+            echo "Unknown command: $cmd"
+            echo "Use '@autocomplete help' for available commands."
+            ;;
+    esac
+}
+EOL
+        chmod 700 ~/.bash_aliases.d/autocomplete
+    fi
+    
+    # Install ble.sh if not already installed
+    if [[ ! -d ~/.local/share/blesh ]]; then
+        echo -e "${YELLOW}Installing ble.sh for enhanced autocomplete...${NC}"
+        mkdir -p ~/.local/share 2>/dev/null
+        
+        # Try to clone from GitHub if git is available
+        if command -v git &>/dev/null; then
+            git clone --depth 1 https://github.com/akinomyoga/ble.sh.git ~/.local/share/blesh 2>/dev/null || {
+                echo -e "${RED}Failed to download ble.sh. Will try to use basic autocomplete.${NC}"
+            }
+        else
+            echo -e "${YELLOW}Git not available. Using basic autocomplete.${NC}"
+        fi
+    fi
+    
+    # Create blesh_loader if it doesn't exist
+    if [[ ! -f ~/.sentinel/blesh_loader.sh ]]; then
+        mkdir -p ~/.sentinel 2>/dev/null
+        cat > ~/.sentinel/blesh_loader.sh << 'EOL'
 #!/usr/bin/env bash
 # SENTINEL ble.sh integration loader
-# This script loads ble.sh with proper error handling
 
 # Ensure cache directory exists with proper permissions
 mkdir -p ~/.cache/blesh 2>/dev/null
@@ -394,28 +703,89 @@ if type -t ble-bind &>/dev/null; then
     bleopt complete_ambiguous=1 2>/dev/null || true
     bleopt complete_auto_history=1 2>/dev/null || true
 fi
-EOF
-chmod 700 "$blesh_loader"
+EOL
+        chmod 700 ~/.sentinel/blesh_loader.sh
+    fi
+    
+    # Validate the ~/.bashrc hook
+    if ! grep -q "~/.sentinel/activate_integration.sh" ~/.bashrc; then
+        echo -e "${YELLOW}Adding integration activator to ~/.bashrc${NC}"
+        echo -e "\n# SENTINEL integration activator" >> ~/.bashrc
+        echo 'if [[ -f ~/.sentinel/activate_integration.sh ]]; then' >> ~/.bashrc
+        echo '    source ~/.sentinel/activate_integration.sh &>/dev/null' >> ~/.bashrc
+        echo 'fi' >> ~/.bashrc
+    fi
+    
+    echo -e "${GREEN}Autocomplete system fixed successfully${NC}"
+}
+
+# Function to check and fix symbolic links
+fix_symbolic_links() {
+    echo -e "${BLUE}${BOLD}Checking for broken symbolic links${NC}"
+    
+    declare -a broken_links=()
+    local broken_count=0
+    
+    # Find all symbolic links
+    while IFS= read -r link; do
+        if [[ ! -e "$link" ]]; then
+            broken_links+=("$link")
+            broken_count=$((broken_count + 1))
+            echo -e "${YELLOW}WARNING: Broken symbolic link found: $link -> $(readlink "$link")${NC}"
+        fi
+    done < <(find . -type l 2>/dev/null)
+    
+    if [ $broken_count -eq 0 ]; then
+        echo -e "${GREEN}No broken symbolic links found.${NC}"
+    else
+        echo -e "${YELLOW}Attempting to fix $broken_count broken symbolic links...${NC}"
+        
+        for link in "${broken_links[@]}"; do
+            # Extract the link target
+            local target=$(readlink "$link")
+            
+            # Check if target exists as a path relative to HOME
+            if [[ -e "${HOME}/$target" ]]; then
+                rm "$link"
+                ln -s "${HOME}/$target" "$link"
+                echo -e "${GREEN}Fixed: $link -> ${HOME}/$target${NC}"
+            elif [[ -e "$(dirname "$link")/$target" ]]; then
+                # Check if target exists relative to the link's directory
+                rm "$link"
+                ln -s "$(dirname "$link")/$target" "$link"
+                echo -e "${GREEN}Fixed: $link -> $(dirname "$link")/$target${NC}"
+            else
+                echo -e "${RED}Could not fix broken link: $link${NC}"
+            fi
+        done
+    fi
+}
 
 # Main installation function
 install_sentinel() {
     show_banner
     check_environment
     
-    echo -e "\n${BLUE}${BOLD}Step 1: Backing up existing files${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 1: Checking Linux compatibility${NC}"
+    check_compatibility
+    
+    echo -e "\n${BLUE}${BOLD}Step 2: Backing up existing files${NC}"
     for file in .bashrc .bash_aliases .bash_completion .bash_functions .bash_modules; do
         backup_file "$file"
     done
     
-    echo -e "\n${BLUE}${BOLD}Step 2: Fixing file permissions${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 3: Fixing file permissions and line endings${NC}"
     fix_file_permissions
     
-    echo -e "\n${BLUE}${BOLD}Step 3: Installing core files${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 4: Checking and fixing symbolic links${NC}" 
+    fix_symbolic_links
+    
+    echo -e "\n${BLUE}${BOLD}Step 5: Installing core files${NC}"
     for file in bashrc bash_aliases bash_functions bash_completion bash_modules; do
         install_file "$file" "${HOME}/.${file}"
     done
     
-    echo -e "\n${BLUE}${BOLD}Step 4: Installing custom configurations${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 6: Installing custom configurations${NC}"
     for custom in bashrc.precustom bashrc.postcustom; do
         if [ -f "./${custom}" ]; then
             if [ -f "${HOME}/.${custom}" ]; then
@@ -427,13 +797,13 @@ install_sentinel() {
         fi
     done
     
-    echo -e "\n${BLUE}${BOLD}Step 5: Setting up directory structures${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 7: Setting up directory structures${NC}"
     for dir in bash_aliases.d bash_functions.d bash_completion.d bash_modules.d; do
         create_directory "${HOME}/.${dir}"
         install_directory_contents "${dir}" "${HOME}/.${dir}"
     done
     
-    echo -e "\n${BLUE}${BOLD}Step 6: Creating required directories${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 8: Creating required directories${NC}"
     for dir in "${HOME}/.hashcat/wordlists" "${HOME}/.hashcat/cracked" "${HOME}/.sentinel/logs" \
                "${HOME}/secure_workspace/obfuscation" "${HOME}/secure_workspace/crypto" \
                "${HOME}/secure_workspace/malware_analysis" "${HOME}/obfuscated_files" \
@@ -452,7 +822,7 @@ install_sentinel() {
         chmod 600 "${HOME}/.bookmarks"
     fi
     
-    echo -e "\n${BLUE}${BOLD}Step 7: Installing modules${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 9: Installing modules${NC}"
     # Install special modules like obfuscate
     if [ -f "./modules/obfuscate.sh" ]; then
         cp "./modules/obfuscate.sh" "${HOME}/.bash_modules.d/obfuscate.module"
@@ -468,13 +838,10 @@ install_sentinel() {
         fi
     fi
     
-    echo -e "\n${BLUE}${BOLD}Step 8: Configuring Autocomplete System${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 10: Configuring Autocomplete System${NC}"
     fix_shell_integration
     
-    echo -e "\n${BLUE}${BOLD}Step 9: Fixing Shell Integration${NC}"
-    fix_shell_integration
-    
-    echo -e "\n${BLUE}${BOLD}Step 10: Setting up Python environment${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 11: Setting up Python environment${NC}"
     setup_python_environment
     
     # Install ML modules
@@ -707,7 +1074,7 @@ EOF
         fi
     fi
     
-    echo -e "\n${BLUE}${BOLD}Step 11: Signing modules with HMAC${NC}"
+    echo -e "\n${BLUE}${BOLD}Step 12: Signing modules with HMAC${NC}"
     find "${HOME}/.bash_modules.d" -type f -name "*.module" | while read module_file; do
         module_name=$(basename "$module_file" .module)
         sign_module "$module_name"
@@ -752,7 +1119,7 @@ EOF
             source ~/.bashrc
             @autocomplete fix 2>/dev/null || echo -e "${YELLOW}Autocomplete command not yet available. Please restart your terminal.${NC}"
             echo -e "\n${GREEN}Configuration activated. All integrated fixes applied.${NC}"
-            echo -e "${YELLOW}Note: The separate fix scripts (fix_autocomplete.sh, fix_permissions.sh, fix_shell_integration.sh) are no longer needed.${NC}"
+            echo -e "${YELLOW}Note: The standalone fix scripts (fix_line_endings.sh, linux_compatibility_check.sh, etc.) are no longer needed as their functionality has been integrated into the installer.${NC}"
         fi
     else
         read -p "$(echo -e "${YELLOW}Would you like to activate the configuration now? [y/N] ${NC}")" response
@@ -760,7 +1127,7 @@ EOF
             source ~/.bashrc
             @autocomplete fix 2>/dev/null || echo -e "${YELLOW}Autocomplete command not yet available. Please restart your terminal.${NC}"
             echo -e "\n${GREEN}Configuration activated. All integrated fixes applied.${NC}"
-            echo -e "${YELLOW}Note: The separate fix scripts (fix_autocomplete.sh, fix_permissions.sh, fix_shell_integration.sh) are no longer needed.${NC}"
+            echo -e "${YELLOW}Note: The standalone fix scripts (fix_line_endings.sh, linux_compatibility_check.sh, etc.) are no longer needed as their functionality has been integrated into the installer.${NC}"
         fi
     fi
 }
