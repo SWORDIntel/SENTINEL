@@ -272,7 +272,6 @@ module_list() {
     local verified_modules=0
     
     # Get list of module files (both .sh and .module)
-    # Fix the find command syntax - we need to use -o between the name clauses and wrap in parentheses
     local module_files=$(find "$SENTINEL_MODULES_PATH" \( -name "*.sh" -o -name "*.module" \) 2>/dev/null | sort)
     
     # Debug output
@@ -358,17 +357,30 @@ module_list() {
     echo -e "        [V]=Verified, [S]=Signed, [!]=Signature invalid"
     echo -e "Summary: $total_modules total, $enabled_modules enabled, $loaded_modules loaded, $verified_modules verified"
     
-    # Add configuration guidance
-    echo -e "\n${YELLOW}Module Configuration:${NC}"
-    echo -e "To configure modules, edit your ${CYAN}~/.bashrc.postcustom${NC} file."
-    echo -e "For example, to enable OSINT and disable Obfuscation, add:"
-    echo -e "  ${GREEN}export SENTINEL_OSINT_ENABLED=1${NC}"
-    echo -e "  ${GREEN}export SENTINEL_OBFUSCATE_ENABLED=0${NC}"
-    echo -e "\nSecurity configuration:"
-    echo -e "  ${GREEN}export SENTINEL_VERIFY_MODULES=1${NC}       # Enable HMAC verification"
-    echo -e "  ${GREEN}export SENTINEL_REQUIRE_HMAC=1${NC}         # Require HMAC signatures"
+    # Add improved configuration guidance
+    echo -e "\n${YELLOW}Module Management Commands:${NC}"
+    echo -e "  ${CYAN}module_enable${NC} <module_name>        - Enable and load a module"
+    echo -e "  ${CYAN}module_disable${NC} <module_name>       - Disable a module"
+    echo -e "  ${CYAN}module_toggle${NC} <module_name> <on|off> - Toggle module state (easier to use)"
+    echo -e "  ${CYAN}module_status${NC} <module_name>        - Check detailed status of a module"
+    echo -e "  ${CYAN}module_sign${NC} <module_name>          - Sign a module with HMAC"
+    echo -e "  ${CYAN}module_menu${NC}                      - Interactive module management menu"
+    echo -e "  ${CYAN}module_verbose${NC} <on|off>          - Toggle verbose output mode"
+    echo -e "  ${CYAN}module_debug${NC} <on|off>            - Toggle debug output mode"
+    
+    echo -e "\n${YELLOW}Module Configuration in ~/.bashrc.postcustom:${NC}"
+    echo -e "You can also configure modules by setting variables in your ${CYAN}~/.bashrc.postcustom${NC} file:"
+    echo -e "  ${GREEN}export SENTINEL_MODULENAME_ENABLED=1${NC}  # Enable a specific module"
+    echo -e "  ${GREEN}export SENTINEL_MODULENAME_ENABLED=0${NC}  # Disable a specific module"
+    
+    echo -e "\n${YELLOW}Global Configuration Options:${NC}"
+    echo -e "  ${GREEN}export SENTINEL_QUIET_MODULES=1${NC}       # Silent module loading (default)"
+    echo -e "  ${GREEN}export SENTINEL_QUIET_MODULES=0${NC}       # Verbose module loading"
+    echo -e "  ${GREEN}export SENTINEL_DEBUG_MODULES=1${NC}       # Enable detailed debug output"
+    echo -e "  ${GREEN}export SENTINEL_VERIFY_MODULES=1${NC}      # Enable HMAC verification"
+    echo -e "  ${GREEN}export SENTINEL_REQUIRE_HMAC=1${NC}        # Require HMAC signatures"
     echo -e "  ${GREEN}export SENTINEL_CHECK_MODULE_CONTENT=1${NC} # Check for suspicious patterns"
-    echo -e "  ${GREEN}export SENTINEL_HMAC_KEY='random_string'${NC} # Custom HMAC key"
+    echo -e "  ${GREEN}export SENTINEL_HMAC_KEY='your-key'${NC}   # Custom HMAC key for signing"
 }
 
 # Function to control verbosity
@@ -508,6 +520,36 @@ _load_enabled_modules() {
     fi
 }
 
+# Function to toggle a module on or off
+module_toggle() {
+    local module_name="$1"
+    local action="$2"
+    local force="${3:-0}"
+    
+    if [[ -z "$module_name" || -z "$action" ]]; then
+        echo "Usage: module_toggle <module_name> <on|off> [force]"
+        echo "  Example: module_toggle obfuscate on"
+        echo "  Example: module_toggle sentinel_chat off"
+        return 1
+    fi
+    
+    case "$action" in
+        on|enable|1)
+            module_enable "$module_name" "$force"
+            return $?
+            ;;
+        off|disable|0)
+            module_disable "$module_name"
+            return $?
+            ;;
+        *)
+            echo "Invalid action: $action"
+            echo "Valid actions: on, enable, 1, off, disable, 0"
+            return 1
+            ;;
+    esac
+}
+
 # Register backwards compatibility functions
 bash_module() {
     ewarn "Using legacy function bash_module(). Consider switching to module_enable()."
@@ -549,3 +591,220 @@ if [[ -d "$SENTINEL_MODULES_PATH" ]]; then
 fi
 
 # Additional modules can be loaded here for custom configurations
+
+# Interactive menu for module management
+module_menu() {
+    local NORMAL=$(tput sgr0)
+    local BOLD=$(tput bold)
+    local RED=$(tput setaf 1)
+    local GREEN=$(tput setaf 2)
+    local YELLOW=$(tput setaf 3)
+    local BLUE=$(tput setaf 4)
+    local MAGENTA=$(tput setaf 5)
+    local CYAN=$(tput setaf 6)
+    local WHITE=$(tput setaf 7)
+    
+    # Check if we're in a proper terminal
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+        echo "Error: Interactive menu requires a terminal."
+        return 1
+    fi
+    
+    while true; do
+        clear
+        echo -e "${BOLD}${BLUE}SENTINEL Module Management${NORMAL}"
+        echo -e "${BOLD}${BLUE}==========================${NORMAL}\n"
+        
+        # Display module counts
+        local total_count=$(find "$SENTINEL_MODULES_PATH" \( -name "*.sh" -o -name "*.module" \) 2>/dev/null | wc -l)
+        local enabled_count=$(grep -v "^#\|^$" "$HOME/.bash_modules" 2>/dev/null | wc -l)
+        local loaded_count=${#SENTINEL_LOADED_MODULES[@]}
+        
+        echo -e "${BOLD}Modules:${NORMAL} $total_count total, $enabled_count enabled, $loaded_count loaded\n"
+        
+        # Show system status
+        echo -e "${BOLD}System Status:${NORMAL}"
+        echo -e "  Verbose Mode: $([ "$SENTINEL_QUIET_MODULES" = "0" ] && echo "${GREEN}ON${NORMAL}" || echo "${RED}OFF${NORMAL}")"
+        echo -e "  Debug Mode: $([ "${SENTINEL_DEBUG_MODULES:-0}" = "1" ] && echo "${GREEN}ON${NORMAL}" || echo "${RED}OFF${NORMAL}")"
+        echo -e "  HMAC Verification: $([ "${SENTINEL_VERIFY_MODULES:-0}" = "1" ] && echo "${GREEN}ON${NORMAL}" || echo "${RED}OFF${NORMAL}")"
+        echo -e "  HMAC Required: $([ "${SENTINEL_REQUIRE_HMAC:-0}" = "1" ] && echo "${GREEN}ON${NORMAL}" || echo "${RED}OFF${NORMAL}")"
+        echo -e "  Content Security Check: $([ "${SENTINEL_CHECK_MODULE_CONTENT:-1}" = "1" ] && echo "${GREEN}ON${NORMAL}" || echo "${RED}OFF${NORMAL}")\n"
+        
+        # Show menu options
+        echo -e "${BOLD}Options:${NORMAL}"
+        echo -e "  ${BOLD}1)${NORMAL} ${CYAN}List Modules${NORMAL}"
+        echo -e "  ${BOLD}2)${NORMAL} ${CYAN}Enable Module${NORMAL}"
+        echo -e "  ${BOLD}3)${NORMAL} ${CYAN}Disable Module${NORMAL}"
+        echo -e "  ${BOLD}4)${NORMAL} ${CYAN}Sign Module${NORMAL}"
+        echo -e "  ${BOLD}5)${NORMAL} ${CYAN}Toggle Verbose Mode${NORMAL} ($([ "$SENTINEL_QUIET_MODULES" = "0" ] && echo "ON" || echo "OFF"))"
+        echo -e "  ${BOLD}6)${NORMAL} ${CYAN}Toggle Debug Mode${NORMAL} ($([ "${SENTINEL_DEBUG_MODULES:-0}" = "1" ] && echo "ON" || echo "OFF"))"
+        echo -e "  ${BOLD}7)${NORMAL} ${CYAN}System Diagnostics${NORMAL}"
+        echo -e "  ${BOLD}q)${NORMAL} ${CYAN}Quit${NORMAL}\n"
+        
+        read -p "Enter option: " choice
+        
+        case "$choice" in
+            1) # List modules
+                clear
+                module_list
+                echo
+                read -p "Press Enter to continue..."
+                ;;
+            2) # Enable module
+                read -p "Enter module name to enable: " module_name
+                if [[ -n "$module_name" ]]; then
+                    module_enable "$module_name"
+                fi
+                read -p "Press Enter to continue..."
+                ;;
+            3) # Disable module
+                read -p "Enter module name to disable: " module_name
+                if [[ -n "$module_name" ]]; then
+                    module_disable "$module_name"
+                fi
+                read -p "Press Enter to continue..."
+                ;;
+            4) # Sign module
+                read -p "Enter module name to sign: " module_name
+                if [[ -n "$module_name" ]]; then
+                    module_sign "$module_name"
+                fi
+                read -p "Press Enter to continue..."
+                ;;
+            5) # Toggle verbose mode
+                if [[ "$SENTINEL_QUIET_MODULES" = "1" ]]; then
+                    module_verbose on
+                else
+                    module_verbose off
+                fi
+                read -p "Press Enter to continue..."
+                ;;
+            6) # Toggle debug mode
+                if [[ "${SENTINEL_DEBUG_MODULES:-0}" = "0" ]]; then
+                    module_debug on
+                else
+                    module_debug off
+                fi
+                read -p "Press Enter to continue..."
+                ;;
+            7) # System diagnostics
+                clear
+                module_diagnose
+                echo
+                read -p "Press Enter to continue..."
+                ;;
+            q|Q|quit|exit)
+                clear
+                return 0
+                ;;
+            *)
+                echo -e "${RED}Invalid option${NORMAL}"
+                read -p "Press Enter to continue..."
+                ;;
+        esac
+    done
+}
+
+# Check status of a specific module
+module_status() {
+    local module_name="$1"
+    
+    if [[ -z "$module_name" ]]; then
+        echo "Usage: module_status <module_name>"
+        return 1
+    fi
+    
+    echo -e "${BOLD}Module Status: ${module_name}${NC}"
+    echo "------------------------"
+    
+    # Check if module file exists
+    local module_file=""
+    local file_status="Not found"
+    local file_path=""
+    
+    if [[ -f "$SENTINEL_MODULES_PATH/$module_name.sh" ]]; then
+        module_file="$SENTINEL_MODULES_PATH/$module_name.sh"
+        file_status="Found (.sh)"
+        file_path="$module_file"
+    elif [[ -f "$SENTINEL_MODULES_PATH/$module_name.module" ]]; then
+        module_file="$SENTINEL_MODULES_PATH/$module_name.module"
+        file_status="Found (.module)"
+        file_path="$module_file"
+    fi
+    
+    echo "File: $file_status"
+    [[ -n "$file_path" ]] && echo "Path: $file_path"
+    
+    # Check if enabled at startup
+    local enabled="No"
+    if [[ -f "$HOME/.bash_modules" ]] && grep -q "^${module_name}\$" "$HOME/.bash_modules" 2>/dev/null; then
+        enabled="Yes"
+    fi
+    echo "Enabled at startup: $enabled"
+    
+    # Check if module is loaded in current session
+    local loaded="No"
+    if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]]; then
+        loaded="Yes"
+    elif [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "failed" ]]; then
+        loaded="Failed to load"
+    elif [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "loading" ]]; then
+        loaded="Currently loading"
+    fi
+    echo "Loaded in current session: $loaded"
+    
+    # Check HMAC status
+    if [[ -n "$module_file" ]]; then
+        if [[ -f "$module_file.hmac" ]]; then
+            echo "HMAC signature: Present"
+            
+            if [[ "${SENTINEL_VERIFY_MODULES:-0}" == "1" ]] && command -v openssl &>/dev/null; then
+                local hmac_key="${SENTINEL_HMAC_KEY:-$(cat /etc/machine-id 2>/dev/null || echo "SENTINEL_DEFAULT_KEY")}"
+                local calculated_hmac=$(openssl dgst -sha256 -hmac "$hmac_key" "$module_file" | cut -d' ' -f2)
+                local stored_hmac=$(cat "$module_file.hmac" 2>/dev/null)
+                
+                if [[ "$calculated_hmac" == "$stored_hmac" ]]; then
+                    echo "HMAC verification: Valid"
+                else
+                    echo "HMAC verification: Invalid (signature mismatch)"
+                fi
+            else
+                echo "HMAC verification: Not verified (verification disabled)"
+            fi
+        else
+            echo "HMAC signature: Missing"
+        fi
+    fi
+    
+    # Check module permissions
+    if [[ -n "$module_file" ]]; then
+        local perms=$(ls -l "$module_file" | awk '{print $1}')
+        local is_executable=$(if [[ -x "$module_file" ]]; then echo "Yes"; else echo "No"; fi)
+        echo "Permissions: $perms"
+        echo "Executable: $is_executable"
+    fi
+    
+    # Get module description and dependencies
+    if [[ -n "$module_file" ]]; then
+        local description=""
+        local dependencies=""
+        
+        if grep -q "SENTINEL_MODULE_DESCRIPTION=" "$module_file" 2>/dev/null; then
+            description=$(grep "SENTINEL_MODULE_DESCRIPTION=" "$module_file" | head -n1 | cut -d'"' -f2)
+            echo "Description: $description"
+        fi
+        
+        if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" 2>/dev/null; then
+            dependencies=$(grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | cut -d'"' -f2)
+            echo "Dependencies: $dependencies"
+        fi
+    fi
+    
+    # Module control help
+    echo -e "\nCommands to control this module:"
+    echo "  module_enable $module_name     - Enable and load the module"
+    echo "  module_disable $module_name    - Disable the module"
+    echo "  module_toggle $module_name on  - Enable the module (alternative)"
+    echo "  module_toggle $module_name off - Disable the module (alternative)"
+    echo "  module_sign $module_name       - Sign the module with HMAC"
+}
