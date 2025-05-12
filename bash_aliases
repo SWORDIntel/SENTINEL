@@ -63,3 +63,4 @@ alias update-system='if command -v apt &>/dev/null; then
 
 # Sourcing with optional internet check
 alias sourcebash='source ~/.bashrc && check_internet_and_update && echo ".bashrc sourced and apt updated if connected."'
+alias sentinel-config='~/.sentinel/sentinel_config_helper.sh'
