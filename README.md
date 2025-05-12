@@ -221,6 +221,77 @@ For comprehensive documentation of all available configuration options, see:
 ~/.sentinel/README_CONFIG.md
 ```
 
+## Performance Optimization
+
+SENTINEL implements extensive lazy loading mechanisms to significantly reduce terminal startup time.
+
+### Lazy Loading System
+
+The lazy loading system defers loading heavy components until they're actually needed:
+
+```bash
+# Enable/disable lazy loading (default: enabled)
+export U_LAZY_LOAD=1    # Enable lazy loading 
+export U_LAZY_LOAD=0    # Disable lazy loading (load everything at startup)
+```
+
+### Development Environment Lazy Loading
+
+The following development environments are lazy loaded:
+
+- **Pyenv** (Python version manager)
+  - Only loads when `pyenv` command is used
+  - Defers heavy "pyenv init" and "pyenv virtualenv-init" operations
+
+- **NVM** (Node.js version manager)
+  - Only loads when `nvm`, `node`, `npm`, or `npx` commands are used
+  - Prevents loading of NVM scripts and bash completion at startup
+
+- **RVM** (Ruby version manager)
+  - Only loads when `rvm`, `ruby`, `gem`, or `bundle` commands are used
+  - Defers PATH modifications and script sourcing
+
+- **Cargo** (Rust tools)
+  - Only loads when `cargo`, `rustc`, or `rustup` commands are used
+  - Prevents loading of Cargo environment at startup
+
+### Bash Completion Lazy Loading
+
+Completion scripts are only loaded on first tab press:
+- Intercepts first tab press to load completion system
+- Loads completion scripts only when needed
+- Simulates completion environment after loading
+- Reattaches to ongoing completion request
+
+### Prompt Optimization with Caching
+
+Improved prompt rendering with intelligent caching:
+- Caches SSH/sudo connection status indicators for 30 seconds
+- Only updates directory-specific information when directory changes
+- Separate caching for git status information with 2-5 second timeouts
+
+### Extending Lazy Loading
+
+Add lazy loading for additional tools using the generic framework:
+
+```bash
+# In your bashrc.postcustom file:
+
+# Define a loader function
+function __load_custom_tool() {
+    source /path/to/custom/tool/setup.sh
+}
+
+# Create lazy loading wrapper
+lazy_load custom_tool __load_custom_tool
+```
+
+Pre-defined loaders are available for common tools:
+```bash
+lazy_load go __load_go
+lazy_load docker __load_docker
+```
+
 ## Troubleshooting
 
 ### Common Issues
