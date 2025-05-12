@@ -206,7 +206,7 @@ sentinel_set_config SENTINEL_DEBUG_MODULES 1
 If you're upgrading from a previous version of SENTINEL, you can use the migration tool to move your existing settings:
 
 ```bash
-bash ~/Documents/GitHub/SENTINEL/bash_modules.d/suggestions/migrate_config.sh
+bash ~/Documents/GitHub/SENTINEL/bash_modules.d/migrate_config.sh
 ```
 
 This tool will:
@@ -475,12 +475,27 @@ source .venv/bin/activate
 # Install required dependencies
 pip install markovify numpy
 
-# Enable the suggestion module
-echo "source bash_modules.d/suggestions" >> ~/.bashrc
+# Enable the modules
+echo "source ~/.sentinel/blesh_loader.sh" >> ~/.bashrc
+# Load bash_modules to access all functionality
+source ~/Documents/GitHub/SENTINEL/bash_modules
 
 # Install cybersecurity ML dependencies
 cyberinstall
 ```
+
+### Configuration Migration
+
+If you're upgrading from a previous version of SENTINEL, you can use the migration tool to move your existing settings:
+
+```bash
+bash ~/Documents/GitHub/SENTINEL/bash_modules.d/migrate_config.sh
+```
+
+This tool will:
+1. Extract settings from bashrc.postcustom
+2. Apply them to the centralized configuration
+3. Update your bashrc.postcustom to use the centralized config
 
 ## Key Components
 

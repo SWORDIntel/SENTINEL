@@ -77,6 +77,7 @@ export SENTINEL_SECRET_KEY="default_key" # Will be auto-generated if default
 # BLE.sh configuration
 export SENTINEL_BLE_AUTO_INSTALL=1      # Auto-install BLE.sh if not found
 export SENTINEL_BLE_AUTO_CONFIGURE=1    # Auto-configure BLE.sh options
+export DEBUG_BLESH=0                  # Enable BLE.sh debug mode (1=enabled)
 
 # Autocomplete features
 export SENTINEL_FUZZY_ENABLED=1         # Enable fuzzy command correction

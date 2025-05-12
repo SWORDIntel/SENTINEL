@@ -68,14 +68,50 @@ fi
 CONFIG_FILE="${SENTINEL_CONFIG_DIR}/sentinel_config.sh"
 if [[ ! -f "$CONFIG_FILE" ]]; then
     # Source config_loader to create default config
-    if [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/config_loader.module" ]]; then
+    if [[ -f "${SCRIPT_DIR}/bash_modules.d/config_loader.module" ]]; then
+        source "${SCRIPT_DIR}/bash_modules.d/config_loader.module"
+    elif [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/config_loader.module" ]]; then
+        # Fallback to old location for backward compatibility
         source "${SCRIPT_DIR}/bash_modules.d/suggestions/config_loader.module"
-        echo -e "${GREEN}✓ Created default configuration file${NC}"
     else
-        echo -e "${RED}× Failed to create configuration file (config_loader.module not found)${NC}"
+        echo "Error: Could not find config_loader.module"
+        exit 1
     fi
+    echo -e "${GREEN}✓ Created default configuration file${NC}"
 else
     echo -e "${YELLOW}⚠ Configuration file already exists${NC}"
+fi
+
+# Ensure lazy loading is enabled in config
+if [[ -f "$CONFIG_FILE" ]]; then
+    echo -e "${BLUE}Updating configuration settings...${NC}"
+    
+    # Enable lazy loading in the configuration file
+    if grep -q "U_LAZY_LOAD=" "$CONFIG_FILE"; then
+        sed -i 's/U_LAZY_LOAD=0/U_LAZY_LOAD=1/g' "$CONFIG_FILE"
+        echo -e "${GREEN}✓ Updated: Lazy loading enabled in configuration${NC}"
+    else
+        echo 'export U_LAZY_LOAD=1' >> "$CONFIG_FILE"
+        echo -e "${GREEN}✓ Added: Lazy loading setting to configuration${NC}"
+    fi
+fi
+
+# Fix configuration file duplication issue
+echo -e "${BLUE}Checking for duplicate configuration files...${NC}"
+SECONDARY_CONFIG="${SCRIPT_DIR}/bash_modules.d/sentinel_config.sh"
+
+if [[ -f "$SECONDARY_CONFIG" && -f "$CONFIG_FILE" ]]; then
+    echo -e "${YELLOW}⚠ Secondary configuration file detected${NC}"
+    
+    # Backup the secondary config
+    BACKUP_FILE="${SECONDARY_CONFIG}.bak.$(date +%Y%m%d%H%M%S)"
+    cp "$SECONDARY_CONFIG" "$BACKUP_FILE"
+    echo -e "${GREEN}✓ Backed up: ${SECONDARY_CONFIG} → ${BACKUP_FILE}${NC}"
+    
+    # Remove the file and create a symlink to maintain centralized configuration
+    rm -f "$SECONDARY_CONFIG"
+    ln -sf "$CONFIG_FILE" "$SECONDARY_CONFIG"
+    echo -e "${GREEN}✓ Created symlink: ${SECONDARY_CONFIG} → ${CONFIG_FILE}${NC}"
 fi
 
 # Create the link files (symbolic links in home directory)
@@ -278,16 +314,291 @@ fi
 echo -e "${GREEN}✓ Set executable permissions${NC}"
 
 # Copy config_helper to ~/.sentinel for easier access
-if [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/sentinel_config_helper.sh" ]]; then
-    cp "${SCRIPT_DIR}/bash_modules.d/suggestions/sentinel_config_helper.sh" "${SENTINEL_CONFIG_DIR}/sentinel_config_helper.sh"
-    chmod +x "${SENTINEL_CONFIG_DIR}/sentinel_config_helper.sh"
-    echo -e "${GREEN}✓ Installed sentinel_config_helper.sh${NC}"
+if [[ -f "${SCRIPT_DIR}/bash_modules.d/sentinel_config_helper.sh" ]]; then
+    cp "${SCRIPT_DIR}/bash_modules.d/sentinel_config_helper.sh" "${SENTINEL_CONFIG_DIR}/sentinel_config_helper.sh"
+elif [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/sentinel_config_helper.sh" ]]; then
+    # Fallback to old location for backward compatibility
+    cp "${SCRIPT_DIR}/bash_modules.d/suggestions/sentinel_config_helper.sh" "${SENTINEL_CONFIG_DIR}/sentinel_config_helper.sh" 
+fi
+
+# Set up BLE.sh loader
+echo -e "${BLUE}Setting up BLE.sh loader...${NC}"
+BLE_LOADER="${SENTINEL_CONFIG_DIR}/blesh_loader.sh"
+
+# Create the loader with improved reliability
+cat > "$BLE_LOADER" << 'EOL'
+#!/usr/bin/env bash
+# SENTINEL BLE.sh integration loader
+# Version: 3.0
+# This script loads the BLE.sh (Bash Line Editor) with robust error handling
+
+# Set strict error handling
+set -o pipefail
+
+# Define logging functions
+_blesh_log() {
+    local level="$1"
+    local message="$2"
+    echo "[BLE.sh $level] $message"
+}
+
+_blesh_debug() {
+    [[ "${SENTINEL_BLESH_DEBUG:-0}" == "1" ]] && _blesh_log "DEBUG" "$1"
+}
+
+_blesh_info() {
+    _blesh_log "INFO" "$1"
+}
+
+_blesh_warn() {
+    _blesh_log "WARN" "$1" >&2
+}
+
+_blesh_error() {
+    _blesh_log "ERROR" "$1" >&2
+}
+
+# Clean up BLE.sh cache and lock files
+_blesh_cleanup() {
+    _blesh_debug "Running cleanup routine"
+    
+    if [[ -d "${HOME}/.cache/blesh" ]]; then
+        # Fix permissions
+        chmod -R 755 "${HOME}/.cache/blesh" 2>/dev/null
+        
+        # Remove lock files
+        find "${HOME}/.cache/blesh" -name "*.lock" -type f -delete 2>/dev/null
+        
+        # Remove incomplete download files
+        find "${HOME}/.cache/blesh" -name "*.part" -type f -delete 2>/dev/null
+        
+        # Remove any problematic cache files
+        find "${HOME}/.cache/blesh" -name "decode.readline.*.txt*" -type f -delete 2>/dev/null
+    fi
+}
+
+# BLE.sh loading methods
+_blesh_load_direct() {
+    _blesh_debug "Attempting direct source method"
+    # Direct source method
+    if source "${HOME}/.local/share/blesh/ble.sh" 2>/dev/null; then
+        _blesh_debug "Direct source successful"
+        return 0
+    fi
+    return 1
+}
+
+_blesh_load_cat() {
+    _blesh_debug "Attempting cat source method"
+    # Use cat to avoid issues with shell interpolation
+    if source <(cat "${HOME}/.local/share/blesh/ble.sh") 2>/dev/null; then
+        _blesh_debug "Cat source successful"
+        return 0
+    fi
+    return 1
+}
+
+_blesh_load_eval() {
+    _blesh_debug "Attempting eval method"
+    # Last resort method using eval
+    if eval "$(cat "${HOME}/.local/share/blesh/ble.sh")" 2>/dev/null; then
+        _blesh_debug "Eval method successful"
+        return 0
+    fi
+    return 1
+}
+
+# Install BLE.sh if permitted and not found
+_blesh_install() {
+    _blesh_info "BLE.sh not found. Attempting installation..."
+    
+    # Check if we have git and installation is allowed
+    if command -v git >/dev/null && [[ "${SENTINEL_BLESH_AUTO_INSTALL:-1}" == "1" ]]; then
+        local temp_dir="/tmp/blesh_install_$(date +%s)"
+        mkdir -p "${HOME}/.local/share"
+        
+        # Clone the repository
+        if git clone --recursive --depth 1 https://github.com/akinomyoga/ble.sh.git "$temp_dir"; then
+            # Run the make install
+            if (cd "$temp_dir" && make install PREFIX="${HOME}/.local"); then
+                rm -rf "$temp_dir"
+                _blesh_info "BLE.sh installed successfully"
+                return 0
+            else
+                _blesh_error "Make installation failed"
+                rm -rf "$temp_dir"
+                return 1
+            fi
+        else
+            _blesh_error "Failed to clone BLE.sh repository"
+            return 1
+        fi
+    else
+        _blesh_warn "Automatic installation disabled or git not available"
+        _blesh_info "Install manually with: git clone --recursive https://github.com/akinomyoga/ble.sh.git ~/.local/share/blesh"
+        return 1
+    fi
+}
+
+# Configure BLE.sh settings
+_blesh_configure() {
+    _blesh_debug "Configuring BLE.sh settings"
+    
+    # Core settings
+    bleopt complete_auto_delay=100
+    bleopt complete_auto_complete=1
+    bleopt complete_menu_complete=1
+    
+    # Appearance
+    bleopt highlight_auto_completion='fg=242'
+    bleopt highlight_syntax='true'
+    
+    # Key bindings
+    ble-bind -m auto_complete -f right 'auto_complete/accept-line'
+    
+    # History settings
+    bleopt history_share=1
+    
+    _blesh_debug "Configuration complete"
+    return 0
+}
+
+# Main BLE.sh loader function
+load_blesh() {
+    # Run cleanup first
+    _blesh_cleanup
+    
+    # Check if BLE.sh exists
+    if [[ -f "${HOME}/.local/share/blesh/ble.sh" ]]; then
+        _blesh_debug "Found BLE.sh installation"
+        
+        # Try all loading methods
+        if _blesh_load_direct || _blesh_load_cat || _blesh_load_eval; then
+            _blesh_info "BLE.sh loaded successfully"
+            _blesh_configure
+            return 0
+        else
+            _blesh_error "All loading methods failed"
+            return 1
+        fi
+    else
+        # Try to install
+        if _blesh_install; then
+            # Try loading after installation
+            if _blesh_load_direct || _blesh_load_cat || _blesh_load_eval; then
+                _blesh_info "BLE.sh loaded successfully after installation"
+                _blesh_configure
+                return 0
+            else
+                _blesh_error "Failed to load after installation"
+                return 1
+            fi
+        else
+            _blesh_error "BLE.sh not found and installation failed"
+            return 1
+        fi
+    fi
+}
+
+# Only attempt to load if enabled in configuration
+if [[ "${SENTINEL_BLESH_ENABLED:-1}" == "1" ]]; then
+    # Attempt to load BLE.sh
+    if ! load_blesh; then
+        _blesh_warn "Falling back to standard bash completion"
+        [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+    fi
+else
+    _blesh_info "BLE.sh loading disabled in configuration"
+    _blesh_info "Enable with: export SENTINEL_BLESH_ENABLED=1"
+    [[ -f /etc/bash_completion ]] && source /etc/bash_completion
+fi
+EOL
+
+chmod +x "$BLE_LOADER"
+echo -e "${GREEN}✓ Created improved BLE.sh loader${NC}"
+
+# Add BLE.sh loader to bashrc.postcustom if not already there
+if ! grep -q "# Load BLE\.sh" "${SCRIPT_DIR}/bashrc.postcustom"; then
+    cat >> "${SCRIPT_DIR}/bashrc.postcustom" << 'EOL'
+
+# Load BLE.sh if available
+if [[ -f "${HOME}/.sentinel/blesh_loader.sh" ]]; then
+    source "${HOME}/.sentinel/blesh_loader.sh"
+fi
+EOL
+    echo -e "${GREEN}✓ Added BLE.sh loader to bashrc.postcustom${NC}"
+fi
+
+# Add lazy loading configuration for development tools if not already there
+if ! grep -q "Lazy loading for development tools" "${SCRIPT_DIR}/bashrc.postcustom"; then
+    cat >> "${SCRIPT_DIR}/bashrc.postcustom" << 'EOL'
+
+# Lazy loading for development tools
+if [[ "${CONFIG[LAZY_LOAD]}" == "1" || "$U_LAZY_LOAD" == "1" ]]; then
+    # Lazy load pyenv if installed
+    function pyenv() {
+        unset -f pyenv
+        if [[ -d "$HOME/.pyenv" ]]; then
+            export PYENV_ROOT="$HOME/.pyenv"
+            export PATH="$PYENV_ROOT/bin:$PATH"
+            eval "$(command pyenv init -)"
+            eval "$(command pyenv virtualenv-init -)"
+            pyenv "$@"
+        else
+            echo "pyenv is not installed"
+            return 1
+        fi
+    }
+    
+    # Lazy load NVM if installed
+    function nvm() {
+        unset -f nvm
+        if [[ -d "$HOME/.nvm" ]]; then
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+            nvm "$@"
+        else
+            echo "nvm is not installed"
+            return 1
+        fi
+    }
+    
+    # Add shortcuts for common commands to trigger lazy loading
+    function node() {
+        unset -f node
+        nvm >/dev/null 2>&1
+        node "$@"
+    }
+    
+    function npm() {
+        unset -f npm
+        nvm >/dev/null 2>&1
+        npm "$@"
+    }
+    
+    function python() {
+        unset -f python
+        pyenv >/dev/null 2>&1
+        python "$@"
+    }
+    
+    function pip() {
+        unset -f pip
+        pyenv >/dev/null 2>&1
+        pip "$@"
+    }
+fi
+EOL
+    echo -e "${GREEN}✓ Added development environment lazy loading to bashrc.postcustom${NC}"
 fi
 
 # Copy README_CONFIG.md to ~/.sentinel for documentation
-if [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/README_CONFIG.md" ]]; then
+if [[ -f "${SCRIPT_DIR}/bash_modules.d/README_CONFIG.md" ]]; then
+    cp "${SCRIPT_DIR}/bash_modules.d/README_CONFIG.md" "${SENTINEL_CONFIG_DIR}/README_CONFIG.md"
+elif [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/README_CONFIG.md" ]]; then
+    # Fallback to old location for backward compatibility
     cp "${SCRIPT_DIR}/bash_modules.d/suggestions/README_CONFIG.md" "${SENTINEL_CONFIG_DIR}/README_CONFIG.md"
-    echo -e "${GREEN}✓ Installed README_CONFIG.md${NC}"
 fi
 
 # Add configuration helper command for user convenience
@@ -298,10 +609,22 @@ fi
 
 # Run configuration migration if needed
 echo -e "${BLUE}Checking for configuration to migrate...${NC}"
-if [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/migrate_config.sh" ]]; then
+if [[ -f "${SCRIPT_DIR}/bash_modules.d/migrate_config.sh" ]]; then
     echo -e "${YELLOW}Would you like to run the configuration migration tool? (y/n)${NC}"
     read -r choice
     if [[ "$choice" == "y" ]]; then
+        bash "${SCRIPT_DIR}/bash_modules.d/migrate_config.sh"
+        echo -e "${GREEN}✓ Configuration migration completed${NC}"
+    else
+        echo -e "${YELLOW}Skipping configuration migration${NC}"
+        echo -e "You can run it later with: bash ${SCRIPT_DIR}/bash_modules.d/migrate_config.sh"
+    fi
+elif [[ -f "${SCRIPT_DIR}/bash_modules.d/suggestions/migrate_config.sh" ]]; then
+    # Fallback to old location for backward compatibility
+    echo -e "${YELLOW}Would you like to run the configuration migration tool? (y/n)${NC}"
+    read -r choice
+    if [[ "$choice" == "y" ]]; then
+        echo -e "${YELLOW}Running migration script...${NC}"
         bash "${SCRIPT_DIR}/bash_modules.d/suggestions/migrate_config.sh"
         echo -e "${GREEN}✓ Configuration migration completed${NC}"
     else

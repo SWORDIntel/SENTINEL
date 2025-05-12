@@ -36,8 +36,8 @@ if [[ ! -f "$SENTINEL_CONFIG_FILE" ]]; then
     read -r choice
     if [[ "$choice" == "y" ]]; then
         # Check if config_loader module exists and use it
-        if [[ -f "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/suggestions/config_loader.module" ]]; then
-            source "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/suggestions/config_loader.module"
+        if [[ -f "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/config_loader.module" ]]; then
+            source "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/config_loader.module"
             echo -e "${GREEN}Configuration file created successfully.${NC}"
         else
             echo -e "${RED}Error: Could not find config_loader.module${NC}"
@@ -187,9 +187,9 @@ show_menu() {
                echo "Backup created at ${SENTINEL_CONFIG_FILE}.backup.$(date +%Y%m%d%H%M%S)"
                
                # Use config_loader to create a fresh config
-               if [[ -f "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/suggestions/config_loader.module" ]]; then
+               if [[ -f "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/config_loader.module" ]]; then
                    rm -f "$SENTINEL_CONFIG_FILE"
-                   source "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/suggestions/config_loader.module"
+                   source "${HOME}/Documents/GitHub/SENTINEL/bash_modules.d/config_loader.module"
                    echo -e "${GREEN}Configuration reset to defaults.${NC}"
                else
                    echo -e "${RED}Error: Could not find config_loader.module${NC}"

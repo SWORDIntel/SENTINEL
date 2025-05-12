@@ -1,0 +1,11 @@
+# This file has been updated. BLE.sh is now loaded directly from ~/.bashrc
+# Load BLE.sh if available
+if [[ -f ~/.local/share/blesh/ble.sh ]]; then
+    # Direct load with proper options - BLE.sh expects options within the source command
+    source ~/.local/share/blesh/ble.sh --attach
+fi
+
+# Source the SENTINEL custom configuration
+if [[ -f ~/Documents/GitHub/SENTINEL/bashrc.postcustom ]]; then
+    source ~/Documents/GitHub/SENTINEL/bashrc.postcustom
+fi 

@@ -116,3 +116,67 @@ fi
 
 # Add your customizations below this line
 # Example: export SENTINEL_CYBERSEC_ENABLED=0  # Disable cybersecurity module
+
+# Load BLE.sh if available
+if [[ -f $HOME/.sentinel/blesh_loader.sh ]]; then
+    source $HOME/.sentinel/blesh_loader.sh
+fi
+
+# Lazy loading for development tools
+if [[ "${CONFIG[LAZY_LOAD]}" == "1" || "$U_LAZY_LOAD" == "1" ]]; then
+    # Lazy load pyenv
+    function pyenv() {
+        unset -f pyenv
+        if [[ -d "$HOME/.pyenv" ]]; then
+            export PYENV_ROOT="$HOME/.pyenv"
+            export PATH="$PYENV_ROOT/bin:$PATH"
+            eval "$(command pyenv init -)"
+            eval "$(command pyenv virtualenv-init -)"
+            pyenv "$@"
+        else
+            echo "pyenv is not installed"
+            return 1
+        fi
+    }
+    
+    # Lazy load NVM
+    function nvm() {
+        unset -f nvm
+        if [[ -d "$HOME/.nvm" ]]; then
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+            [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+            nvm "$@"
+        else
+            echo "nvm is not installed"
+            return 1
+        fi
+    }
+    
+    # Add these for common commands to trigger the lazy loading
+    function node() {
+        unset -f node
+        nvm >/dev/null 2>&1
+        node "$@"
+    }
+    
+    function npm() {
+        unset -f npm
+        nvm >/dev/null 2>&1
+        npm "$@"
+    }
+    
+    function python() {
+        unset -f python
+        pyenv >/dev/null 2>&1
+        python "$@"
+    }
+    
+    function pip() {
+        unset -f pip
+        pyenv >/dev/null 2>&1
+        pip "$@"
+    }
+fi
+
+export U_LAZY_LOAD=1

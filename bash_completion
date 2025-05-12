@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Load all completion files recursively
+# SENTINEL Bash Completion Loader
+# Recursively loads all completion files from the completion directories
 
 # Function to load completion files from a directory recursively
 load_completions_recursive() {
@@ -31,12 +32,19 @@ load_completions_recursive() {
 	fi
 }
 
-# Load all completion files recursively
-load_completions_recursive "${HOME}/.bash_completion.d"
+# Load the system-wide bash completion if available
+if [[ -f /etc/bash_completion && -r /etc/bash_completion ]]; then
+	# Only source if not already loaded to avoid duplication
+	if ! type -t _completion_loader >/dev/null 2>&1; then
+		source /etc/bash_completion
+	fi
+fi
 
-# Legacy support for old method
-#for bashcomp in ${HOME}/.bash_completion.d/*; do
-#	source $bashcomp
-#done
+# Load all completion files recursively from user directory
+if [[ -d "${HOME}/.bash_completion.d" ]]; then
+	load_completions_recursive "${HOME}/.bash_completion.d"
+fi
 
+# Cleanup
+unset -f load_completions_recursive
 unset bashcomp

@@ -156,7 +156,7 @@ If you encounter issues with your configuration:
 1. Check your syntax with: `bash -n ~/.sentinel/sentinel_config.sh`
 2. Look for errors in the log: `cat ~/.sentinel/logs/config-*.log`
 3. Reset to defaults by removing the file and letting it re-create: `rm ~/.sentinel/sentinel_config.sh`
-4. Run the migration script to re-extract settings: `~/Documents/GitHub/SENTINEL/bash_modules.d/suggestions/migrate_config.sh`
+4. Run the migration script to re-extract settings: `~/Documents/GitHub/SENTINEL/bash_modules.d/migrate_config.sh`
 
 ## Advanced: Custom Configuration Variables
 

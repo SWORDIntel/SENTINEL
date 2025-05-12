@@ -1,0 +1,18 @@
+# BLE.sh is now loaded directly from ~/.bashrc
+# The following lines are commented out to prevent double-loading
+# if [[ -f "${HOME}/.sentinel/blesh_loader.sh" ]]; then
+#     source "${HOME}/.sentinel/blesh_loader.sh"
+# fi 
+
+# Create a replacement script with all BLE.sh loader references commented out
+sed -i 's/if \[\[ -f ~\/.sentinel\/blesh_loader.sh \]\]; then/# BLE.sh is now loaded directly from ~/.bashrc\n# if \[\[ -f ~\/.sentinel\/blesh_loader.sh \]\]; then/g' ~/Documents/GitHub/SENTINEL/bashrc.postcustom
+sed -i 's/    source ~\/.sentinel\/blesh_loader.sh/#    source ~\/.sentinel\/blesh_loader.sh/g' ~/Documents/GitHub/SENTINEL/bashrc.postcustom
+sed -i 's/fi # end blesh_loader/# fi # end blesh_loader/g' ~/Documents/GitHub/SENTINEL/bashrc.postcustom
+
+# Add a note at the top of the file explaining the changes
+echo '# NOTE: BLE.sh loader references have been commented out to prevent conflicts' > ~/Documents/GitHub/SENTINEL/bashrc.postcustom.new
+echo '# The loader is now invoked directly from ~/.bashrc for better compatibility' >> ~/Documents/GitHub/SENTINEL/bashrc.postcustom.new
+echo '# A backup of this file was created at ~/bashrc.postcustom.bak' >> ~/Documents/GitHub/SENTINEL/bashrc.postcustom.new
+echo '' >> ~/Documents/GitHub/SENTINEL/bashrc.postcustom.new
+cat ~/Documents/GitHub/SENTINEL/bashrc.postcustom >> ~/Documents/GitHub/SENTINEL/bashrc.postcustom.new
+mv ~/Documents/GitHub/SENTINEL/bashrc.postcustom.new ~/Documents/GitHub/SENTINEL/bashrc.postcustom 
