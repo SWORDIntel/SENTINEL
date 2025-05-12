@@ -15,13 +15,39 @@ spin() {
 # Load additional function files from directory
 loadRcDir() {
     local dir="$1"
+    local recursive="${2:-0}"  # 0=non-recursive, 1=recursive
+    local debug="${3:-0}"      # 0=quiet, 1=debug output
+    
+    if [[ "$debug" == "1" ]]; then
+        echo "DEBUG: Loading files from $dir (recursive=$recursive)"
+    fi
+    
     if [[ -d "$dir" ]]; then
+        # Process non-recursive files first
         local rcFile
         for rcFile in "$dir"/*; do
             if [[ -f "$rcFile" && -r "$rcFile" ]]; then
+                [[ "$debug" == "1" ]] && echo "DEBUG: Loading $rcFile"
                 source "$rcFile" || echo "Error loading $rcFile" >&2
             fi
         done
+        
+        # Process subdirectories if recursive mode is enabled
+        if [[ "$recursive" == "1" ]]; then
+            for subdir in "$dir"/*; do
+                if [[ -d "$subdir" ]]; then
+                    [[ "$debug" == "1" ]] && echo "DEBUG: Entering subdirectory $subdir"
+                    for subFile in "$subdir"/*; do
+                        if [[ -f "$subFile" && -r "$subFile" ]]; then
+                            [[ "$debug" == "1" ]] && echo "DEBUG: Loading $subFile"
+                            source "$subFile" || echo "Error loading $subFile" >&2
+                        fi
+                    done
+                fi
+            done
+        fi
+    else
+        [[ "$debug" == "1" ]] && echo "DEBUG: Directory $dir does not exist or is not readable"
     fi
 }
 
@@ -441,7 +467,7 @@ sentinel_quiet() {
 }
 
 # Load additional functions from function directory
-loadRcDir "${HOME}/.bash_functions.d"
+loadRcDir "${HOME}/.bash_functions.d" 1
 
 # Quick alias setup
 function qalias() {

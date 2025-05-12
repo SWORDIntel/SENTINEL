@@ -114,6 +114,46 @@ create_link "${SCRIPT_DIR}/bash_functions" "${HOME}/.bash_functions.sentinel"
 create_link "${SCRIPT_DIR}/bash_completion" "${HOME}/.bash_completion.sentinel"
 create_link "${SCRIPT_DIR}/bash_modules" "${HOME}/.bash_modules.sentinel"
 
+# Create subdirectory links to preserve module structure
+echo -e "${BLUE}Creating module directory structure...${NC}"
+mkdir -p "${HOME}/.bash_modules.d"
+
+# Function to copy or link module subdirectories
+setup_modules_dir() {
+    local source_dir="$1"
+    local target_dir="$2"
+    
+    # Create the target directory if it doesn't exist
+    mkdir -p "$target_dir"
+    
+    # Link subdirectories from source to target
+    for dir in "$source_dir"/*; do
+        if [[ -d "$dir" ]]; then
+            local dir_name=$(basename "$dir")
+            local target_subdir="$target_dir/$dir_name"
+            
+            # If target subdirectory doesn't exist, create it
+            if [[ ! -d "$target_subdir" ]]; then
+                mkdir -p "$target_subdir"
+                echo -e "${GREEN}✓ Created module subdirectory: $target_subdir${NC}"
+            fi
+            
+            # Copy module files from subdirectory
+            for module_file in "$dir"/*.module "$dir"/*.sh; do
+                if [[ -f "$module_file" ]]; then
+                    local file_name=$(basename "$module_file")
+                    cp -f "$module_file" "$target_subdir/$file_name"
+                    chmod +x "$target_subdir/$file_name"
+                    echo -e "${GREEN}✓ Installed module: $file_name in $target_subdir${NC}"
+                fi
+            done
+        fi
+    done
+}
+
+# Setup module directories
+setup_modules_dir "${SCRIPT_DIR}/bash_modules.d" "${HOME}/.bash_modules.d"
+
 # Function to check if a line exists in a file
 line_exists() {
     local line="$1"

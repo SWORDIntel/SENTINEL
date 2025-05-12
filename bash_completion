@@ -1,8 +1,42 @@
 #!/usr/bin/env bash
-#loadRcDir ${HOME}/.bash_completion.d
+# Load all completion files recursively
 
-for bashcomp in ${HOME}/.bash_completion.d/*; do
-	source $bashcomp
-done
+# Function to load completion files from a directory recursively
+load_completions_recursive() {
+	local dir="$1"
+	local debug="${2:-0}"  # 0=quiet, 1=debug output
+	
+	if [[ "$debug" == "1" ]]; then
+		echo "DEBUG: Loading completion files from $dir"
+	fi
+	
+	# First, load files in the current directory
+	if [[ -d "$dir" ]]; then
+		for bashcomp in "$dir"/*; do
+			if [[ -f "$bashcomp" && -r "$bashcomp" ]]; then
+				[[ "$debug" == "1" ]] && echo "DEBUG: Loading completion file $bashcomp"
+				source "$bashcomp"
+			fi
+		done
+		
+		# Then recursively process subdirectories
+		for subdir in "$dir"/*; do
+			if [[ -d "$subdir" ]]; then
+				[[ "$debug" == "1" ]] && echo "DEBUG: Processing subdirectory $subdir"
+				load_completions_recursive "$subdir" "$debug"
+			fi
+		done
+	else
+		[[ "$debug" == "1" ]] && echo "DEBUG: Directory $dir does not exist or is not readable"
+	fi
+}
+
+# Load all completion files recursively
+load_completions_recursive "${HOME}/.bash_completion.d"
+
+# Legacy support for old method
+#for bashcomp in ${HOME}/.bash_completion.d/*; do
+#	source $bashcomp
+#done
 
 unset bashcomp

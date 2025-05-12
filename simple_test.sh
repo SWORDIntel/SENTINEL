@@ -500,6 +500,71 @@ function fix_config_duplication() {
     else
         echo -e "${RED}✗${NC} No configuration file found at either location"
     fi
+    
+    # Check subdirectory module loading
+    echo -e "\n${CYAN}=== Verifying Module Loading from Subdirectories ====${NC}"
+    
+    # Check if bash_modules handles subdirectories properly
+    BASH_MODULES_FILE="${SENTINEL_DIR}/bash_modules"
+    if [[ -f "$BASH_MODULES_FILE" ]]; then
+        echo -e "${BLUE}Checking if bash_modules handles subdirectories${NC}"
+        
+        # Check if _load_all_modules function exists
+        if grep -q "_load_all_modules" "$BASH_MODULES_FILE"; then
+            echo -e "${GREEN}✓${NC} Found _load_all_modules function for recursive module loading"
+        else
+            echo -e "${YELLOW}⚠${NC} The _load_all_modules function wasn't found"
+            echo -e "${YELLOW}⚠${NC} Subdirectory module loading might not be working correctly"
+            echo -e "${YELLOW}⚠${NC} Please update bash_modules to include recursive module loading"
+        fi
+        
+        # Check if find_all_modules function exists
+        if grep -q "find_all_modules" "$BASH_MODULES_FILE"; then
+            echo -e "${GREEN}✓${NC} Found find_all_modules function for recursive module discovery"
+        else
+            echo -e "${YELLOW}⚠${NC} The find_all_modules function wasn't found"
+            echo -e "${YELLOW}⚠${NC} Subdirectory module discovery might not be working correctly"
+        fi
+    else
+        echo -e "${RED}✗${NC} bash_modules file not found at ${BASH_MODULES_FILE}"
+    fi
+    
+    # Check if bash_functions handles subdirectories properly
+    BASH_FUNCTIONS_FILE="${SENTINEL_DIR}/bash_functions"
+    if [[ -f "$BASH_FUNCTIONS_FILE" ]]; then
+        echo -e "${BLUE}Checking if bash_functions handles subdirectories${NC}"
+        
+        # Check if loadRcDir has recursive parameter
+        if grep -q "recursive=\"\${2:-0}\"" "$BASH_FUNCTIONS_FILE"; then
+            echo -e "${GREEN}✓${NC} loadRcDir function supports recursive loading"
+        else
+            echo -e "${YELLOW}⚠${NC} loadRcDir function might not support recursive loading"
+        fi
+        
+        # Check if loadRcDir is called with recursive flag
+        if grep -qE "loadRcDir.*1" "$BASH_FUNCTIONS_FILE"; then
+            echo -e "${GREEN}✓${NC} loadRcDir is called with recursive flag"
+        else
+            echo -e "${YELLOW}⚠${NC} loadRcDir might not be called with recursive flag"
+        fi
+    else
+        echo -e "${RED}✗${NC} bash_functions file not found at ${BASH_FUNCTIONS_FILE}"
+    fi
+    
+    # Check if bash_completion handles subdirectories properly
+    BASH_COMPLETION_FILE="${SENTINEL_DIR}/bash_completion"
+    if [[ -f "$BASH_COMPLETION_FILE" ]]; then
+        echo -e "${BLUE}Checking if bash_completion handles subdirectories${NC}"
+        
+        # Check if load_completions_recursive function exists
+        if grep -q "load_completions_recursive" "$BASH_COMPLETION_FILE"; then
+            echo -e "${GREEN}✓${NC} Found load_completions_recursive function for recursive completion loading"
+        else
+            echo -e "${YELLOW}⚠${NC} Bash completion might not load from subdirectories"
+        fi
+    else
+        echo -e "${RED}✗${NC} bash_completion file not found at ${BASH_COMPLETION_FILE}"
+    fi
 }
 
 # Run all tests
