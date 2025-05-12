@@ -167,23 +167,59 @@ module_edit custom_tools      # Edit existing module
 
 ## Configuration
 
-### Directory Structure
+SENTINEL now features a centralized configuration system that makes it easy to manage all settings in one place.
 
+### Configuration File
+
+The main configuration file is located at:
 ```
-~/.sentinel/
-├── config/                    # Configuration files
-├── modules/                   # Module directory
-├── secure/                    # Secure storage
-├── cache/                     # Cache directory
-└── logs/                     # Audit logs
+~/.sentinel/sentinel_config.sh
 ```
 
-### Custom Configuration
+This file contains all configuration options organized in sections:
+- Core system configuration
+- Security configuration
+- Module enable/disable configuration
+- Autocomplete system configuration
+- Custom user configuration
 
-- **~/.bashrc.precustom**: Pre-load configuration
-- **~/.bashrc.postcustom**: Post-load overrides
-- **~/.bash_modules**: Module activation control
-- **~/.sentinel/config/**: Module-specific settings
+### Managing Configuration
+
+You can use the following commands to manage your configuration:
+
+```bash
+# Open the configuration editor
+sentinel-config
+
+# Reload configuration after changes
+sentinel_config_reload
+
+# Get a specific configuration value
+sentinel_get_config SENTINEL_DEBUG_MODULES
+
+# Set a specific configuration value
+sentinel_set_config SENTINEL_DEBUG_MODULES 1
+```
+
+### Configuration Migration
+
+If you're upgrading from a previous version of SENTINEL, you can use the migration tool to move your existing settings:
+
+```bash
+bash ~/Documents/GitHub/SENTINEL/bash_modules.d/suggestions/migrate_config.sh
+```
+
+This tool will:
+1. Extract settings from bashrc.postcustom
+2. Apply them to the centralized configuration
+3. Update your bashrc.postcustom to use the centralized config
+
+### Configuration Documentation
+
+For comprehensive documentation of all available configuration options, see:
+```
+~/.sentinel/README_CONFIG.md
+```
 
 ## Troubleshooting
 

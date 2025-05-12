@@ -1,614 +1,141 @@
 #!/usr/bin/env bash
 # SENTINEL Uninstallation Script
-# Secure ENhanced Terminal INtelligent Layer
-#
-# This script removes SENTINEL components and restores backup files
-# Last Update: 2023-12-15
+# Version: 2.0
+# This script uninstalls the SENTINEL system and restores original configurations
 
-# Set text color variables
+# Set strict error handling
+set -o pipefail
+
+# Define colors for output
+RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-RED='\033[0;31m'
 BLUE='\033[0;34m'
-BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Print banner
-echo -e "${BLUE}${BOLD}"
-echo '  ██████ ▓█████  ███▄    █ ▄▄▄█████▓ ██▓ ███▄    █ ▓█████  ██▓    '
-echo '▒██    ▒ ▓█   ▀  ██ ▀█   █ ▓  ██▒ ▓▒▓██▒ ██ ▀█   █ ▓█   ▀ ▓██▒    '
-echo '░ ▓██▄   ▒███   ▓██  ▀█ ██▒▒ ▓██░ ▒░▒██▒▓██  ▀█ ██▒▒███   ▒██░    '
-echo '  ▒   ██▒▒▓█  ▄ ▓██▒  ▐▌██▒░ ▓██▓ ░ ░██░▓██▒  ▐▌██▒▒▓█  ▄ ▒██░    '
-echo '▒██████▒▒░▒████▒▒██░   ▓██░  ▒██▒ ░ ░██░▒██░   ▓██░░▒████▒░██████▒'
-echo '▒ ▒▓▒ ▒ ░░░ ▒░ ░░ ▒░   ▒ ▒   ▒ ░░   ░▓  ░ ▒░   ▒ ▒ ░░ ▒░ ░░ ▒░▓  ░'
-echo '░ ░▒  ░ ░ ░ ░  ░░ ░░   ░ ▒░    ░     ▒ ░░ ░░   ░ ▒░ ░ ░  ░░ ░ ▒  ░'
-echo '░  ░  ░     ░      ░   ░ ░   ░       ▒ ░   ░   ░ ░    ░     ░ ░   '
-echo '      ░     ░  ░         ░           ░           ░    ░  ░    ░  ░'
+echo -e "${BLUE}"
+echo "███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗██╗      "
+echo "██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝██║      "
+echo "███████╗█████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║█████╗  ██║      "
+echo "╚════██║██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║██╔══╝  ██║      "
+echo "███████║███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████╗███████╗ "
+echo "╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝ "
 echo -e "${NC}"
-echo -e "${RED}${BOLD}SENTINEL Uninstallation Script${NC}"
-echo -e "${RED}-----------------------------------${NC}\n"
+echo -e "${RED}Uninstallation Script${NC}"
+echo
 
-# Check if running as root (not recommended)
-if [ "$(id -u)" -eq 0 ]; then
-    echo -e "${RED}Warning: Running this script as root is not recommended${NC}"
-    echo -e "${YELLOW}The script will modify files in your home directory${NC}"
-    echo -e "${YELLOW}It's better to run it as a regular user${NC}"
-    echo -e "${YELLOW}Continue anyway?${NC}"
-    read -p "$(echo -e "${YELLOW}Continue as root? [y/N] ${NC}")" continue_as_root
-    case "$continue_as_root" in
-        'Y'|'y'|'yes')
-            echo -e "${YELLOW}Continuing as root user${NC}"
-            ;;
-        *)
-            echo -e "${GREEN}Please run this script as a non-root user${NC}"
-            exit 1
-            ;;
-    esac
+# Ask for confirmation
+echo -e "${YELLOW}This script will uninstall SENTINEL from your system.${NC}"
+echo -e "${YELLOW}All SENTINEL configurations will be removed.${NC}"
+echo -e "${YELLOW}Your original configuration files will be restored if backups exist.${NC}"
+echo
+read -p "Are you sure you want to continue? (y/n): " confirm
+if [[ "$confirm" != "y" ]]; then
+    echo -e "${GREEN}Uninstallation aborted.${NC}"
+    exit 0
 fi
 
-# Confirm uninstallation
-echo -e "${RED}${BOLD}WARNING: This will remove all SENTINEL components from your system.${NC}"
-echo -e "${YELLOW}Backup files will be moved to ~/BAK/ directory.${NC}"
-read -p "$(echo -e "${YELLOW}Continue with uninstallation? [y/N] ${NC}")" confirm
-case "$confirm" in
-    'Y'|'y'|'yes')
-        echo -e "${YELLOW}Proceeding with uninstallation...${NC}"
-        ;;
-    *)
-        echo -e "${GREEN}Uninstallation canceled.${NC}"
-        exit 0
-        ;;
-esac
-
-# Create backup directory
-BAK_DIR="${HOME}/BAK"
-echo -e "${BLUE}Creating backup directory: ${BAK_DIR}${NC}"
-mkdir -p "${BAK_DIR}" || {
-    echo -e "${RED}Failed to create backup directory. Aborting.${NC}"
-    exit 1
-}
-
-# Create a log of the uninstallation process
-LOG_FILE="${BAK_DIR}/sentinel_uninstall.log"
-echo "SENTINEL Uninstallation - $(date)" > "$LOG_FILE"
-
-# Function to back up file before removal
-backup_before_remove() {
+# Function to restore a backup if it exists
+restore_backup() {
     local file="$1"
-    local basefile=$(basename "$file")
     
-    if [ -e "$file" ]; then
-        echo -e "${YELLOW}Moving $file to ${BAK_DIR}/${basefile}${NC}"
-        mv "$file" "${BAK_DIR}/${basefile}" 2>/dev/null || {
-            echo -e "${RED}Failed to move $file to backup directory${NC}"
-            echo "Failed to backup: $file" >> "$LOG_FILE"
-            return 1
-        }
-        echo "Backed up: $file to ${BAK_DIR}/${basefile}" >> "$LOG_FILE"
+    # Check for backups with .bak extension
+    local backup_files=( $(ls -1 "${file}.bak"* 2>/dev/null) )
+    
+    if [[ ${#backup_files[@]} -gt 0 ]]; then
+        # Get the most recent backup
+        local most_recent="${backup_files[${#backup_files[@]}-1]}"
+        
+        echo -e "${YELLOW}Restoring ${file} from backup: ${most_recent}${NC}"
+        cp "$most_recent" "$file"
         return 0
-    else
-        echo "File not found: $file" >> "$LOG_FILE"
-        return 1
+    fi
+    
+    return 1
+}
+
+# Function to remove a file if it's a symlink to SENTINEL
+remove_if_sentinel_link() {
+    local file="$1"
+    local sentinel_pattern="$2"
+    
+    if [[ -L "$file" && $(readlink "$file") == *"$sentinel_pattern"* ]]; then
+        echo -e "${YELLOW}Removing SENTINEL symlink: ${file}${NC}"
+        rm -f "$file"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Function to remove SENTINEL integration from a file
+remove_integration() {
+    local file="$1"
+    
+    if [[ -f "$file" ]]; then
+        echo -e "${YELLOW}Removing SENTINEL integration from ${file}${NC}"
+        
+        # Create temporary file
+        local tmpfile=$(mktemp)
+        
+        # Find and remove SENTINEL integration block
+        sed '/# SENTINEL Integration/,/# End of SENTINEL Integration/d' "$file" > "$tmpfile"
+        
+        # Replace original file
+        mv "$tmpfile" "$file"
     fi
 }
 
-# Function to handle backup files
-restore_from_backup() {
-    local bakfile="$1"
-    local origfile="${bakfile%.bak}"
-    
-    if [ -f "$bakfile" ]; then
-        echo -e "${GREEN}Restoring $origfile from backup${NC}"
-        
-        # Check if original file exists but not as a SENTINEL version
-        if [ -f "$origfile" ] && ! grep -q "SENTINEL" "$origfile" 2>/dev/null; then
-            # Original exists but isn't a SENTINEL file, move both to BAK
-            echo -e "${YELLOW}Both original and backup exist, moving both to ${BAK_DIR}${NC}"
-            mv "$origfile" "${BAK_DIR}/$(basename "$origfile")"
-            mv "$bakfile" "${BAK_DIR}/$(basename "$bakfile")"
-        else
-            # Either original doesn't exist or is a SENTINEL version
-            mv "$bakfile" "$origfile"
-            echo "Restored: $origfile from $bakfile" >> "$LOG_FILE"
-        fi
-        return 0
-    else
-        echo "Backup not found: $bakfile" >> "$LOG_FILE"
-        return 1
-    fi
-}
+# Create a backup directory for SENTINEL files before removal
+BACKUP_DIR="${HOME}/.sentinel_backup_$(date +%Y%m%d%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+echo -e "${GREEN}Created backup directory: ${BACKUP_DIR}${NC}"
 
-# Step 1: Remove SENTINEL directories
-echo -e "\n${BLUE}${BOLD}Step 1: Removing SENTINEL directories${NC}"
-for dir in "${HOME}/.sentinel" \
-           "${HOME}/secure_workspace" \
-           "${HOME}/.bash_modules.d"; do
-    if [ -d "$dir" ]; then
-        echo -e "${YELLOW}Removing directory: $dir${NC}"
-        rm -rf "$dir" 2>/dev/null && {
-            echo "Removed directory: $dir" >> "$LOG_FILE"
-        } || {
-            echo -e "${RED}Failed to remove directory: $dir${NC}"
-            echo "Failed to remove directory: $dir" >> "$LOG_FILE"
-        }
-    fi
-done
-
-# Step 1B: Clean up cache files (especially ble.sh which causes problems)
-echo -e "\n${BLUE}${BOLD}Step 1B: Cleaning up cache files${NC}"
-
-# Check for and kill any ble.sh processes that might be keeping files locked
-echo -e "${YELLOW}Checking for ble.sh processes...${NC}"
-# Find any processes related to ble.sh
-BLESH_PROCS=$(ps -ef | grep -i ble.sh | grep -v grep | awk '{print $2}')
-if [ -n "$BLESH_PROCS" ]; then
-    echo -e "${YELLOW}Found ble.sh related processes:${NC}"
-    ps -f $BLESH_PROCS
-    read -p "$(echo -e "${YELLOW}Kill these processes? [y/N] ${NC}")" kill_procs
-    case "$kill_procs" in
-        'Y'|'y'|'yes')
-            echo -e "${YELLOW}Terminating ble.sh processes...${NC}"
-            for pid in $BLESH_PROCS; do
-                kill -9 $pid 2>/dev/null
-                echo "Terminated process: $pid" >> "$LOG_FILE"
-            done
-            echo -e "${GREEN}Processes terminated${NC}"
-            # Small delay to allow processes to exit
-            sleep 1
-            ;;
-        *)
-            echo -e "${YELLOW}Keeping processes running.${NC}"
-            echo "Skipped termination of ble.sh processes (user declined)" >> "$LOG_FILE"
-            ;;
-    esac
+# Back up .sentinel directory if it exists
+if [[ -d "${HOME}/.sentinel" ]]; then
+    echo -e "${YELLOW}Backing up .sentinel directory...${NC}"
+    cp -r "${HOME}/.sentinel" "$BACKUP_DIR/"
+    echo -e "${GREEN}✓ Backed up .sentinel directory${NC}"
 fi
 
-if [ -d "${HOME}/.cache/blesh" ]; then
-    echo -e "${YELLOW}Cleaning up ble.sh cache directory...${NC}"
-    
-    # First attempt to fix permissions
-    chmod -R 755 "${HOME}/.cache/blesh" 2>/dev/null || {
-        echo -e "${RED}Failed to set permissions on ${HOME}/.cache/blesh, attempting alternative cleanup...${NC}"
-    }
-    
-    # Target problematic files first
-    find "${HOME}/.cache/blesh" -name "*.part" -type f -delete 2>/dev/null
-    find "${HOME}/.cache/blesh" -name "decode.readline*.txt*" -type f -delete 2>/dev/null
-    
-    # Try to remove the entire directory
-    rm -rf "${HOME}/.cache/blesh" 2>/dev/null && {
-        echo "Removed ble.sh cache directory" >> "$LOG_FILE"
-        echo -e "${GREEN}Successfully removed ble.sh cache directory${NC}"
-    } || {
-        echo -e "${RED}Could not completely remove ${HOME}/.cache/blesh, using sudo...${NC}"
-        
-        # Ask for sudo if needed
-        read -p "$(echo -e "${YELLOW}Attempt to remove cache files with sudo? [y/N] ${NC}")" use_sudo
-        case "$use_sudo" in
-            'Y'|'y'|'yes')
-                sudo rm -rf "${HOME}/.cache/blesh" 2>/dev/null && {
-                    echo "Removed ble.sh cache directory with sudo" >> "$LOG_FILE"
-                    echo -e "${GREEN}Successfully removed ble.sh cache directory with sudo${NC}"
-                } || {
-                    echo -e "${RED}Failed to remove ${HOME}/.cache/blesh even with sudo${NC}"
-                    echo "Failed to remove ble.sh cache directory" >> "$LOG_FILE"
-                }
-                ;;
-            *)
-                echo -e "${YELLOW}Skipping removal of problematic cache files${NC}"
-                echo "Skipped removal of ble.sh cache (user declined sudo)" >> "$LOG_FILE"
-                ;;
-        esac
-    }
+# Remove SENTINEL integration from .bashrc
+echo -e "${BLUE}Removing SENTINEL integration from .bashrc...${NC}"
+remove_integration "${HOME}/.bashrc"
+
+# Remove SENTINEL symlinks
+echo -e "${BLUE}Removing SENTINEL symlinks...${NC}"
+remove_if_sentinel_link "${HOME}/.bashrc.sentinel" "SENTINEL/bashrc"
+remove_if_sentinel_link "${HOME}/.bash_aliases.sentinel" "SENTINEL/bash_aliases"
+remove_if_sentinel_link "${HOME}/.bash_functions.sentinel" "SENTINEL/bash_functions"
+remove_if_sentinel_link "${HOME}/.bash_completion.sentinel" "SENTINEL/bash_completion"
+remove_if_sentinel_link "${HOME}/.bash_modules.sentinel" "SENTINEL/bash_modules"
+
+# Try to restore original files from backups
+echo -e "${BLUE}Restoring original files from backups...${NC}"
+restore_backup "${HOME}/.bashrc" || echo -e "${YELLOW}⚠ No backup found for .bashrc${NC}"
+restore_backup "${HOME}/.bash_aliases" || echo -e "${YELLOW}⚠ No backup found for .bash_aliases${NC}"
+restore_backup "${HOME}/.bash_functions" || echo -e "${YELLOW}⚠ No backup found for .bash_functions${NC}"
+restore_backup "${HOME}/.bash_completion" || echo -e "${YELLOW}⚠ No backup found for .bash_completion${NC}"
+
+# Ask before removing .sentinel directory
+echo
+echo -e "${RED}Warning: The following action will permanently delete SENTINEL data${NC}"
+read -p "Remove the .sentinel directory and all its contents? (y/n): " remove_data
+if [[ "$remove_data" == "y" ]]; then
+    echo -e "${YELLOW}Removing .sentinel directory...${NC}"
+    rm -rf "${HOME}/.sentinel"
+    echo -e "${GREEN}✓ Removed .sentinel directory${NC}"
+else
+    echo -e "${YELLOW}Keeping .sentinel directory for reference.${NC}"
+    echo -e "${YELLOW}You can manually remove it later with: rm -rf ${HOME}/.sentinel${NC}"
 fi
 
-# Check for other SENTINEL-related cache
-if [ -d "${HOME}/.cache/sentinel" ]; then
-    echo -e "${YELLOW}Removing SENTINEL cache directory...${NC}"
-    rm -rf "${HOME}/.cache/sentinel" 2>/dev/null && {
-        echo "Removed SENTINEL cache directory" >> "$LOG_FILE"
-    } || {
-        echo -e "${RED}Failed to remove ${HOME}/.cache/sentinel${NC}"
-        echo "Failed to remove SENTINEL cache directory" >> "$LOG_FILE"
-    }
-fi
-
-# Step 2: Remove SENTINEL files
-echo -e "\n${BLUE}${BOLD}Step 2: Removing SENTINEL files${NC}"
-SENTINEL_FILES=(
-    "${HOME}/.bashrc"
-    "${HOME}/.bash_aliases"
-    "${HOME}/.bash_functions"
-    "${HOME}/.bash_completion"
-    "${HOME}/.bash_modules"
-    "${HOME}/.bashrc.precustom"
-    "${HOME}/.bashrc.postcustom"
-    "${HOME}/.bookmarks"
-)
-
-for file in "${SENTINEL_FILES[@]}"; do
-    if [ -f "$file" ] && grep -q "SENTINEL" "$file" 2>/dev/null; then
-        backup_before_remove "$file"
-    fi
-done
-
-# Step 3: Handle backup files
-echo -e "\n${BLUE}${BOLD}Step 3: Handling backup files${NC}"
-# Find all .bak files in home directory
-find "${HOME}" -maxdepth 1 -name "*.bak" -type f | while read bakfile; do
-    base_file="${bakfile%.bak}"
-    
-    # If original file doesn't exist or is a SENTINEL file, restore from backup
-    if [ ! -f "$base_file" ] || grep -q "SENTINEL" "$base_file" 2>/dev/null; then
-        restore_from_backup "$bakfile"
-    else
-        # Otherwise move the backup to the BAK directory
-        echo -e "${YELLOW}Moving backup file $bakfile to ${BAK_DIR}${NC}"
-        mv "$bakfile" "${BAK_DIR}/$(basename "$bakfile")" 2>/dev/null
-        echo "Moved backup: $bakfile to ${BAK_DIR}" >> "$LOG_FILE"
-    fi
-done
-
-# Step 4: Restore original bash environment
-echo -e "\n${BLUE}${BOLD}Step 4: Restoring original bash environment${NC}"
-# Create a minimal .bashrc if none exists
-if [ ! -f "${HOME}/.bashrc" ]; then
-    echo -e "${YELLOW}Creating minimal .bashrc file${NC}"
-    cat > "${HOME}/.bashrc" << 'EOF'
-# ~/.bashrc: executed by bash(1) for non-login shells.
-
-# If not running interactively, don't do anything
-case $- in
-    *i*) ;;
-      *) return;;
-esac
-
-# enable color support
-if [ -x /usr/bin/dircolors ]; then
-    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
-    alias ls='ls --color=auto'
-    alias grep='grep --color=auto'
-fi
-
-# some more ls aliases
-alias ll='ls -alF'
-alias la='ls -A'
-alias l='ls -CF'
-
-# enable programmable completion features
-if ! shopt -oq posix; then
-  if [ -f /usr/share/bash-completion/bash_completion ]; then
-    . /usr/share/bash-completion/bash_completion
-  elif [ -f /etc/bash_completion ]; then
-    . /etc/bash_completion
-  fi
-fi
-EOF
-    echo "Created minimal .bashrc" >> "$LOG_FILE"
-fi
-
-# Step 5: Remove leftover directories
-echo -e "\n${BLUE}${BOLD}Step 5: Cleaning up leftover directories${NC}"
-# Define optional directories to remove
-OPTIONAL_DIRS=(
-    "${HOME}/.bash_aliases.d"
-    "${HOME}/.bash_functions.d"
-    "${HOME}/.bash_completion.d"
-    "${HOME}/build_workspace"
-    "${HOME}/.distcc"
-    "${HOME}/.ccache"
-    "${HOME}/obfuscated_files"
-)
-
-echo -e "${YELLOW}The following directories can be removed:${NC}"
-for i in "${!OPTIONAL_DIRS[@]}"; do
-    if [ -d "${OPTIONAL_DIRS[$i]}" ]; then
-        echo -e "  $((i+1)). ${OPTIONAL_DIRS[$i]}"
-    else
-        unset 'OPTIONAL_DIRS[$i]'
-    fi
-done
-
-echo -e "${YELLOW}Do you want to remove these directories?${NC}"
-read -p "$(echo -e "${YELLOW}Remove directories? [A]ll, [N]one, [S]elect: ${NC}")" remove_dirs
-case "$remove_dirs" in
-    'A'|'a'|'all')
-        for dir in "${OPTIONAL_DIRS[@]}"; do
-            if [ -d "$dir" ]; then
-                echo -e "${YELLOW}Removing directory: $dir${NC}"
-                rm -rf "$dir" 2>/dev/null && {
-                    echo "Removed directory: $dir" >> "$LOG_FILE"
-                } || {
-                    echo -e "${RED}Failed to remove directory: $dir${NC}"
-                    echo "Failed to remove directory: $dir" >> "$LOG_FILE"
-                }
-            fi
-        done
-        ;;
-    'N'|'n'|'none')
-        echo -e "${GREEN}Keeping all directories.${NC}"
-        ;;
-    'S'|'s'|'select')
-        for i in "${!OPTIONAL_DIRS[@]}"; do
-            if [ -d "${OPTIONAL_DIRS[$i]}" ]; then
-                read -p "$(echo -e "${YELLOW}Remove ${OPTIONAL_DIRS[$i]}? [y/N] ${NC}")" remove_dir
-                case "$remove_dir" in
-                    'Y'|'y'|'yes')
-                        echo -e "${YELLOW}Removing directory: ${OPTIONAL_DIRS[$i]}${NC}"
-                        rm -rf "${OPTIONAL_DIRS[$i]}" 2>/dev/null && {
-                            echo "Removed directory: ${OPTIONAL_DIRS[$i]}" >> "$LOG_FILE"
-                        } || {
-                            echo -e "${RED}Failed to remove directory: ${OPTIONAL_DIRS[$i]}${NC}"
-                            echo "Failed to remove directory: ${OPTIONAL_DIRS[$i]}" >> "$LOG_FILE"
-                        }
-                        ;;
-                    *)
-                        echo -e "${GREEN}Keeping directory: ${OPTIONAL_DIRS[$i]}${NC}"
-                        ;;
-                esac
-            fi
-        done
-        ;;
-    *)
-        echo -e "${GREEN}Keeping all directories.${NC}"
-        ;;
-esac
-
-# Step 5B: Clean up leftover config files
-echo -e "\n${BLUE}${BOLD}Step 5B: Cleaning up leftover configuration files${NC}"
-EXTRA_CONFIG_FILES=(
-    "${HOME}/.sentinel_paths"
-    "${HOME}/.local/share/blesh/init-attach.sh"
-    "${HOME}/.local/share/blesh/init-complete.sh"
-    "${HOME}/.local/share/blesh/init-cmap.sh"
-    "${HOME}/.local/share/blesh/init-color.sh"
-    "${HOME}/.local/share/blesh/init-bind.sh"
-)
-
-echo -e "${YELLOW}Checking for additional configuration files...${NC}"
-for file in "${EXTRA_CONFIG_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        echo -e "${YELLOW}Found: $file${NC}"
-        backup_before_remove "$file"
-    fi
-done
-
-# Also look for ble.sh installation directory
-if [ -d "${HOME}/.local/share/blesh" ]; then
-    echo -e "${YELLOW}ble.sh installation found at ${HOME}/.local/share/blesh${NC}"
-    read -p "$(echo -e "${YELLOW}Remove ble.sh installation? [y/N] ${NC}")" remove_blesh
-    case "$remove_blesh" in
-        'Y'|'y'|'yes')
-            echo -e "${YELLOW}Removing ble.sh installation...${NC}"
-            rm -rf "${HOME}/.local/share/blesh" 2>/dev/null && {
-                echo "Removed ble.sh installation directory" >> "$LOG_FILE"
-                echo -e "${GREEN}Successfully removed ble.sh installation${NC}"
-            } || {
-                echo -e "${RED}Failed to remove ${HOME}/.local/share/blesh${NC}"
-                echo "Failed to remove ble.sh installation directory" >> "$LOG_FILE"
-            }
-            ;;
-        *)
-            echo -e "${GREEN}Keeping ble.sh installation.${NC}"
-            ;;
-    esac
-fi
-
-# Step 5C: Security cleanup
-echo -e "\n${BLUE}${BOLD}Step 5C: Security cleanup${NC}"
-
-# Check for and securely remove sensitive files
-SENSITIVE_FILES=(
-    "${HOME}/.sentinel/auth_tokens"
-    "${HOME}/.sentinel/api_keys"
-    "${HOME}/.sentinel/secure_tokens"
-    "${HOME}/.sentinel/hmac_keys"
-    "${HOME}/.sentinel/credentials.json"
-    "${HOME}/.sentinel/tokens.db"
-)
-
-echo -e "${YELLOW}Checking for sensitive credential files...${NC}"
-FOUND_SENSITIVE=0
-for file in "${SENSITIVE_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        FOUND_SENSITIVE=1
-        echo -e "${YELLOW}Found sensitive file: $file${NC}"
-    fi
-done
-
-if [ $FOUND_SENSITIVE -eq 1 ]; then
-    echo -e "${RED}Warning: Sensitive credential files were found${NC}"
-    read -p "$(echo -e "${YELLOW}Securely delete these files? [Y/n] ${NC}")" secure_delete
-    case "$secure_delete" in
-        'N'|'n'|'no')
-            echo -e "${YELLOW}Skipping secure deletion. Files will be kept in backup.${NC}"
-            for file in "${SENSITIVE_FILES[@]}"; do
-                if [ -f "$file" ]; then
-                    backup_before_remove "$file"
-                fi
-            done
-            ;;
-        *)
-            echo -e "${YELLOW}Securely wiping sensitive files...${NC}"
-            for file in "${SENSITIVE_FILES[@]}"; do
-                if [ -f "$file" ]; then
-                    # Check for shred command
-                    if command -v shred &>/dev/null; then
-                        echo -e "${YELLOW}Securely wiping: $file${NC}"
-                        shred -u -z -n 3 "$file" 2>/dev/null && {
-                            echo "Securely wiped: $file" >> "$LOG_FILE"
-                        } || {
-                            echo -e "${RED}Failed to securely wipe $file${NC}"
-                            echo "Failed to securely wipe: $file" >> "$LOG_FILE"
-                            backup_before_remove "$file"
-                        }
-                    else
-                        # Fallback if shred not available
-                        echo -e "${YELLOW}Secure shred not available, overwriting with zeros: $file${NC}"
-                        dd if=/dev/zero of="$file" bs=1k count=1 conv=notrunc 2>/dev/null
-                        rm -f "$file" 2>/dev/null && {
-                            echo "Overwritten and removed: $file" >> "$LOG_FILE"
-                        } || {
-                            echo -e "${RED}Failed to overwrite and remove $file${NC}"
-                            echo "Failed to overwrite: $file" >> "$LOG_FILE"
-                            backup_before_remove "$file"
-                        }
-                    fi
-                fi
-            done
-            ;;
-    esac
-fi
-
-# Clean up any temporary security tokens in standard locations
-if [ -d "${HOME}/.cache/sentinel_tokens" ]; then
-    echo -e "${YELLOW}Removing temporary security tokens...${NC}"
-    rm -rf "${HOME}/.cache/sentinel_tokens" 2>/dev/null && {
-        echo "Removed temporary token directory" >> "$LOG_FILE"
-    } || {
-        echo -e "${RED}Failed to remove ${HOME}/.cache/sentinel_tokens${NC}"
-        echo "Failed to remove temporary token directory" >> "$LOG_FILE"
-    }
-fi
-
-# Step 5D: Clean up aliases and additional generated files
-echo -e "\n${BLUE}${BOLD}Step 5D: Cleaning up aliases and generated files${NC}"
-
-# Check for virtual environments outside the main sentinel directory
-VENV_LOCATIONS=(
-    "${HOME}/.sentinel/venv"
-    "${HOME}/.venv/sentinel"
-    "${HOME}/venv/sentinel"
-    "${HOME}/.local/share/sentinel/venv"
-)
-
-for venv_dir in "${VENV_LOCATIONS[@]}"; do
-    if [ -d "$venv_dir" ]; then
-        echo -e "${YELLOW}Found Python virtual environment: $venv_dir${NC}"
-        read -p "$(echo -e "${YELLOW}Remove this virtual environment? [y/N] ${NC}")" remove_venv
-        case "$remove_venv" in
-            'Y'|'y'|'yes')
-                echo -e "${YELLOW}Removing virtual environment: $venv_dir${NC}"
-                rm -rf "$venv_dir" 2>/dev/null && {
-                    echo "Removed virtual environment: $venv_dir" >> "$LOG_FILE"
-                } || {
-                    echo -e "${RED}Failed to remove virtual environment: $venv_dir${NC}"
-                    echo "Failed to remove virtual environment: $venv_dir" >> "$LOG_FILE"
-                }
-                ;;
-            *)
-                echo -e "${GREEN}Keeping virtual environment: $venv_dir${NC}"
-                ;;
-        esac
-    fi
-done
-
-# Check for SENTINEL-specific aliases in .bashrc.postcustom
-if [ -f "${HOME}/.bashrc.postcustom" ]; then
-    echo -e "${YELLOW}Checking for SENTINEL aliases in .bashrc.postcustom...${NC}"
-    # Extract SENTINEL-related aliases
-    SENTINEL_ALIASES=$(grep -E "alias (sentinel|schat|sg|distcc-|secure-logout|cyber)" "${HOME}/.bashrc.postcustom" || true)
-    
-    if [ -n "$SENTINEL_ALIASES" ]; then
-        echo -e "${YELLOW}Found SENTINEL aliases in .bashrc.postcustom:${NC}"
-        echo "$SENTINEL_ALIASES" | sed 's/^/  /'
-        
-        read -p "$(echo -e "${YELLOW}Remove these aliases? [y/N] ${NC}")" remove_aliases
-        case "$remove_aliases" in
-            'Y'|'y'|'yes')
-                echo -e "${YELLOW}Removing SENTINEL aliases from .bashrc.postcustom...${NC}"
-                # Make a backup
-                cp "${HOME}/.bashrc.postcustom" "${BAK_DIR}/bashrc.postcustom.$(date +%Y%m%d%H%M%S)"
-                # Remove aliases
-                grep -v -E "alias (sentinel|schat|sg|distcc-|secure-logout|cyber)" "${HOME}/.bashrc.postcustom" > "${HOME}/.bashrc.postcustom.new"
-                mv "${HOME}/.bashrc.postcustom.new" "${HOME}/.bashrc.postcustom"
-                echo "Removed SENTINEL aliases from .bashrc.postcustom" >> "$LOG_FILE"
-                ;;
-            *)
-                echo -e "${GREEN}Keeping aliases in .bashrc.postcustom${NC}"
-                ;;
-        esac
-    else
-        echo -e "${GREEN}No SENTINEL aliases found in .bashrc.postcustom${NC}"
-    fi
-fi
-
-# Check for log files generated during SENTINEL operation
-LOG_LOCATIONS=(
-    "${HOME}/logs/sentinel_*.log"
-    "${HOME}/.local/share/sentinel/logs"
-    "${HOME}/.cache/sentinel"
-    "${HOME}/.cache/sentinel_*"
-    "${HOME}/.sentinel_history"
-    "${HOME}/.sentinel_logs"
-)
-
-for log_pattern in "${LOG_LOCATIONS[@]}"; do
-    log_files=$(find "${HOME}" -path "$log_pattern" 2>/dev/null || true)
-    if [ -n "$log_files" ]; then
-        echo -e "${YELLOW}Found SENTINEL log files:${NC}"
-        echo "$log_files" | sed 's/^/  /'
-        
-        read -p "$(echo -e "${YELLOW}Remove these log files? [y/N] ${NC}")" remove_logs
-        case "$remove_logs" in
-            'Y'|'y'|'yes')
-                echo -e "${YELLOW}Removing SENTINEL log files...${NC}"
-                for log_file in $log_files; do
-                    rm -rf "$log_file" 2>/dev/null && {
-                        echo "Removed log file: $log_file" >> "$LOG_FILE"
-                    } || {
-                        echo -e "${RED}Failed to remove: $log_file${NC}"
-                        echo "Failed to remove log file: $log_file" >> "$LOG_FILE"
-                    }
-                done
-                ;;
-            *)
-                echo -e "${GREEN}Keeping log files${NC}"
-                ;;
-        esac
-    fi
-done
-
-# Check for any models or data files that might have been downloaded
-MODEL_LOCATIONS=(
-    "${HOME}/.sentinel/models"
-    "${HOME}/.local/share/sentinel/models"
-    "${HOME}/Downloads/sentinel_models"
-    "${HOME}/.cache/sentinel_models"
-)
-
-for model_dir in "${MODEL_LOCATIONS[@]}"; do
-    if [ -d "$model_dir" ]; then
-        echo -e "${YELLOW}Found SENTINEL model directory: $model_dir${NC}"
-        read -p "$(echo -e "${YELLOW}Remove this model directory? [y/N] ${NC}")" remove_models
-        case "$remove_models" in
-            'Y'|'y'|'yes')
-                echo -e "${YELLOW}Removing model directory: $model_dir${NC}"
-                rm -rf "$model_dir" 2>/dev/null && {
-                    echo "Removed model directory: $model_dir" >> "$LOG_FILE"
-                } || {
-                    echo -e "${RED}Failed to remove model directory: $model_dir${NC}"
-                    echo "Failed to remove model directory: $model_dir" >> "$LOG_FILE"
-                }
-                ;;
-            *)
-                echo -e "${GREEN}Keeping model directory: $model_dir${NC}"
-                ;;
-        esac
-    fi
-done
-
-# Step 6: Finalize uninstallation
-echo -e "\n${BLUE}${BOLD}Step 6: Finalizing uninstallation${NC}"
-echo -e "${GREEN}${BOLD}SENTINEL has been successfully uninstalled.${NC}"
-echo -e "${YELLOW}Backup files have been moved to: ${BAK_DIR}${NC}"
-echo -e "${YELLOW}Log file saved as: ${LOG_FILE}${NC}"
-echo -e "${GREEN}You may want to start a new shell session to apply changes.${NC}"
-
-# Set permissions on the uninstall log
-chmod 600 "$LOG_FILE"
-
-echo -e "${GREEN}${BOLD}Thank you for using SENTINEL!${NC}\n"
-
-# Exit success
-exit 0 
+# Final message
+echo
+echo -e "${GREEN}SENTINEL has been successfully uninstalled.${NC}"
+echo -e "${YELLOW}A backup of your SENTINEL configuration was saved to: ${BACKUP_DIR}${NC}"
+echo -e "${YELLOW}Please restart your terminal for changes to take effect.${NC}"
+echo
+echo -e "${BLUE}Thank you for using SENTINEL!${NC}"
+echo 

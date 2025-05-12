@@ -2,9 +2,19 @@
 
 ## Core Modules
 
+### 0. config_loader.module
+- **Description**: Centralized configuration loader for all SENTINEL modules
+- **Dependencies**: None (lowest level module, should be loaded first)
+- **Features**:
+  - Loads centralized configuration from ~/.sentinel/sentinel_config.sh
+  - Creates default configuration if it doesn't exist
+  - Validates configuration file syntax
+  - Provides config editing and reloading capabilities
+  - Configuration backup/recovery
+
 ### 1. logging.module
 - **Description**: Centralized logging system with log rotation and levels
-- **Dependencies**: None (lowest level module)
+- **Dependencies**: config_loader.module
 - **Features**:
   - Log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
   - Component-based logging
@@ -62,7 +72,7 @@
 
 ### 7. project_suggestions.module
 - **Description**: Context-aware project suggestions
-- **Dependencies**: (None specified, but likely depends on hmac.module)
+- **Dependencies**: hmac.module
 - **Features**:
   - Project type detection
   - Framework-specific suggestions
@@ -81,19 +91,21 @@
 ## Module Dependency Tree
 
 ```
-logging.module
+config_loader.module
     |
-    ├── ble_manager.module
-    |
-    └── hmac.module
+    └── logging.module
             |
-            ├── snippets.module
+            ├── ble_manager.module
             |
-            ├── fuzzy_correction.module
-            |
-            ├── command_chains.module
-            |
-            └── project_suggestions.module
+            └── hmac.module
+                    |
+                    ├── snippets.module
+                    |
+                    ├── fuzzy_correction.module
+                    |
+                    ├── command_chains.module
+                    |
+                    └── project_suggestions.module
     |
 autocomplete.module (loads all modules in the correct order)
 ```
@@ -102,13 +114,14 @@ autocomplete.module (loads all modules in the correct order)
 
 The modules should be loaded in the following order to ensure dependencies are met:
 
-1. logging.module
-2. ble_manager.module
-3. hmac.module
-4. snippets.module
-5. fuzzy_correction.module
-6. command_chains.module
-7. project_suggestions.module
-8. autocomplete.module (main module that loads others)
+1. config_loader.module
+2. logging.module
+3. ble_manager.module
+4. hmac.module
+5. snippets.module
+6. fuzzy_correction.module
+7. command_chains.module
+8. project_suggestions.module
+9. autocomplete.module (main module that loads others)
 
-This ordering ensures that base functionality (logging, BLE.sh management, security) is available before feature modules are loaded. 
+This ordering ensures that configuration is loaded first, followed by base functionality (logging, BLE.sh management, security), and then feature modules. 

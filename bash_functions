@@ -468,3 +468,84 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     echo "Please source this script instead of executing it:"
     echo "source ~/.bashrc"
 fi
+
+# Generic lazy loading function
+# This function creates a wrapper that loads the real command only when it's first invoked
+# Usage: lazy_load <command> <load_function>
+function lazy_load() {
+    local cmd="$1"
+    local load_function="$2"
+    
+    # Create a wrapper function with the same name as the command
+    eval "function $cmd() {
+        # Unset this function to avoid recursion
+        unset -f $cmd
+        
+        # Call the loader function
+        $load_function
+        
+        # Now call the real command with the original arguments
+        $cmd \"\$@\"
+    }"
+}
+
+# Collection of loader functions for different development environments
+# These can be used with the lazy_load function
+
+# Load NVM environment
+function __load_nvm() {
+    if [[ -d "$HOME/.nvm" ]]; then
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+    fi
+}
+
+# Load Pyenv environment
+function __load_pyenv() {
+    if [[ -d "$HOME/.pyenv" ]]; then
+        export PYENV_ROOT="$HOME/.pyenv"
+        [[ -d "$PYENV_ROOT/bin" ]] && PATH="$PYENV_ROOT/bin:$PATH"
+        if command -v pyenv >/dev/null; then
+            eval "$(pyenv init -)"
+            eval "$(pyenv virtualenv-init -)"
+        fi
+    fi
+}
+
+# Load Cargo/Rust environment
+function __load_cargo() {
+    if [[ -f "$HOME/.cargo/env" ]]; then
+        # shellcheck source=~/.cargo/env
+        . "$HOME/.cargo/env"
+    fi
+}
+
+# Load RVM environment
+function __load_rvm() {
+    if [[ -d "$HOME/.rvm" ]]; then
+        export PATH="$PATH:$HOME/.rvm/bin"
+        [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+    fi
+}
+
+# Load Go environment
+function __load_go() {
+    if [[ -d "$HOME/go" ]]; then
+        export GOPATH="$HOME/go"
+        export PATH="$PATH:$GOPATH/bin"
+    fi
+}
+
+# Load Docker environment - useful for tools like docker-compose
+function __load_docker() {
+    # Load Docker completion if available
+    if [[ -f /usr/share/bash-completion/completions/docker ]]; then
+        source /usr/share/bash-completion/completions/docker
+    fi
+}
+
+# Example usage:
+# lazy_load nvm __load_nvm
+# lazy_load pyenv __load_pyenv
+# ... etc ...

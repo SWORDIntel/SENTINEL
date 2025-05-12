@@ -112,18 +112,64 @@ umask 027
 
 # Enable programmable completion
 if ! shopt -oq posix; then
-  if [[ -f /usr/share/bash-completion/bash_completion ]]; then
-    # shellcheck source=/usr/share/bash-completion/bash_completion
-    . /usr/share/bash-completion/bash_completion
-  elif [[ -f /etc/bash_completion ]]; then
-    # shellcheck source=/etc/bash_completion
-    . /etc/bash_completion
-  fi
-  
-  # Load personal completion settings if they exist
-  if [[ -f ~/.bash_completion ]]; then
-    # shellcheck source=~/.bash_completion
-    . ~/.bash_completion
+  if [[ "${CONFIG[LAZY_LOAD]}" == "1" ]]; then
+    # Lazy load bash completion
+    # Create a function to handle first tab press
+    _completion_loader() {
+      # Remove this function after first use
+      unset -f _completion_loader
+      
+      # Load bash completion
+      if [[ -f /usr/share/bash-completion/bash_completion ]]; then
+        # shellcheck source=/usr/share/bash-completion/bash_completion
+        . /usr/share/bash-completion/bash_completion
+      elif [[ -f /etc/bash_completion ]]; then
+        # shellcheck source=/etc/bash_completion
+        . /etc/bash_completion
+      fi
+      
+      # Load personal completion settings if they exist
+      if [[ -f ~/.bash_completion ]]; then
+        # shellcheck source=~/.bash_completion
+        . ~/.bash_completion
+      fi
+      
+      # Now process the current completion request
+      complete -r _completion_loader
+      # Trigger completion again by simulating a Tab press
+      COMP_LINE=$READLINE_LINE
+      COMP_POINT=$READLINE_POINT
+      COMP_TYPE=9  # TAB
+      COMP_KEY=9   # TAB 
+      
+      # Attempt to find and run the appropriate completion function
+      local compfunc
+      compfunc=$(complete -p "$1" 2>/dev/null | sed -E 's/.*-F ([^ ]+).*/\1/')
+      if [[ -n "$compfunc" ]]; then
+        "$compfunc" "$1" "$2" "$3"
+      else
+        # Default completion if no specific completion function found
+        _completion_loader
+      fi
+    }
+    
+    # Bind the function to all possible commands initially
+    complete -D -F _completion_loader
+  else
+    # Regular non-lazy loading of completion
+    if [[ -f /usr/share/bash-completion/bash_completion ]]; then
+      # shellcheck source=/usr/share/bash-completion/bash_completion
+      . /usr/share/bash-completion/bash_completion
+    elif [[ -f /etc/bash_completion ]]; then
+      # shellcheck source=/etc/bash_completion
+      . /etc/bash_completion
+    fi
+    
+    # Load personal completion settings if they exist
+    if [[ -f ~/.bash_completion ]]; then
+      # shellcheck source=~/.bash_completion
+      . ~/.bash_completion
+    fi
   fi
 fi
 # Path security function - ensure no relative paths or duplicate entries
@@ -181,19 +227,152 @@ fi
 
 # Tools-specific paths
 # Cargo (Rust)
-if [[ -f "$HOME/.cargo/env" ]]; then
-  # shellcheck source=~/.cargo/env
-  . "$HOME/.cargo/env"
+if [[ "${CONFIG[LAZY_LOAD]}" == "1" ]]; then
+  # Lazy load Cargo (Rust)
+  cargo() {
+    unset -f cargo
+    if [[ -f "$HOME/.cargo/env" ]]; then
+      # shellcheck source=~/.cargo/env
+      . "$HOME/.cargo/env"
+    fi
+    cargo "$@"
+  }
+  rustc() {
+    unset -f rustc
+    if [[ -f "$HOME/.cargo/env" ]]; then
+      # shellcheck source=~/.cargo/env
+      . "$HOME/.cargo/env"
+    fi
+    rustc "$@"
+  }
+  rustup() {
+    unset -f rustup
+    if [[ -f "$HOME/.cargo/env" ]]; then
+      # shellcheck source=~/.cargo/env
+      . "$HOME/.cargo/env"
+    fi
+    rustup "$@"
+  }
+else
+  # Direct load
+  if [[ -f "$HOME/.cargo/env" ]]; then
+    # shellcheck source=~/.cargo/env
+    . "$HOME/.cargo/env"
+  fi
 fi
 
 # Pyenv setup
-if [[ -d "$HOME/.pyenv" ]]; then
-  export PYENV_ROOT="$HOME/.pyenv"
-  [[ -d "$PYENV_ROOT/bin" ]] && PATH="$PYENV_ROOT/bin:$PATH"
-  if command -v pyenv >/dev/null; then
-    eval "$(pyenv init -)"
-    eval "$(pyenv virtualenv-init -)"
+if [[ "${CONFIG[LAZY_LOAD]}" == "1" ]]; then
+  # Lazy load pyenv
+  pyenv() {
+    unset -f pyenv
+    if [[ -d "$HOME/.pyenv" ]]; then
+      export PYENV_ROOT="$HOME/.pyenv"
+      [[ -d "$PYENV_ROOT/bin" ]] && PATH="$PYENV_ROOT/bin:$PATH"
+      if command -v pyenv >/dev/null; then
+        eval "$(pyenv init -)"
+        eval "$(pyenv virtualenv-init -)"
+      fi
+    fi
+    pyenv "$@"
+  }
+else
+  # Direct load
+  if [[ -d "$HOME/.pyenv" ]]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    [[ -d "$PYENV_ROOT/bin" ]] && PATH="$PYENV_ROOT/bin:$PATH"
+    if command -v pyenv >/dev/null; then
+      eval "$(pyenv init -)"
+      eval "$(pyenv virtualenv-init -)"
+    fi
   fi
+fi
+
+# NVM (Node Version Manager) lazy loading
+if [[ "${CONFIG[LAZY_LOAD]}" == "1" ]]; then
+  # Lazy load nvm
+  nvm() {
+    unset -f nvm node npm npx
+    if [[ -d "$HOME/.nvm" ]]; then
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+    fi
+    nvm "$@"
+  }
+  node() {
+    unset -f nvm node npm npx
+    if [[ -d "$HOME/.nvm" ]]; then
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+    fi
+    node "$@"
+  }
+  npm() {
+    unset -f nvm node npm npx
+    if [[ -d "$HOME/.nvm" ]]; then
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+    fi
+    npm "$@"
+  }
+  npx() {
+    unset -f nvm node npm npx
+    if [[ -d "$HOME/.nvm" ]]; then
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+      [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+    fi
+    npx "$@"
+  }
+elif [[ -d "$HOME/.nvm" ]]; then
+  # Direct load
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+  [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+fi
+
+# RVM (Ruby Version Manager) lazy loading
+if [[ "${CONFIG[LAZY_LOAD]}" == "1" ]]; then
+  # Lazy load rvm
+  rvm() {
+    unset -f rvm ruby gem bundle
+    if [[ -d "$HOME/.rvm" ]]; then
+      export PATH="$PATH:$HOME/.rvm/bin"
+      [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+    fi
+    rvm "$@"
+  }
+  ruby() {
+    unset -f rvm ruby gem bundle
+    if [[ -d "$HOME/.rvm" ]]; then
+      export PATH="$PATH:$HOME/.rvm/bin"
+      [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+    fi
+    ruby "$@"
+  }
+  gem() {
+    unset -f rvm ruby gem bundle
+    if [[ -d "$HOME/.rvm" ]]; then
+      export PATH="$PATH:$HOME/.rvm/bin"
+      [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+    fi
+    gem "$@"
+  }
+  bundle() {
+    unset -f rvm ruby gem bundle
+    if [[ -d "$HOME/.rvm" ]]; then
+      export PATH="$PATH:$HOME/.rvm/bin"
+      [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+    fi
+    bundle "$@"
+  }
+elif [[ -d "$HOME/.rvm" ]]; then
+  # Direct load
+  export PATH="$PATH:$HOME/.rvm/bin"
+  [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
 fi
 
 # Additional path entries
@@ -382,11 +561,74 @@ function __set_prompt() {
     sec_indicator="${eRED}(!sudo!)${eNC} "
   fi
   
-  # Update the prompt
-  PS1="\n${sec_indicator}[${eLIGHTGREEN}\t${eNC}] :: [${eLIGHTBLUE}\w${eNC}]${git_info} $(if [[ $exit_code -ne 0 ]]; then echo "${eRED}[$exit_code]${eNC}"; fi)\n${job_info}${status_color}\u${eWHITE}@${eLIGHTGREEN}\h${eWHITE} >${eNC} "
+  # Set the actual prompt
+  PS1="${sec_indicator}${job_info}${status_color}\u@\h${eNC}:${eBLUE}\w${eNC}${git_info}\n${status_color}\$${eNC} "
 }
 
-PROMPT_COMMAND='__set_prompt'
+# Set up PROMPT_COMMAND
+if [[ "${CONFIG[LAZY_LOAD]}" == "1" ]]; then
+  # Optimized PROMPT_COMMAND with caching
+  # Cache prompt components that don't change frequently
+  __prompt_cache_update() {
+    # Cache directory-specific info
+    __prompt_cached_dir="$PWD"
+    
+    # Security indicator caching (SSH/sudo)
+    __prompt_sec_indicator=""
+    if [[ -n "$SSH_CLIENT" || -n "$SSH_TTY" ]]; then
+      __prompt_sec_indicator="${eYELLOW}(ssh)${eNC} "
+    fi
+    if [[ -n "$SUDO_USER" ]]; then
+      __prompt_sec_indicator="${eRED}(!sudo!)${eNC} "
+    fi
+    
+    # Cache time for 30 seconds
+    __prompt_cache_time=$((SECONDS+30))
+  }
+  
+  # Optimized prompt command that uses cached components
+  __prompt_command_optimized() {
+    local exit_code=$?
+    
+    # Update the cache if needed
+    if [[ "$__prompt_cached_dir" != "$PWD" || -z "$__prompt_cache_time" || "$SECONDS" -gt "$__prompt_cache_time" ]]; then
+      __prompt_cache_update
+    fi
+    
+    # Current job count (this is quick, no need to cache)
+    local jobs_count=$(jobs | wc -l)
+    local job_info=""
+    if [[ $jobs_count -gt 0 ]]; then
+      job_info="${eYELLOW}[${jobs_count}]${eNC} "
+    fi
+    
+    # Status indicator for last command
+    local status_color="${eGREEN}"
+    if [[ $exit_code -ne 0 ]]; then
+      status_color="${eRED}"
+    fi
+    
+    # Git info (this is handled by __git_info which has its own caching)
+    local git_info=$(__git_info)
+    [[ -n "$git_info" ]] && git_info=" $git_info"
+    
+    # Update title if enabled
+    if [[ "${CONFIG[UPDATE_TITLE]}" == "1" ]]; then
+      local last_cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]\+ *//')
+      echo -ne "\033]0;${last_cmd:0:50}\007"
+    fi
+    
+    # Set the actual prompt using cached and current components
+    PS1="${__prompt_sec_indicator}${job_info}${status_color}\u@\h${eNC}:${eBLUE}\w${eNC}${git_info}\n${status_color}\$${eNC} "
+  }
+  
+  # Use the optimized prompt command
+  PROMPT_COMMAND=__prompt_command_optimized
+else
+  # Use the standard prompt command
+  PROMPT_COMMAND=__set_prompt
+fi
+
 # Internal utility functions
 # Include all files in a directory
 function loadRcDir() {

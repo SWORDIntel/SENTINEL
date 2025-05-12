@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # ~/bashrc.postcustom
 # SENTINEL Custom Configuration
 #
@@ -79,3 +80,39 @@ export CCACHE_SIZE="5G"                  # Maximum size of ccache
 # USER CUSTOMIZATIONS
 #========================================================================
 # Add your custom configurations, aliases, and functions below
+
+# Source centralized configuration
+if [[ -f $HOME/.sentinel/sentinel_config.sh ]]; then
+    source $HOME/.sentinel/sentinel_config.sh
+fi
+
+# ========================================================================
+# Performance Configuration
+# ========================================================================
+# SENTINEL now includes lazy loading for development environments and other
+# heavy components. This can significantly reduce shell startup time.
+#
+# By default, lazy loading is enabled (CONFIG[LAZY_LOAD]=1)
+# You can disable it by uncommenting the following line:
+# export U_LAZY_LOAD=0
+#
+# Development environments that are lazy loaded:
+# - Pyenv (Python version management)
+# - NVM (Node.js version management)
+# - RVM (Ruby version management)
+# - Cargo (Rust tools)
+#
+# To lazy load additional tools, use the lazy_load function:
+# lazy_load <command> <load_function>
+#
+# Example:
+# function __load_custom_tool() {
+#    source /path/to/custom/tool/setup.sh
+# }
+# lazy_load custom_tool __load_custom_tool
+#
+# See bash_functions for more predefined loader functions
+# ========================================================================
+
+# Add your customizations below this line
+# Example: export SENTINEL_CYBERSEC_ENABLED=0  # Disable cybersecurity module
