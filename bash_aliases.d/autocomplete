@@ -1190,7 +1190,7 @@ _sentinel_fuzzy_command_correction() {
     local main_cmd=$(echo "$last_command" | awk '{print $1}')
     
     # Don't process complex commands or if command is actually valid
-   [[ "$last_command" =~ [|><;&] ]] || type "$main_cmd" &>/dev/null && return 0
+    [[ "$last_command" =~ [\|\;\&\<\>] ]] || type "$main_cmd" &>/dev/null && return 0
     
     # Find closest matches using levenshtein distance
     local suggestions=""
@@ -1513,19 +1513,18 @@ _sentinel_autocomplete_status() {
     
     # Display usage information
     echo -e "\n\033[1;32mUsage:\033[0m"
-    echo -e " \033[1;34m@autocomplete\033[0m    - Show this help"
+    echo -e " \033[1;34m@autocomplete\033[0m           - Show help"
     echo -e " \033[1;34m@autocomplete status\033[0m    - Check autocomplete status"
-    echo -e " \033[1;34m@autocomplete fix\033[0m     - Fix common issues"
+    echo -e " \033[1;34m@autocomplete fix\033[0m       - Fix common issues"
     echo -e " \033[1;34m@autocomplete reload\033[0m    - Reload BLE.sh"
     echo -e " \033[1;34m@autocomplete install\033[0m   - Force reinstall BLE.sh"
-    echo -e " \033[1;34msentinel_snippet_add\033[0m <name> <command> - Add a new snippet"
     
     # Troubleshooting tips
     echo -e "\n\033[1;32mTroubleshooting:\033[0m"
-    echo -e " If you see errors with 'mv: cannot stat' messages:"
+    echo -e " If you see errors or issues with autocomplete:"
     echo -e " 1. Run: @autocomplete fix"
     echo -e " 2. Close and reopen your terminal"
-    echo -e " 3. Check: @autocomplete status"
+    echo -e " 3. If problems persist, run: bash ~/blesh_fix/fix_blesh.sh"
 }
 
 # Function to fix common issues

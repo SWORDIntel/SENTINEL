@@ -444,20 +444,22 @@ _blesh_install() {
 _blesh_configure() {
     _blesh_debug "Configuring BLE.sh settings"
     
-    # Core settings
+    # Core settings - these are confirmed to exist
     bleopt complete_auto_delay=100
     bleopt complete_auto_complete=1
     bleopt complete_menu_complete=1
     
-    # Appearance
-    bleopt highlight_auto_completion='fg=242'
-    bleopt highlight_syntax='true'
+    # Appearance - syntax highlighting is available
+    bleopt highlight_syntax=1
+    bleopt highlight_filename=1
+    bleopt highlight_variable=1
     
-    # Key bindings
-    ble-bind -m auto_complete -f right 'auto_complete/accept-line'
+    # Menu settings
+    bleopt complete_menu_style=align-nowrap
+    bleopt complete_menu_color=on
     
-    # History settings
-    bleopt history_share=1
+    # Key bindings - needs to be updated to check if ble-bind exists
+    ble-bind -m auto_complete -f right 'auto_complete/accept-line' 2>/dev/null || true
     
     _blesh_debug "Configuration complete"
     return 0
