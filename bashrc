@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# bashrc 2.0.0 - SENTINEL - $(date +%Y-%m-%d)
 #
 # Full-featured modular bashrc with enhanced security and performance
 # Based on the original work by Jason Thistlethwaite (2013)
@@ -27,15 +26,15 @@ if [[ -n "$BASHRC_PROFILE" ]]; then
 fi
 
 # Version information
-declare -A SENTINEL_VERSION=(
+# Use an associative array for version info (requires Bash 4+)
+declare -A BASHRC_VERSION=(
   [MAJOR]=2
   [MINOR]=0
   [PATCH]=0
   [TYPE]="enhanced"
 )
-export SENTINEL_VERSION
-BASHRC_VERSION="${SENTINEL_VERSION[MAJOR]}.${SENTINEL_VERSION[MINOR]}.${SENTINEL_VERSION[PATCH]} (${SENTINEL_VERSION[TYPE]})"
-export BASHRC_VERSION
+# Note: Bash does not support exporting arrays
+
 # Load order control mechanism
 declare -A LOAD_PHASES=(
   [CORE]=1     # Core variables, options and settings
@@ -747,7 +746,6 @@ function j() {
 # Modular bashrc extensions
 if [[ "${CONFIG[MODULES]}" == "1" ]]; then
   # Module registry
-  declare -A SENTINEL_MODULES
   
   # Path for modules
   MODULES_PATH="${HOME}/.bash_modules.d"
@@ -773,17 +771,19 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
       return 1
     fi
     
-    # Load the module
-    # shellcheck source=/dev/null
-    source "$module_file" && SENTINEL_MODULES["$module"]=1
-    
-    # Update modules inventory file
-    touch "${HOME}/.bash_modules"
-    if ! grep -q "^${module}\$" "${HOME}/.bash_modules"; then
-      echo "$module" >> "${HOME}/.bash_modules"
+    # Only source if not already loaded
+    local guard_var=""
+    case "$module" in
+      blesh_installer) guard_var="_BLSH_INSTALLER_LOADED" ;;
+    esac
+    if [[ -z "${!guard_var}" ]]; then
+      # shellcheck source=/dev/null
+      touch "${HOME}/.bash_modules"
+      if ! grep -q "^${module}\$" "${HOME}/.bash_modules"; then
+        echo "$module" >> "${HOME}/.bash_modules"
+      fi
+      emsg "Module '$module' enabled"
     fi
-    
-    emsg "Module '$module' enabled"
   }
   
   function module_disable() {
@@ -792,7 +792,6 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
     # Remove from inventory
     if [[ -f "${HOME}/.bash_modules" ]]; then
       sed -i "/^${module}\$/d" "${HOME}/.bash_modules"
-      unset "SENTINEL_MODULES[$module]"
       emsg "Module '$module' disabled"
     fi
   }
@@ -807,7 +806,7 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
       [[ -f "$module" ]] || continue
       modules_found=1
       module_name=$(basename "$module" .sh)
-      if [[ "${SENTINEL_MODULES[$module_name]}" == "1" ]]; then
+      if [[ -f "${HOME}/.bash_modules" ]] && grep -q "^$module_name$" "${HOME}/.bash_modules"; then
         echo -e "${GREEN}*${NC} $module_name (enabled)"
       else
         echo "  $module_name"
@@ -823,7 +822,7 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
       if [[ -f "$MODULES_PATH/${module_name}.sh" ]]; then
         continue
       fi
-      if [[ "${SENTINEL_MODULES[$module_name]}" == "1" ]]; then
+      if [[ -f "${HOME}/.bash_modules" ]] && grep -q "^$module_name$" "${HOME}/.bash_modules"; then
         echo -e "${GREEN}*${NC} $module_name (enabled)"
       else
         echo "  $module_name"
@@ -1022,11 +1021,9 @@ if [[ "${CONFIG[DEBUG]}" == "1" ]]; then
 fi
 
 # Display startup message only if not in quiet mode
-[[ "${SENTINEL_QUIET_MODULES:-1}" != "1" ]] && echo "Loaded SENTINEL $BASHRC_VERSION"
 
 # Stop profiling if enabled
 if [[ -n "$BASHRC_PROFILE" ]]; then
   set +x
   exec 2>&3 3>&-
-  [[ "${SENTINEL_QUIET_MODULES:-1}" != "1" ]] && echo "Profiling data written to /tmp/bashrc-$$.profile"
 fi

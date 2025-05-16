@@ -19,23 +19,23 @@
 #export U_POSTCUSTOM=1
 
 # Whether or not to include ~/bin and ~/.bin in $PATH
-#export U_BINS=1
+export U_BINS=1
 
 # Whether or not to load ~/.bash_functions and ~/.bash_functions.d/*
-#export U_FUNCS=1
+export U_FUNCS=1
 
 # Whether or not to load ~/.bash_aliases and ~/.bash_aliases.d/*
-#export U_ALIASES=1
+export U_ALIASES=1
 
 # Whether or not to enable authentication agent helpers
-#export U_AGENTS=1
+export U_AGENTS=1
 
 # If enabled the title of your terminal will automatically be set to the running command
 #export U_UPDATETITLE=1
 
 # Whether or not enable lesspipe. This enables the 'less' command to read some non-text
 # files.
-#export ENABLE_LESSPIPE=1
+export ENABLE_LESSPIPE=1
 
 # If enabled the (experimental) modules system will be enabled. It is disabled by
 # by default in the master branch.

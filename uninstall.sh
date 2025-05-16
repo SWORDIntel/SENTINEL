@@ -138,4 +138,130 @@ echo -e "${YELLOW}A backup of your SENTINEL configuration was saved to: ${BACKUP
 echo -e "${YELLOW}Please restart your terminal for changes to take effect.${NC}"
 echo
 echo -e "${BLUE}Thank you for using SENTINEL!${NC}"
+echo
+
+# --- Enhanced SENTINEL and BLE.sh Cleanup Section ---
+# Remove all SENTINEL and BLE.sh files, configs, logs, and loader scripts
+SENTINEL_PATHS=(
+    "${HOME}/.sentinel"
+    "${HOME}/.local/share/blesh"
+    "${HOME}/.cache/blesh"
+    "${HOME}/.blerc"
+    "${HOME}/.sentinel/blesh_loader.sh"
+    "${HOME}/.sentinel/logs"
+    "${HOME}/.sentinel/autocomplete"
+    "${HOME}/.sentinel_backup_*"
+    "${HOME}/.bash_modules.d/blesh_installer.module"
+    "${HOME}/.bash_modules.d/command_chains.module"
+    "${HOME}/.bash_modules.d/fuzzy_correction.module"
+    "${HOME}/.bash_modules.d/logging.module"
+    "${HOME}/.bash_modules.d/hmac.module"
+    "${HOME}/.bash_modules.d/autocomplete.module"
+    "${HOME}/.bash_modules.d/shell_security.module"
+)
+
+for path in "${SENTINEL_PATHS[@]}"; do
+    if [[ -e $path || -L $path ]]; then
+        echo -e "${YELLOW}Removing $path ...${NC}"
+        rm -rf $path
+        if [[ ! -e $path && ! -L $path ]]; then
+            echo -e "${GREEN}✓ Removed $path${NC}"
+        else
+            echo -e "${RED}⚠ Failed to remove $path${NC}"
+        fi
+    fi
+    # Security: Ensure no world-writable files remain
+    if [[ -e $path ]]; then
+        chmod -R go-w "$path" 2>/dev/null
+    fi
+    # Idempotency: Safe to run multiple times
+    # No error if file/dir does not exist
+    true
+done
+
+# Remove SENTINEL and BLE.sh references from shell config files (hardened)
+CONFIG_FILES=(
+    "${HOME}/.bashrc"
+    "${HOME}/.bashrc.postcustom"
+    "${HOME}/.bashrc.precustom"
+)
+for file in "${CONFIG_FILES[@]}"; do
+    if [[ -f $file ]]; then
+        echo -e "${YELLOW}Sanitizing $file for all SENTINEL/BLE.sh loader lines...${NC}"
+        # Remove any lines referencing blesh_loader.sh, BLE.sh, SENTINEL, or loader/cleanup scripts
+        sed -i \
+            -e '/blesh_loader\.sh/d' \
+            -e '/BLE\.sh/d' \
+            -e '/SENTINEL/d' \
+            -e '/sentinel/d' \
+            -e '/cleanup_blesh\.sh/d' \
+            -e '/@autocomplete/d' \
+            -e '/_sentinel_check_blesh/d' \
+            -e '/autocomplete.module/d' \
+            "$file"
+        echo -e "${GREEN}✓ Cleaned $file${NC}"
+    fi
+    true
+done
+
+# Final syntax check for .bashrc and .bashrc.postcustom
+for checkfile in "${HOME}/.bashrc" "${HOME}/.bashrc.postcustom"; do
+    if [[ -f "$checkfile" ]]; then
+        if ! bash -n "$checkfile"; then
+            echo -e "${RED}⚠ Syntax error remains in $checkfile after uninstall. Please review manually.${NC}"
+        else
+            echo -e "${GREEN}✓ $checkfile passes syntax check after uninstall.${NC}"
+        fi
+    fi
+done
+
+# Remove SENTINEL symlinks and module registry files
+SYMLINKS=(
+    "${HOME}/.bashrc.sentinel"
+    "${HOME}/.bash_aliases.sentinel"
+    "${HOME}/.bash_functions.sentinel"
+    "${HOME}/.bash_completion.sentinel"
+    "${HOME}/.bash_modules.sentinel"
+    "${HOME}/.bash_modules"
+)
+for link in "${SYMLINKS[@]}"; do
+    if [[ -L $link || -f $link ]]; then
+        echo -e "${YELLOW}Removing $link ...${NC}"
+        rm -f "$link"
+        echo -e "${GREEN}✓ Removed $link${NC}"
+    fi
+    true
+done
+
+# Final check for remaining SENTINEL/BLE.sh files
+REMAINING=$(find "${HOME}" -name '*sentinel*' -o -name '*blesh*' 2>/dev/null | grep -vE 'sentinel_backup|bashrc.readme')
+if [[ -n "$REMAINING" ]]; then
+    echo -e "${YELLOW}Attempting automatic removal of remaining SENTINEL/BLE.sh files...${NC}"
+    while IFS= read -r file; do
+        if [[ -e "$file" || -L "$file" ]]; then
+            echo -e "${YELLOW}Removing $file ...${NC}"
+            rm -rf "$file"
+            if [[ ! -e "$file" && ! -L "$file" ]]; then
+                echo -e "${GREEN}✓ Removed $file${NC}"
+            else
+                echo -e "${RED}⚠ Failed to remove $file${NC}"
+            fi
+        fi
+    done <<< "$REMAINING"
+    # Re-scan to confirm
+    REMAINING2=$(find "${HOME}" -name '*sentinel*' -o -name '*blesh*' 2>/dev/null | grep -vE 'sentinel_backup|bashrc.readme')
+    if [[ -n "$REMAINING2" ]]; then
+        echo -e "${RED}⚠ Warning: Some SENTINEL/BLE.sh files could not be removed automatically:${NC}"
+        echo "$REMAINING2"
+        echo -e "${YELLOW}Please review and remove these files manually if needed.${NC}"
+    else
+        echo -e "${GREEN}All SENTINEL and BLE.sh files have been automatically removed.${NC}"
+    fi
+else
+    echo -e "${GREEN}All SENTINEL and BLE.sh files have been removed.${NC}"
+fi
+
+# Restore TTY state
+stty sane 2>/dev/null || true
+
 echo 

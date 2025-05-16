@@ -13,11 +13,12 @@ export _SENTINEL_LOGGING_LOADED=1
 SENTINEL_LOG_DIR=~/.sentinel/logs
 
 # Define log levels
-SENTINEL_LOG_LEVEL_DEBUG=0
-SENTINEL_LOG_LEVEL_INFO=1
-SENTINEL_LOG_LEVEL_WARNING=2
-SENTINEL_LOG_LEVEL_ERROR=3
-SENTINEL_LOG_LEVEL_CRITICAL=4
+: "${SENTINEL_LOG_LEVEL_DEBUG:=0}"
+: "${SENTINEL_LOG_LEVEL_INFO:=1}"
+: "${SENTINEL_LOG_LEVEL_WARNING:=2}"
+: "${SENTINEL_LOG_LEVEL_ERROR:=3}"
+: "${SENTINEL_LOG_LEVEL_CRITICAL:=4}"
+: "${SENTINEL_LOG_LEVEL:=1}"
 
 # Use centralized config, or fall back to defaults if not available/loaded
 if [[ -n "$SENTINEL_CONFIG_FILE" && -f "$SENTINEL_CONFIG_FILE" ]]; then
@@ -25,7 +26,6 @@ if [[ -n "$SENTINEL_CONFIG_FILE" && -f "$SENTINEL_CONFIG_FILE" ]]; then
     :
 else
     # Default values if config_loader wasn't loaded first
-    : "${SENTINEL_LOG_LEVEL:=1}"  # Default to INFO
     : "${SENTINEL_LOG_RETENTION_DAYS:=30}"
     : "${SENTINEL_LOG_COLORS_ENABLED:=true}"
     : "${SENTINEL_LOG_ROTATION_SIZE:=1024}"  # 1MB

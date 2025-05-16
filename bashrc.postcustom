@@ -1,56 +1,67 @@
 #!/usr/bin/env bash
+# SENTINEL Post-Custom Configuration
+# This file is loaded at the end of .bashrc.sentinel
+# Add your custom configurations here
+
+# Source centralized configuration
+if [[ -f $HOME/.sentinel/sentinel_config.sh ]]; then
+    source $HOME/.sentinel/sentinel_config.sh
+fi
+
+#!/usr/bin/env bash
+# Add your custom configurations here
+
+# Source centralized configuration
+fi
+
+#!/usr/bin/env bash
+# Add your custom configurations here
+
+# Source centralized configuration
+fi
+
+#!/usr/bin/env bash
+# Add your custom configurations here
+
+# Source centralized configuration
+
+#!/usr/bin/env bash
 # ~/bashrc.postcustom
-# SENTINEL Custom Configuration
 #
 # This file is included very last after running bashrc. 
 # You can use this to change things like environment variables set
-# earlier. The idea is you can edit this file to customize SENTINEL
 # without needing to edit the distributed version
 
 #========================================================================
-# SENTINEL MODULE SYSTEM CONFIGURATION
 #========================================================================
 
 # Module System Behavior - Global Settings
 # ----------------------------------------
 # These settings control how the module system operates
-export SENTINEL_QUIET_MODULES=1         # 1=Silent mode (default), 0=Verbose mode
-export SENTINEL_DEBUG_MODULES=0         # 0=Normal mode (default), 1=Debug mode
 
 # Module Security Configuration
 # ----------------------------
 # These settings control module security verification
-export SENTINEL_VERIFY_MODULES=1        # Enable HMAC verification for modules
-export SENTINEL_REQUIRE_HMAC=1          # Require HMAC signatures for all modules
-export SENTINEL_CHECK_MODULE_CONTENT=0  # Check modules for suspicious patterns
-#export SENTINEL_HMAC_KEY="random_string" # Custom HMAC key (uncomment and set for better security)
 
 #========================================================================
 # MODULE-SPECIFIC CONFIGURATIONS
 #========================================================================
-# Enable/disable modules by setting SENTINEL_MODULENAME_ENABLED to 1 or 0
 
 # Obfuscation Module
 # ------------------
-export SENTINEL_OBFUSCATE_ENABLED=1     # 1=Enable, 0=Disable
 export OBFUSCATE_OUTPUT_DIR="${HOME}/secure/obfuscated_files"
 
 # OSINT Module
 # ------------
-export SENTINEL_OSINT_ENABLED=1         # 1=Enable, 0=Disable
 
 # ML Modules
 # ----------
-export SENTINEL_ML_ENABLED=1            # Enable machine learning module
-export SENTINEL_CYBERSEC_ENABLED=1      # Enable cybersecurity ML module
 
 # Chat Module
 # -----------
-export SENTINEL_CHAT_ENABLED=1          # Enable SENTINEL chat module
 
 # GitHub Star Analyzer
 # -------------------
-export SENTINEL_GITSTAR_ENABLED=1       # Enable GitHub star analyzer
 
 # Hashcat Configuration
 # --------------------
@@ -60,10 +71,6 @@ export HASHCAT_OUTPUT_DIR="${HOME}/.hashcat/cracked"
 
 # Secure Logout Configuration
 # --------------------------
-export SENTINEL_SECURE_BASH_HISTORY=0   # Clear bash history on logout (0=Disabled, 1=Enabled)
-export SENTINEL_SECURE_SSH_KNOWN_HOSTS=0 # Clear SSH known hosts on logout
-export SENTINEL_SECURE_CLEAN_CACHE=0     # Clean cache directory on logout
-# export SENTINEL_SECURE_DIRS="/path/to/sensitive/files:/another/path"  # Additional directories to clean
 
 # Distcc Configuration
 # -------------------
@@ -82,14 +89,22 @@ export CCACHE_SIZE="5G"                  # Maximum size of ccache
 # Add your custom configurations, aliases, and functions below
 
 # Source centralized configuration
-if [[ -f $HOME/.sentinel/sentinel_config.sh ]]; then
-    source $HOME/.sentinel/sentinel_config.sh
+
+# =============================
+# =============================
+
+# =============================
+# =============================
+if [[ -f "${HOME}/.bash_modules" ]]; then
+    while IFS= read -r module; do
+        [[ -z "$module" || "$module" =~ ^# ]] && continue
+        module_enable "$module"
+    done < "${HOME}/.bash_modules"
 fi
 
 # ========================================================================
 # Performance Configuration
 # ========================================================================
-# SENTINEL now includes lazy loading for development environments and other
 # heavy components. This can significantly reduce shell startup time.
 #
 # By default, lazy loading is enabled (CONFIG[LAZY_LOAD]=1)
@@ -115,16 +130,11 @@ fi
 # ========================================================================
 
 # Add your customizations below this line
-# Example: export SENTINEL_CYBERSEC_ENABLED=0  # Disable cybersecurity module
 
-# Load BLE.sh if available
-if [[ -f $HOME/.sentinel/blesh_loader.sh ]]; then
-    source $HOME/.sentinel/blesh_loader.sh
-fi
-
+# =============================
 # Lazy loading for development tools
+# =============================
 if [[ "${CONFIG[LAZY_LOAD]}" == "1" || "$U_LAZY_LOAD" == "1" ]]; then
-    # Lazy load pyenv
     function pyenv() {
         unset -f pyenv
         if [[ -d "$HOME/.pyenv" ]]; then
@@ -138,8 +148,6 @@ if [[ "${CONFIG[LAZY_LOAD]}" == "1" || "$U_LAZY_LOAD" == "1" ]]; then
             return 1
         fi
     }
-    
-    # Lazy load NVM
     function nvm() {
         unset -f nvm
         if [[ -d "$HOME/.nvm" ]]; then
@@ -152,26 +160,21 @@ if [[ "${CONFIG[LAZY_LOAD]}" == "1" || "$U_LAZY_LOAD" == "1" ]]; then
             return 1
         fi
     }
-    
-    # Add these for common commands to trigger the lazy loading
     function node() {
         unset -f node
         nvm >/dev/null 2>&1
         node "$@"
     }
-    
     function npm() {
         unset -f npm
         nvm >/dev/null 2>&1
         npm "$@"
     }
-    
     function python() {
         unset -f python
         pyenv >/dev/null 2>&1
         python "$@"
     }
-    
     function pip() {
         unset -f pip
         pyenv >/dev/null 2>&1
@@ -180,3 +183,16 @@ if [[ "${CONFIG[LAZY_LOAD]}" == "1" || "$U_LAZY_LOAD" == "1" ]]; then
 fi
 
 export U_LAZY_LOAD=1
+
+# =============================
+# End of bashrc.postcustom
+# =============================
+
+fi
+
+fi
+
+# Load BLE.sh if available
+if [[ -f "${HOME}/.sentinel/blesh_loader.sh" ]]; then
+    source "${HOME}/.sentinel/blesh_loader.sh"
+fi

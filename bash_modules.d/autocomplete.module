@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+#-----------------------------------------------------------------------------
+# SENTINEL  ⟩  autocomplete.module
+# Core helpers for BLE.sh integration & snippet expansion
+#
+# Version : 2.0.0          (2025-05-16)
+# Author  : SENTINEL Team
+# License : MIT
+#-----------------------------------------------------------------------------
+
+###############################################################################
+# 0.  Metadata – required by the manager
+###############################################################################
+AUTOCOMPLETE_MODULE_VERSION="2.0.0"
+AUTOCOMPLETE_MODULE_DESCRIPTION="Core BLE.sh glue + snippet engine"
+AUTOCOMPLETE_MODULE_AUTHOR="SENTINEL Team"
+
+###############################################################################
+# 1.  Internal logging wrappers (reuse manager’s helpers if present)
+###############################################################################
+_autolog_i() { type -t _autocomplete_log_info  &>/dev/null && _autocomplete_log_info  "$@" || true; }
+_autolog_w() { type -t _autocomplete_log_warn  &>/dev/null && _autocomplete_log_warn  "$@" || true; }
+_autolog_e() { type -t _autocomplete_log_error &>/dev/null && _autocomplete_log_error "$@" || echo "ERROR: $*" >&2; }
+
+###############################################################################
+# 2.  Configuration
+###############################################################################
+# Where snippets live (one file per snippet, «name.snippet» containing shell code)
+SENTINEL_SNIPPET_DIR="${HOME}/.sentinel/autocomplete/snippets"
+
+# BLE.sh loader (installed by the framework’s installer)
+SENTINEL_BLESH_LOADER="${HOME}/.sentinel/blesh_loader.sh"
+
+###############################################################################
+# 3.  BLE.sh helpers
+###############################################################################
+sentinel_check_blesh() {
+  # Already loaded?
+  type -t bleopt &>/dev/null && return 0
+
+  # Attempt to source loader quietly
+  if [[ -f ${SENTINEL_BLESH_LOADER} ]]; then
+    source "${SENTINEL_BLESH_LOADER}"
+  fi
+
+  # Report status
+  if type -t bleopt &>/dev/null; then
+    _autolog_i "BLE.sh successfully loaded"
+    return 0
+  else
+    _autolog_w "BLE.sh NOT loaded – autocomplete limited"
+    return 1
+  fi
+}
+
+# Simple status for manager’s “@autocomplete status”
+sentinel_blesh_status() {
+  if type -t bleopt &>/dev/null; then
+    echo "BLE.sh       : LOADED (v$(bleopt --version 2>/dev/null || echo 'unknown'))"
+  else
+    echo "BLE.sh       : NOT loaded"
+  fi
+}
+
+###############################################################################
+# 4.  Snippet engine – thin wrapper around ble-sabbrev
+###############################################################################
+# Load all *.snippet files as sabbrev definitions
+_sentinel_snippet_import_all() {
+  [[ -d ${SENTINEL_SNIPPET_DIR} ]] || return 0   # nothing to do
+
+  # Ensure BLE.sh available
+  sentinel_check_blesh || return 0
+
+  local f
+  for f in "${SENTINEL_SNIPPET_DIR}"/*.snippet; do
+    [[ -f $f ]] || continue
+    local name cmd
+    name="${f##*/}"; name="${name%.snippet}"
+    # Read snippet content, collapse newlines to literal '\n'
+    cmd="$(sed ':a;N;$!ba;s/\n/\\n/g' "$f")"
+    ble-sabbrev -m "$name=$cmd"
+  done
+}
+
+# Public helper – create or overwrite a snippet then reload
+sentinel_snippet_add() {
+  local name="$1" cmd="$2"
+  if [[ -z $name || -z $cmd ]]; then
+    echo "Usage: sentinel_snippet_add <name> <command...>" >&2
+    return 1
+  fi
+
+  mkdir -p "${SENTINEL_SNIPPET_DIR}"
+  printf '%s\n' "$cmd" > "${SENTINEL_SNIPPET_DIR}/${name}.snippet"
+  _autolog_i "snippet ${name} added"
+  _sentinel_snippet_import_all
+}
+
+# Convenience list
+sentinel_snippet_list() {
+  [[ -d ${SENTINEL_SNIPPET_DIR} ]] || { echo "No snippets."; return; }
+  for f in "${SENTINEL_SNIPPET_DIR}"/*.snippet; do
+    [[ -f $f ]] || continue
+    printf '%-20s %s\n' "${f##*/}" "$(head -n1 "$f")"
+  done | column -t
+}
+
+###############################################################################
+# 5.  Hook into interactive shells
+###############################################################################
+_sentinel_autocomplete_core_init() {
+  # Only once per session
+  [[ ${SENTINEL_AUTOCOMPLETE_CORE_INIT_DONE:-0} -eq 1 ]] && return
+  SENTINEL_AUTOCOMPLETE_CORE_INIT_DONE=1
+
+  # Guard non-interactive
+  [[ $- != *i* ]] && return
+
+  _autolog_i "Initialising autocomplete core module"
+
+  # 5.1 BLE.sh bootstrap (silent if missing)
+  sentinel_check_blesh
+
+  # 5.2 Snippet import
+  _sentinel_snippet_import_all
+}
+
+###############################################################################
+# 6.  Manager-facing helpers (optional)
+###############################################################################
+sentinel_autocomplete_core_status() {
+  echo "Snippets dir : ${SENTINEL_SNIPPET_DIR}"
+  printf 'Loaded snippets: %s\n' "$(ble-sabbrev -l 2>/dev/null | wc -l)"
+}
+
+###############################################################################
+# 7.  Registration with the manager
+###############################################################################
+if type -t sentinel_autocomplete_register_module &>/dev/null; then
+  sentinel_autocomplete_register_module \
+      "autocomplete" \
+      "${AUTOCOMPLETE_MODULE_VERSION}" \
+      "${BASH_SOURCE[0]}"
+else
+  _autolog_w "Autocomplete manager not yet loaded – self-register skipped"
+fi
+
+###############################################################################
+# 8.  Kick-start on sourcing
+###############################################################################
+_sentinel_autocomplete_core_init

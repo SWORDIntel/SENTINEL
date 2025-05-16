@@ -1,0 +1,22 @@
+diff --git a/bash_modules/autocomplete/categories_module.sh b/.../categories_module.sh
+@@
+-  if [[ -f "$param_file" && -n "$base_cmd" && -t ble-sabbrev ]]; then
++  if [[ -f "$param_file" && -n "$base_cmd" ]] && type -t ble-sabbrev &>/dev/null; then
+     # smart-param logic here
+   fi
+diff --git a/bash_modules/install.sh b/.../install.sh
+@@
+-set -o pipefail
++# Safe-mode
++set -euo pipefail
+diff --git a/bash_modules/autocomplete/autocomplete_manager.sh b/.../autocomplete_manager.sh
+@@
+-mkdir -p ~/.sentinel/logs
+-chmod 777 ~/.sentinel/logs
++mkdir -p ~/.sentinel/logs
++chmod 700 ~/.sentinel/logs
+diff --git a/modules/sentinel_gitstar_tui.py b/.../sentinel_gitstar_tui.py
+@@
+-    os.system(f"git clone {repo_url}")
++    subprocess.run(["git", "clone", repo_url], check=True)
+
