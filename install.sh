@@ -173,9 +173,26 @@ if ! is_done "CORE_MODULES_INSTALLED"; then
   mark_done "CORE_MODULES_INSTALLED"
 fi
 
-# ---------10. Final summary --------------------------------------------------
+# --------- 10. Final summary --------------------------------------------------
 echo
 ok "Installation completed successfully!"
 echo "• Open a new terminal OR run:  source '${SENTINEL_HOME}/bashrc.postcustom'"
 echo "• Verify with:                @autocomplete status"
 echo "• Logs:                       ${LOG_DIR}/install.log"
+
+# --------- 11. Secure permissions on all SENTINEL files and modules ---------
+if ! is_done "PERMISSIONS_SECURED"; then
+  step "Securing permissions on all SENTINEL files and modules"
+  # Secure all directories
+  find "${SENTINEL_HOME}" -type d -exec chmod 700 {} +
+  # Secure all .module, .sh, .py, .postcustom, loader, and .bashrc files
+  find "${SENTINEL_HOME}" \( -name "*.module" -o -name "*.sh" -o -name "*.py" -o -name "*.postcustom" -o -name "bashrc" -o -name "blesh_loader.sh" \) -exec chmod 600 {} +
+  # Secure .bashrc in home
+  if [[ -f "$HOME/.bashrc" ]]; then chmod 600 "$HOME/.bashrc"; fi
+  # Secure .blerc if present
+  if [[ -f "$HOME/.blerc" ]]; then chmod 600 "$HOME/.blerc"; fi
+  # Secure .cache/blesh directory if present
+  if [[ -d "$HOME/.cache/blesh" ]]; then chmod 700 "$HOME/.cache/blesh"; fi
+  ok "Permissions set: 700 for directories, 600 for files"
+  mark_done "PERMISSIONS_SECURED"
+fi
