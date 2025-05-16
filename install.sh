@@ -216,12 +216,11 @@ if ! is_done "MODULE_AUDIT_DONE"; then
   MODULE_AUDIT_LOG="${LOG_DIR}/module_audit.log"
   : > "$MODULE_AUDIT_LOG"
 
-  MODULE_DIRS=("${SENTINEL_HOME}/bash_modules.d")
-  for dir in "${SENTINEL_HOME}/bash_modules"; do
-    [[ -d "$dir" ]] && MODULE_DIRS+=("$dir")
-  done
+  # Only check these locations for modules (per security policy)
+  MODULE_DIRS=("${HOME}/.bash_modules.d" "${HOME}/bash_modules.d")
 
   for MODDIR in "${MODULE_DIRS[@]}"; do
+    [[ -d "$MODDIR" ]] || continue
     find "$MODDIR" -type f \( -name '*.module' -o -name '*.sh' \) | while read -r modfile; do
       modname=$(basename "$modfile")
       # Extract enablement variable (e.g., SENTINEL_ML_ENABLED)
@@ -290,6 +289,29 @@ if ! is_done "MODULE_AUDIT_DONE"; then
   mark_done "MODULE_AUDIT_DONE"
 fi
 
+# --------- 9c. Copy shell support directories to HOME (aliases, completion, functions, contrib) ---------
+if ! is_done "SHELL_SUPPORT_COPIED"; then
+  for dir in bash_aliases.d bash_completion.d bash_functions.d contrib; do
+    SRC_DIR="${PROJECT_ROOT}/$dir"
+    DST_DIR="${HOME}/$dir"
+    if [[ -d "$SRC_DIR" ]]; then
+      if [[ -e "$DST_DIR" ]]; then
+        step "Backing up existing $DST_DIR to $DST_DIR.sentinel.bak"
+        mv "$DST_DIR" "$DST_DIR.sentinel.bak.$(date +%s)" || warn "Could not backup $DST_DIR"
+      fi
+      step "Copying $dir to $DST_DIR"
+      rsync -a "$SRC_DIR/" "$DST_DIR/"
+      # Secure permissions: 700 for dirs, 600 for files
+      find "$DST_DIR" -type d -exec chmod 700 {} +
+      find "$DST_DIR" -type f -exec chmod 600 {} +
+      ok "$dir copied and permissions set"
+    else
+      warn "$SRC_DIR not found; skipping."
+    fi
+  done
+  mark_done "SHELL_SUPPORT_COPIED"
+fi
+
 # --------- 10. Final summary --------------------------------------------------
 echo
 ok "Installation completed successfully!"
@@ -312,4 +334,16 @@ if ! is_done "PERMISSIONS_SECURED"; then
   if [[ -d "$HOME/.cache/blesh" ]]; then chmod 700 "$HOME/.cache/blesh"; fi
   ok "Permissions set: 700 for directories, 600 for files"
   mark_done "PERMISSIONS_SECURED"
+fi
+
+# --------- 12. Post-install: Auto-run enablement and dependency check ---------
+POSTINSTALL_CHECK_SCRIPT="${PROJECT_ROOT}/sentinel_postinstall_check.sh"
+if [[ -f "$POSTINSTALL_CHECK_SCRIPT" ]]; then
+  step "Running SENTINEL post-install enablement and dependency check"
+  # Source bashrc to ensure environment is loaded
+  source "${HOME}/.bashrc"
+  bash "$POSTINSTALL_CHECK_SCRIPT"
+  ok "Post-install check complete. See summary above."
+else
+  warn "Post-install check script not found at $POSTINSTALL_CHECK_SCRIPT. Skipping."
 fi

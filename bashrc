@@ -757,32 +757,26 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
   function module_enable() {
     local module="$1"
     local module_file=""
-    
-    # Check for both .sh and .module extensions
     if [[ -f "${MODULES_PATH}/${module}.sh" ]]; then
-      module_file="${MODULES_PATH}/${module}.sh"
+        module_file="${MODULES_PATH}/${module}.sh"
     elif [[ -f "${MODULES_PATH}/${module}.module" ]]; then
-      module_file="${MODULES_PATH}/${module}.module"
+        module_file="${MODULES_PATH}/${module}.module"
     fi
-    
-    # Check if module exists
     if [[ -z "$module_file" || ! -f "$module_file" ]]; then
-      eerror "Module '$module' not found"
-      return 1
+        eerror "Module '$module' not found"
+        return 1
     fi
-    
     # Only source if not already loaded
-    local guard_var=""
-    case "$module" in
-      blesh_installer) guard_var="_BLSH_INSTALLER_LOADED" ;;
-    esac
+    local guard_var="_MODULE_${module^^}_LOADED"
     if [[ -z "${!guard_var}" ]]; then
-      # shellcheck source=/dev/null
-      touch "${HOME}/.bash_modules"
-      if ! grep -q "^${module}\$" "${HOME}/.bash_modules"; then
+        source "$module_file"
+        declare -g "$guard_var=1"
+        emsg "Module '$module' loaded"
+    fi
+    # Register as enabled
+    touch "${HOME}/.bash_modules"
+    if ! grep -q "^${module}\$" "${HOME}/.bash_modules"; then
         echo "$module" >> "${HOME}/.bash_modules"
-      fi
-      emsg "Module '$module' enabled"
     fi
   }
   
@@ -834,12 +828,24 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
     fi
   }
   
-  # Load enabled modules
+  # --- PATCH: Ensure blesh_installer is loaded first ---
+  # Read enabled modules, but always load blesh_installer first if present
   if [[ -f "${HOME}/.bash_modules" ]]; then
+    # Remove duplicates and ensure blesh_installer is first
+    awk '!x[$0]++' "${HOME}/.bash_modules" > "${HOME}/.bash_modules.tmp"
+    if grep -q '^blesh_installer$' "${HOME}/.bash_modules.tmp"; then
+      # Remove blesh_installer from its current position
+      grep -v '^blesh_installer$' "${HOME}/.bash_modules.tmp" > "${HOME}/.bash_modules.tmp2"
+      echo "blesh_installer" > "${HOME}/.bash_modules.ordered"
+      cat "${HOME}/.bash_modules.tmp2" >> "${HOME}/.bash_modules.ordered"
+      mv "${HOME}/.bash_modules.ordered" "${HOME}/.bash_modules.tmp"
+    fi
+    # Now source modules in order
     while IFS= read -r module; do
       [[ -z "$module" || "$module" =~ ^# ]] && continue
       module_enable "$module" >/dev/null
-    done < "${HOME}/.bash_modules"
+    done < "${HOME}/.bash_modules.tmp"
+    rm -f "${HOME}/.bash_modules.tmp" "${HOME}/.bash_modules.tmp2" 2>/dev/null
   fi
 fi
 # Core aliases

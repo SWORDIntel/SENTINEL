@@ -203,3 +203,25 @@ export SENTINEL_CYBERSEC_ENABLED=1
 export SENTINEL_GITSTAR_ENABLED=1
 export SENTINEL_CHAT_ENABLED=1
 # =============================
+
+# =============================
+# SENTINEL BLE.sh Autocomplete Toggle
+# =============================
+
+# Set to 1 to enable BLE.sh (and autocomplete), 0 to disable
+export SENTINEL_BLESH_ENABLED=1
+
+BLSH_MODULE_NAME="blesh_installer"
+BLSH_MODULES_FILE="${HOME}/.bash_modules"
+
+if [[ "${SENTINEL_BLESH_ENABLED}" == "1" ]]; then
+    # Enable blesh_installer if not already enabled
+    if ! grep -qx "$BLSH_MODULE_NAME" "$BLSH_MODULES_FILE" 2>/dev/null; then
+        echo "$BLSH_MODULE_NAME" >> "$BLSH_MODULES_FILE"
+    fi
+else
+    # Disable blesh_installer if present
+    if grep -qx "$BLSH_MODULE_NAME" "$BLSH_MODULES_FILE" 2>/dev/null; then
+        sed -i "/^$BLSH_MODULE_NAME\$/d" "$BLSH_MODULES_FILE"
+    fi
+fi
