@@ -2,9 +2,9 @@
 ###############################################################################
 # SENTINEL – Framework installer
 # -----------------------------------------------
-# Hardened edition  •  v2.1.0  •  2025-05-16
+# Hardened edition  •  v2.2.0  •  2025-05-16
 # Installs/repairs  ~/.sentinel  and patches the
-# user’s Bash startup chain in an idempotent way.
+# user's Bash startup chain in an idempotent way.
 ###############################################################################
 # Coding standards
 #   • Strict mode:  set -euo pipefail
@@ -38,7 +38,7 @@ trap 'fail "Installer aborted on line $LINENO; see ${LOG_DIR}/install.log"' ERR
 mkdir -p "${LOG_DIR}"
 
 # --------- 2. Minimal dependency check  -------------------------------------
-REQUIRED_CMDS=(git make awk sed)
+REQUIRED_CMDS=(git make awk sed rsync)
 MISSING=()
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "${cmd}" &>/dev/null || MISSING+=("${cmd}")
@@ -50,7 +50,7 @@ ok "All required CLI tools present"
 
 # --------- 3. Idempotent state helper ---------------------------------------
 mark_done()  { echo "$1" >> "${STATE_FILE}"; }
-is_done()    { grep -qxF "$1" "${STATE_FILE:-/dev/null}"; }
+is_done()    { grep -qxF "$1" "${STATE_FILE:-/dev/null}" 2>/dev/null; }
 
 # --------- 4. Create ~/.sentinel skeleton -----------------------------------
 if ! is_done "DIRS_CREATED"; then
@@ -67,8 +67,7 @@ fi
 install_blesh() {
   step "Installing BLE.sh to ${BLESH_DIR}"
   git clone --depth=1 https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
-  make -C "${BLESH_DIR}" install PREFIX="${HOME}/.local" \
-       >/dev/null
+  make -C "${BLESH_DIR}" install PREFIX="${HOME}/.local" >/dev/null
   ok "BLE.sh installed"
 }
 
@@ -99,21 +98,27 @@ EOF
   ok "BLE.sh loader ready"
 fi
 
-# --------- 7. Patch user’s Bash start-up chain ------------------------------
+# --------- 7. Patch user's Bash start-up chain ------------------------------
 patch_bashrc() {
   local rc="$1"
-  local needle='### SENTINEL BOOTSTRAP ###'
-  grep -qxF "${needle}" "${rc}" 2>/dev/null && return 0   # already patched
-  step "Patching ${rc}"
-  cat >> "${rc}" <<EOF
-
-${needle}
-if [[ -f "${SENTINEL_HOME}/bashrc.postcustom" ]]; then
-  source "${SENTINEL_HOME}/bashrc.postcustom"
-fi
-### END SENTINEL BOOTSTRAP ###
-EOF
-  ok "${rc} patched"
+  local sentinel_bashrc="${PROJECT_ROOT}/bashrc"
+  if [[ -f "$rc" ]]; then
+    cp "$rc" "$rc.sentinel.bak"
+    ok "Backed up $rc to $rc.sentinel.bak"
+  fi
+  step "Prompting for full replacement of $rc with SENTINEL bashrc"
+  read -p "Replace your $rc with SENTINEL's secure version? [y/N]: " confirm
+  if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    if [[ -f "$sentinel_bashrc" ]]; then
+      cp "$sentinel_bashrc" "$rc.tmp" && mv "$rc.tmp" "$rc"
+      ok "SENTINEL bashrc installed as $rc"
+      log "Replaced $rc with SENTINEL bashrc at $(date)"
+    else
+      warn "SENTINEL bashrc not found at $sentinel_bashrc; skipping replacement."
+    fi
+  else
+    warn "User declined SENTINEL bashrc replacement for $rc. Skipping."
+  fi
 }
 
 if ! is_done "BASHRC_PATCHED"; then
@@ -129,12 +134,42 @@ if ! is_done "POSTCUSTOM_READY"; then
   mark_done "POSTCUSTOM_READY"
 fi
 
-# --------- 9. Install core modules ------------------------------------------
+# --------- 9. Install core modules  (bash_modules or bash.modules.d) ---------
 if ! is_done "CORE_MODULES_INSTALLED"; then
-  step "Copying core bash modules"
-  rsync -a --delete \
-    "${PROJECT_ROOT}/bash_modules/" "${SENTINEL_HOME}/bash_modules/"
-  ok "Modules synced"
+  MODULE_SRC=""
+  MODULE_DST=""
+  for cand in "bash_modules" "bash.modules.d"; do
+    if [[ -d "${PROJECT_ROOT}/${cand}" ]]; then
+      MODULE_SRC="${PROJECT_ROOT}/${cand}"
+      MODULE_DST="${SENTINEL_HOME}/${cand}"
+      break
+    fi
+  done
+
+  if [[ -n ${MODULE_SRC} ]]; then
+    step "Copying core bash modules from '${cand}/'"
+    rsync -a --delete "${MODULE_SRC}/" "${MODULE_DST}/"
+    ok "Modules synced → ${MODULE_DST}"
+
+    # Provide stable autocomplete path when using bash.modules.d layout
+    if [[ ${cand} == "bash.modules.d" && ! -e "${SENTINEL_HOME}/autocomplete" ]]; then
+      ln -s "${MODULE_DST}/autocomplete" "${SENTINEL_HOME}/autocomplete"
+      ok "Symlink ~/.sentinel/autocomplete → bash.modules.d/autocomplete created"
+    fi
+
+    # Automatically run install-autocomplete.sh if present
+    local AUTOCOMPLETE_INSTALLER="${MODULE_SRC}/install-autocomplete.sh"
+    if [[ -f "$AUTOCOMPLETE_INSTALLER" ]]; then
+      step "Running modular autocomplete installer: $AUTOCOMPLETE_INSTALLER"
+      bash "$AUTOCOMPLETE_INSTALLER" || warn "install-autocomplete.sh failed; check logs."
+      ok "Modular autocomplete installer completed"
+    else
+      warn "install-autocomplete.sh not found in $MODULE_SRC; autocomplete modules may not be fully installed."
+    fi
+  else
+    warn "No bash_modules/ or bash.modules.d/ directory found – skipping module sync"
+  fi
+
   mark_done "CORE_MODULES_INSTALLED"
 fi
 

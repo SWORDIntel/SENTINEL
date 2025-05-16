@@ -24,9 +24,6 @@ fi
 # Registry of loaded modules
 declare -A SENTINEL_LOADED_MODULES
 
-# Set quiet mode by default (set to 0 for verbose output)
-export SENTINEL_QUIET_MODULES=${SENTINEL_QUIET_MODULES:-1}
-
 # Initialize modules directory if it doesn't exist
 if [[ ! -d "$SENTINEL_MODULES_PATH" ]]; then
     mkdir -p "$SENTINEL_MODULES_PATH"

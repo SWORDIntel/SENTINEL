@@ -9,7 +9,7 @@ if ! command -v python3 &>/dev/null; then
 fi
 
 # Path to ML scripts
-SENTINEL_ML_DIR="$(dirname "$(dirname "$(dirname "${BASH_SOURCE[0]}")")")/contrib"
+SENTINEL_ML_DIR="$(dirname "${BASH_SOURCE[0]}")/../contrib"
 
 # Check if our modules exist
 CHAIN_PREDICT_SCRIPT="$SENTINEL_ML_DIR/sentinel_chain_predict.py"

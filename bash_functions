@@ -105,7 +105,7 @@ function in_venv() {
 
 # Function to activate automatic virtual environment creation
 function venvon() {
-    export VENV_AUTO=1
+    VENV_AUTO=1
     echo "Automatic virtual environment activation is ON."
 }
 
@@ -370,10 +370,10 @@ _secure_shred() {
 # Function to toggle secure rm mode
 secure_rm_toggle() {
     if [[ "${SENTINEL_SECURE_RM:-1}" == "1" ]]; then
-        export SENTINEL_SECURE_RM=0
+        SENTINEL_SECURE_RM=0
         echo "Secure rm mode is now OFF. Files deleted with rm will use standard deletion."
     else
-        export SENTINEL_SECURE_RM=1
+        SENTINEL_SECURE_RM=1
         echo "Secure rm mode is now ON. Files deleted with rm will be securely erased."
     fi
 }
@@ -449,16 +449,13 @@ secure_clean() {
     esac
 }
 
-# Default to secure rm mode
-export SENTINEL_SECURE_RM=1
-
 # Function to toggle module verbosity
 sentinel_quiet() {
     if [[ "$1" == "on" ]]; then
-        export SENTINEL_QUIET_MODULES=1
+        SENTINEL_QUIET_MODULES=1
         echo "SENTINEL quiet mode: ON - Minimal module output"
     elif [[ "$1" == "off" ]]; then
-        export SENTINEL_QUIET_MODULES=0
+        SENTINEL_QUIET_MODULES=0
         echo "SENTINEL quiet mode: OFF - Verbose module output"
     else
         echo "SENTINEL quiet mode is currently: $([[ "${SENTINEL_QUIET_MODULES:-1}" == "1" ]] && echo "ON" || echo "OFF")"

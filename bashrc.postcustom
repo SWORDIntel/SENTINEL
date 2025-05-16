@@ -12,13 +12,12 @@ fi
 # Add your custom configurations here
 
 # Source centralized configuration
-fi
+
 
 #!/usr/bin/env bash
 # Add your custom configurations here
 
 # Source centralized configuration
-fi
 
 #!/usr/bin/env bash
 # Add your custom configurations here
@@ -187,10 +186,6 @@ export U_LAZY_LOAD=1
 # =============================
 # End of bashrc.postcustom
 # =============================
-
-fi
-
-fi
 
 # Load BLE.sh if available
 if [[ -f "${HOME}/.sentinel/blesh_loader.sh" ]]; then

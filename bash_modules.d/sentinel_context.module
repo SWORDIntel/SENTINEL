@@ -9,7 +9,7 @@ if ! command -v python3 &>/dev/null; then
 fi
 
 # Path to context script
-SENTINEL_CTX_DIR="$(dirname "$(dirname "$(dirname "${BASH_SOURCE[0]}")")")/contrib"
+SENTINEL_CTX_DIR="$(dirname "${BASH_SOURCE[0]}")/../contrib"
 SENTINEL_CTX_SCRIPT="$SENTINEL_CTX_DIR/sentinel_context.py"
 
 # Make sure the context script exists

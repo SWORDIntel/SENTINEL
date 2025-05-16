@@ -201,6 +201,86 @@ else
     log_warn "__prompt_command_optimized function not found"
 fi
 
+# Section: Comprehensive Module Load and Functionality Tests
+log "\n=== Comprehensive Module Load and Functionality Tests ==="
+MODULES_DIR="$SENTINEL_DIR/bash_modules.d"
+MODULE_FILES=("$MODULES_DIR"/*.module)
+
+for module_file in "${MODULE_FILES[@]}"; do
+    module_name=$(basename "$module_file")
+    log "Testing module: $module_name"
+    # Existence
+    if [[ -f "$module_file" ]]; then
+        log_success "Module file exists: $module_name"
+    else
+        log_error "Module file missing: $module_name"
+        continue
+    fi
+    # Permissions
+    perms=$(stat -c %a "$module_file")
+    if [[ "$perms" =~ ^6[04]4$|^600$ ]]; then
+        log_success "Permissions are secure ($perms)"
+    else
+        log_warn "Permissions may be insecure ($perms)"
+    fi
+    # Source in subshell to avoid polluting main shell
+    (
+        set +e
+        if source "$module_file"; then
+            log_success "Sourced $module_name without errors"
+            # Check for key functions/aliases for known modules
+            case "$module_name" in
+                sentinel_context.module)
+                    for fn in sentinel_context sentinel_show_context sentinel_update_context sentinel_smart_suggest; do
+                        if type -t "$fn" &>/dev/null; then
+                            log_success "$fn function available"
+                        else
+                            log_warn "$fn function missing"
+                        fi
+                    done
+                    ;;
+                sentinel_ml_enhanced.module)
+                    for fn in sentinel_predict sentinel_fix sentinel_task sentinel_translate sentinel_script sentinel_explain; do
+                        if type -t "$fn" &>/dev/null; then
+                            log_success "$fn function available"
+                        else
+                            log_warn "$fn function missing"
+                        fi
+                    done
+                    ;;
+                sentinel_ml.module)
+                    for fn in sentinel_ml_setup sentinel_ml_train; do
+                        if type -t "$fn" &>/dev/null; then
+                            log_success "$fn function available"
+                        else
+                            log_warn "$fn function missing"
+                        fi
+                    done
+                    ;;
+                sentinel_cybersec_ml.module)
+                    # No specific function, just check for enablement
+                    if [[ "${SENTINEL_CYBERSEC_ENABLED:-0}" == "1" ]]; then
+                        log_success "Cybersec ML module enabled"
+                    else
+                        log_warn "Cybersec ML module not enabled (set SENTINEL_CYBERSEC_ENABLED=1)"
+                    fi
+                    ;;
+                *)
+                    # For other modules, just check for successful sourcing
+                    :
+                    ;;
+            esac
+        else
+            log_error "Failed to source $module_name"
+        fi
+    )
+done
+
+# Section: ML Module Python Dependency Checks
+log "\n=== ML Module Python Dependency Checks ==="
+python3 -c "import numpy, markovify" 2>/dev/null && log_success "numpy and markovify installed" || log_warn "numpy and/or markovify missing"
+python3 -c "import llama_cpp" 2>/dev/null && log_success "llama-cpp-python installed" || log_warn "llama-cpp-python not installed (optional)"
+
 # Section: Cleanup
 log "\n=== Cleanup Temporary Files ==="
 rm -f /tmp/sentinel_test_*.sh /tmp/sentinel_test_output /tmp/test_blesh_loader.sh /tmp/blesh_test_load.*

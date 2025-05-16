@@ -45,6 +45,15 @@ step "This will remove SENTINEL runtime files *only* from ${HOME}"
 read -rp "Continue? (y/N): " ans
 [[ ${ans,,} == y ]] || { warn "Abort"; exit 0; }
 
+#########################################
+# 1a. Restore .bashrc from backup if present #
+#########################################
+if [[ -f "${HOME}/.bashrc.sentinel.bak" ]]; then
+  step "Restoring original .bashrc from .bashrc.sentinel.bak"
+  mv -- "${HOME}/.bashrc.sentinel.bak" "${HOME}/.bashrc"
+  ok ".bashrc restored from backup"
+fi
+
 #######################################
 # 2.  Back-up ~/.sentinel if it exists #
 #######################################
