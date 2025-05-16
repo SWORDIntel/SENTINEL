@@ -281,6 +281,144 @@ log "\n=== ML Module Python Dependency Checks ==="
 python3 -c "import numpy, markovify" 2>/dev/null && log_success "numpy and markovify installed" || log_warn "numpy and/or markovify missing"
 python3 -c "import llama_cpp" 2>/dev/null && log_success "llama-cpp-python installed" || log_warn "llama-cpp-python not installed (optional)"
 
+# Section: Runtime Checks for All Module Functions
+log "\n=== Runtime Checks for All Module Functions ==="
+for module_file in "${MODULE_FILES[@]}"; do
+    module_name=$(basename "$module_file")
+    (
+        set +e
+        source "$module_file"
+        case "$module_name" in
+            sentinel_context.module)
+                log "Testing runtime: sentinel_context"
+                sentinel_context || log_warn "sentinel_context runtime failed"
+                sentinel_show_context || log_warn "sentinel_show_context runtime failed"
+                sentinel_update_context || log_warn "sentinel_update_context runtime failed"
+                sentinel_smart_suggest "ls" || log_warn "sentinel_smart_suggest runtime failed"
+                ;;
+            sentinel_ml_enhanced.module)
+                log "Testing runtime: sentinel_ml_enhanced"
+                sentinel_predict "ls" || log_warn "sentinel_predict runtime failed"
+                sentinel_fix "ls" || log_warn "sentinel_fix runtime failed"
+                sentinel_task detect || log_warn "sentinel_task detect runtime failed"
+                sentinel_translate "list all files" || log_warn "sentinel_translate runtime failed"
+                sentinel_script /tmp/test_script.sh "echo test" || log_warn "sentinel_script runtime failed"
+                sentinel_explain "ls -l" || log_warn "sentinel_explain runtime failed"
+                ;;
+            sentinel_ml.module)
+                log "Testing runtime: sentinel_ml"
+                sentinel_ml_setup || log_warn "sentinel_ml_setup runtime failed"
+                sentinel_ml_train || log_warn "sentinel_ml_train runtime failed"
+                ;;
+            sentinel_cybersec_ml.module)
+                log "Testing runtime: sentinel_cybersec_ml"
+                # No direct runtime function, just check enablement
+                if [[ "${SENTINEL_CYBERSEC_ENABLED:-0}" == "1" ]]; then
+                    log_success "Cybersec ML module enabled at runtime"
+                else
+                    log_warn "Cybersec ML module not enabled at runtime"
+                fi
+                ;;
+            *)
+                # For other modules, no specific runtime test
+                :
+                ;;
+        esac
+    )
+done
+
+# Section: Full BLE.sh Installation and Integration Checks
+log "\n=== Full BLE.sh Installation and Integration Checks ==="
+BLESH_DIR="$HOME/.local/share/blesh"
+BLESH_MAIN="$BLESH_DIR/ble.sh"
+BLESH_LOADER="$HOME/.sentinel/blesh_loader.sh"
+
+# 1. Check installation status
+log "Checking BLE.sh installation directory: $BLESH_DIR"
+if [[ -d "$BLESH_DIR" ]]; then
+    log_success "BLE.sh directory exists"
+    ls -la "$BLESH_DIR"
+else
+    log_error "BLE.sh directory missing"
+fi
+
+log "Checking BLE.sh loader script: $BLESH_LOADER"
+if [[ -f "$BLESH_LOADER" ]]; then
+    log_success "BLE.sh loader script exists"
+    ls -la "$BLESH_LOADER"
+else
+    log_error "BLE.sh loader script missing"
+fi
+
+# 2. Check BLE.sh function availability
+log "Checking BLE.sh function availability (bleopt)"
+if type -t bleopt &>/dev/null; then
+    log_success "bleopt function available"
+    bleopt --version 2>/dev/null || log_warn "bleopt version check failed"
+else
+    log_warn "bleopt function not available before sourcing loader"
+fi
+
+# 3. Source loader and check again
+log "Sourcing BLE.sh loader script"
+if [[ -f "$BLESH_LOADER" ]]; then
+    (
+        set +e
+        source "$BLESH_LOADER"
+        if type -t bleopt &>/dev/null; then
+            log_success "bleopt function available after sourcing loader"
+            bleopt --version 2>/dev/null || log_warn "bleopt version check failed after loader"
+        else
+            log_error "bleopt function still not available after sourcing loader"
+        fi
+    )
+else
+    log_error "Cannot source missing BLE.sh loader script"
+fi
+
+# 4. Check for BLE.sh environment variables
+log "Checking for BLE.sh-related environment variables"
+env | grep -i ble && log_success "BLE.sh environment variables found" || log_warn "No BLE.sh environment variables found"
+
+# 5. Check for conflicting Readline configurations
+log "Checking for conflicting Readline configurations in ~/.inputrc"
+if [[ -f "$HOME/.inputrc" ]]; then
+    grep -i readline "$HOME/.inputrc" && log_warn "Potential Readline conflicts found in ~/.inputrc" || log_success "No Readline conflicts in ~/.inputrc"
+else
+    log_success "No ~/.inputrc file found"
+fi
+
+# 6. Check for conflicting shell settings in ~/.bashrc
+log "Checking for conflicting shell settings in ~/.bashrc"
+grep -v '^#' "$HOME/.bashrc" | grep -i readline && log_warn "Potential Readline conflicts found in ~/.bashrc" || log_success "No Readline conflicts in ~/.bashrc"
+
+# 7. Check bash version for BLE.sh compatibility
+log "Checking bash version for BLE.sh compatibility"
+bash --version | head -n1
+
+# 8. Find all ble.sh instances on the system
+log "Finding all ble.sh instances in home directory"
+find ~ -name "ble.sh" 2>/dev/null
+
+# 9. Check BLE.sh uninstall cleanup
+log "Checking for BLE.sh uninstall cleanup paths"
+for path in "$HOME/.sentinel" "$HOME/.local/share/blesh" "$HOME/.cache/blesh" "$HOME/.blerc" "$HOME/.sentinel/blesh_loader.sh"; do
+    if [[ -e "$path" ]]; then
+        log_warn "Path still exists after uninstall: $path"
+    else
+        log_success "Path cleaned up: $path"
+    fi
+    # (This check is only meaningful after running uninstall)
+done
+
+# 10. Check BLE.sh integration with autocomplete
+log "Checking BLE.sh integration with autocomplete module"
+if type -t @autocomplete &>/dev/null; then
+    @autocomplete status || log_warn "@autocomplete status failed"
+else
+    log_warn "@autocomplete function not available"
+fi
+
 # Section: Cleanup
 log "\n=== Cleanup Temporary Files ==="
 rm -f /tmp/sentinel_test_*.sh /tmp/sentinel_test_output /tmp/test_blesh_loader.sh /tmp/blesh_test_load.*
