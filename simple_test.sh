@@ -29,6 +29,104 @@ ${BLUE}
 ╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝ 
 ${NC}${GREEN}Unified Comprehensive Test Script${NC}\nEOF
 
+# =====================
+# Common Fixes Section
+# =====================
+log "\n=== Common Fixes for Frequent Problems ==="
+
+FIXES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/contrib"
+INTEGRATION_FIX="$FIXES_DIR/integration/fix_blesh.sh"
+LINE_ENDINGS_FIX="$FIXES_DIR/fix_line_endings.sh"
+TTY_FIX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fix_tty.sh"
+
+fix_menu() {
+    echo -e "${YELLOW}Select a fix to apply:${NC}"
+    echo "  1) Fix BLE.sh integration"
+    echo "  2) Fix line endings in Bash files"
+    echo "  3) Reset TTY state"
+    echo "  4) Apply ALL fixes"
+    echo "  0) Continue without fixes"
+    echo -n "Enter your choice [0-4]: "
+    read -r fix_choice
+    case "$fix_choice" in
+        1)
+            run_fix_blesh
+            ;;
+        2)
+            run_fix_line_endings
+            ;;
+        3)
+            run_fix_tty
+            ;;
+        4)
+            run_fix_blesh
+            run_fix_line_endings
+            run_fix_tty
+            ;;
+        0)
+            log "No fixes applied."
+            ;;
+        *)
+            log_warn "Invalid choice. No fixes applied."
+            ;;
+    esac
+}
+
+run_fix_blesh() {
+    if [[ -x "$INTEGRATION_FIX" ]]; then
+        log "Running BLE.sh integration fix..."
+        bash "$INTEGRATION_FIX"
+        log_success "BLE.sh integration fix completed."
+    else
+        log_error "BLE.sh integration fix script not found or not executable: $INTEGRATION_FIX"
+    fi
+}
+
+run_fix_line_endings() {
+    if [[ -x "$LINE_ENDINGS_FIX" ]]; then
+        log "Running line endings fix..."
+        bash "$LINE_ENDINGS_FIX"
+        log_success "Line endings fix completed."
+    else
+        log_error "Line endings fix script not found or not executable: $LINE_ENDINGS_FIX"
+    fi
+}
+
+run_fix_tty() {
+    if [[ -x "$TTY_FIX" ]]; then
+        log "Running TTY state fix..."
+        bash "$TTY_FIX"
+        log_success "TTY state fix completed."
+    else
+        log_error "TTY fix script not found or not executable: $TTY_FIX"
+    fi
+}
+
+# --- Auto-detect common issues and suggest fixes ---
+BLESH_PATH="$HOME/.local/share/blesh/ble.sh"
+BLESH_LOADER="$HOME/.sentinel/blesh_loader.sh"
+
+NEED_BLESH_FIX=0
+if [[ ! -f "$BLESH_PATH" ]] || [[ ! -f "$BLESH_LOADER" ]]; then
+    log_warn "BLE.sh or its loader not found. BLE.sh integration fix is recommended."
+    NEED_BLESH_FIX=1
+fi
+
+NEED_LINE_FIX=0
+if find . -type f \( -name "*.sh" -o -name ".bash*" -o -name "bash_*" \) -exec grep -Il $'\r' {} + | grep -q .; then
+    log_warn "Some shell scripts have CRLF (Windows) line endings. Line endings fix is recommended."
+    NEED_LINE_FIX=1
+fi
+
+# TTY state is hard to auto-detect, always offer as a fix
+NEED_TTY_FIX=1
+
+if (( NEED_BLESH_FIX || NEED_LINE_FIX || NEED_TTY_FIX )); then
+    fix_menu
+else
+    log_success "No common problems detected that require fixes."
+fi
+
 # Logging
 log() { echo -e "${CYAN}[SENTINEL TEST]${NC} $*"; }
 log_success() { echo -e "${GREEN}✓${NC} $*"; }
@@ -55,8 +153,6 @@ fi
 
 # Section: BLE.sh Installation, Loader, and TTY Tests
 log "\n=== BLE.sh Installation, Loader, and TTY Tests ==="
-BLESH_PATH="$HOME/.local/share/blesh/ble.sh"
-LOADER_PATH="$HOME/.sentinel/blesh_loader.sh"
 
 # Source installer module if available
 INSTALLER_MODULE="$SENTINEL_DIR/bash_modules.d/blesh_installer.module"
@@ -78,8 +174,8 @@ if type -t blesh_installer_main &>/dev/null; then
 fi
 
 # Loader test
-if [[ -f "$LOADER_PATH" ]]; then
-    source "$LOADER_PATH" && log_success "BLE.sh loader sourced" || log_error "BLE.sh loader failed"
+if [[ -f "$BLESH_LOADER" ]]; then
+    source "$BLESH_LOADER" && log_success "BLE.sh loader sourced" || log_error "BLE.sh loader failed"
 else
     log_warn "BLE.sh loader script not found"
 fi

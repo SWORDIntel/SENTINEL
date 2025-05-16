@@ -2,510 +2,273 @@
 
 ![SENTINEL Logo](https://via.placeholder.com/800x200/0d1117/30a14e?text=SENTINEL)
 
-## Overview
+*Unified Documentation & Security Reference*
 
-SENTINEL (Secure ENhanced Terminal INtelligent Layer) is a comprehensive bash environment enhancement system designed for cybersecurity professionals, developers, and power users. This system provides a modular, secure, and feature-rich command-line experience with emphasis on security, productivity, and distributed computing capabilities.
+---
 
-**Version:** 2.1.0  
-**Author:** John  
-**Last Updated:** 2024-03-21  
+## Table of Contents
 
-## Key Features
+- [1. Overview](#1-overview)
+- [2. Key Features](#2-key-features)
+- [3. Installation & Quick Start](#3-installation--quick-start)
+    - [Prerequisites](#prerequisites)
+    - [Setup](#setup)
+    - [FZF & BLE.sh](#fzf--blesh)
+- [4. Configuration](#4-configuration)
+    - [Configuration Migration](#configuration-migration)
+- [5. Usage](#5-usage)
+    - [Chat Assistant](#chat-assistant)
+    - [Autocomplete](#autocomplete)
+    - [FZF](#fzf)
+    - [Context](#context)
+    - [Distributed Compilation](#distributed-compilation)
+    - [Secure File Operations](#secure-file-operations)
+- [6. Machine Learning Capabilities](#6-machine-learning-capabilities)
+    - [Command Learning & Suggestions](#command-learning--suggestions)
+    - [Interactive Chat Assistant](#interactive-chat-assistant)
+    - [OpenVINO Acceleration](#openvino-acceleration)
+    - [GitHub Star Analyzer](#github-star-analyzer)
+    - [Cybersecurity ML Analyzer](#cybersecurity-ml-analyzer)
+    - [Technical Implementation](#technical-implementation)
+    - [Customization](#customization)
+- [7. Security Considerations](#7-security-considerations)
+- [8. Troubleshooting](#8-troubleshooting)
+- [9. Extending & Contributing](#9-extending--contributing)
+- [10. References](#10-references)
+- [11. Changelog](#11-changelog)
 
-- **Modular Architecture** with smart dependency management
-- **Enhanced Security Features** including secure file deletion and runtime protection
-- **Distributed Compilation** support via Distcc and Ccache integration
-- **Automatic Security Cleanup** on logout to protect sensitive data
-- **Advanced Text Processing** utilities with smart formatting
-- **Specialized Security Tools** for cybersecurity workflows (e.g., hashcat integration)
-- **Intelligent Prompt** with git status, exit codes, and job count indicators
-- **Path Sanitization** to prevent directory traversal attacks
-- **Enhanced Bash Completion** for common tools and custom commands
+---
 
-## Quick Start
+## 1. Overview
+
+SENTINEL (Secure ENhanced Terminal INtelligent Layer) is a comprehensive, modular, security-focused bash environment enhancement system for cybersecurity professionals, developers, and power users. It provides:
+
+- AI-powered conversational assistant
+- Modular autocomplete and command prediction
+- Secure snippet and context management
+- Fuzzy finding and BLE.sh integration
+- Centralized configuration and logging
+- Distributed compilation and advanced security tools
+
+All modules are designed for robust error handling, security, and privacy, with a focus on terminal-based workflows and Linux-first compatibility.
+
+---
+
+## 2. Key Features
+
+- **Modular Architecture**: Pluggable modules for logging, BLE.sh, HMAC security, snippets, fuzzy correction, command chains, project suggestions, and more.
+- **Conversational Shell Assistant**: AI-powered, context-aware chat for shell help and command suggestions.
+- **Centralized Configuration**: Single config file for all modules, with validation and self-healing.
+- **Enhanced Machine Learning**: Predictive command chains, task detection, natural language understanding, and local LLM integration.
+- **Context Management**: Unified context layer for intelligent, context-aware suggestions.
+- **FZF Integration**: Secure, interactive fuzzy finding with BLE.sh and SENTINEL enhancements.
+- **Distributed Compilation**: Distcc and Ccache integration for fast, distributed builds.
+- **Advanced Security**: HMAC verification, cryptographic snippet storage, secure file operations, and strict permission controls.
+- **Windows Compatibility**: Automated fixes for cross-platform use.
+
+---
+
+## 3. Installation & Quick Start
+
+### Prerequisites
+
+- Bash 4.0+ (Linux-first)
+- Python 3.7+
+- `fzf`, `ble.sh`, `openssl`
+- Python: `pip install markovify numpy [llama-cpp-python]`
+
+### Setup
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/sentinel.git
-
-# Navigate to directory
 cd sentinel
+
+# Activate Python venv
+source .venv/bin/activate
+
+# Install Python dependencies
+pip install markovify numpy
 
 # Run installation script
 ./install.sh
 
+# Enable modules in SENTINEL
+echo "source bash_modules.d/sentchat/init.sh" >> bash_modules
+echo "sentchat/sentinel_context" >> ~/.bash_modules
+echo "sentchat/sentinel_ml_enhanced" >> ~/.bash_modules
+
 # Source the new configuration
 source ~/.bashrc
-
-# View available commands
-sentinel_help
 ```
 
-## Core Components
+### FZF & BLE.sh
 
-### Distributed Compilation (New!)
+```bash
+sudo apt install fzf
+# or see fzf.md for other OS instructions
 
-SENTINEL now includes integrated support for distributed compilation using Distcc and Ccache:
+# Ensure BLE.sh is installed and sourced
+source ~/.local/share/blesh/ble.sh
+```
+
+---
+
+## 4. Configuration
+
+All settings are managed in `~/.sentinel/sentinel_config.sh`.
+
+Edit with:
+```bash
+sentinel_config
+```
+Reload with:
+```bash
+sentinel_config_reload
+```
+
+**Key options:**
+- Enable/disable modules (e.g., `SENTINEL_FZF_ENABLED=1`)
+- Logging level, retention, and color
+- Autocomplete, fuzzy, chain, snippet, and project suggestion toggles
+
+### Configuration Migration
+
+If upgrading from a previous version:
+```bash
+bash ~/Documents/GitHub/SENTINEL/bash_modules.d/migrate_config.sh
+```
+
+---
+
+## 5. Usage
+
+### Chat Assistant
+
+```bash
+sentinel chat
+```
+- `/help`, `/exit`, `/clear`, `/history`, `/context`, `/execute <cmd>`
+
+### Autocomplete
+
+- `@autocomplete` - Help
+- `@autocomplete status` - System status
+- `@autocomplete fix` - Fix issues
+- `@autocomplete reload` - Reload BLE.sh
+
+### FZF
+
+- `Ctrl+R` - History search
+- `Ctrl+T` - File search
+- `Alt+C` - Directory change
+
+### Context
+
+- `sentinel_context` - Show context
+- `sentinel_show_context` - Detailed info
+- `sentinel_update_context` - Manual update
+
+### Distributed Compilation
 
 ```bash
 # View distcc status and configuration
 distcc-status
-
-# Configure compilation hosts
+# Configure hosts
 distcc_set_hosts localhost 192.168.1.100 192.168.1.101
-
-# Set up build environment
-automake-distcc    # For GNU Automake projects
-cmake-distcc       # For CMake projects
-
-# Monitor compilation
-distcc-monitor text    # Text-based monitoring
-distcc-monitor gui     # GUI monitoring (if available)
+# Build environment presets
+automake-distcc
+cmake-distcc
 ```
-
-Key features:
-- Automatic Ccache integration for faster rebuilds
-- Smart host detection and configuration
-- Build environment presets for common build systems
-- Integrated monitoring tools
-- Configurable compilation slots per host
 
 ### Secure File Operations
 
-SENTINEL replaces standard file operations with secure alternatives:
-
 ```bash
-# Secure file deletion (enabled by default)
 rm sensitive_file.txt             # Multi-pass secure deletion
 secure_rm_toggle                  # Toggle secure deletion mode
-
-# Secure directory operations
-secure_mkdir ~/secure_project     # Create directory with secure permissions
-secure_cp source.txt dest.txt     # Copy with permission preservation
-
-# View secure operation status
-secure-status
+secure_mkdir ~/secure_project     # Secure directory creation
+secure_cp source.txt dest.txt     # Secure copy
 ```
-
-### Automated Security
-
-Comprehensive security automation:
-
-```bash
-# Configure secure logout behavior
-secure-logout-config
-
-# Add custom cleanup directories
-secure-logout-add-dir ~/projects/sensitive
-
-# Manual security cleanup
-secure_clean all                  # Clean everything
-secure_clean browser              # Clean browser data only
-secure_clean workspace            # Clean workspace only
-```
-
-### Advanced Hash Operations
-
-Enhanced cryptographic tools:
-
-```bash
-# Automatic hash detection
-hashdetect '$2a$10$...'
-
-# Smart hash cracking
-hashcrack_smart hash.txt         # Auto-detects hash type and strategy
-hashcrack_targeted hash.txt      # Optimized for specific hash types
-hashcrack_distributed hash.txt   # Uses distributed resources
-
-# Resource management
-wordlists --update              # Update wordlist collection
-rules --stats                   # View rule effectiveness stats
-```
-
-## Module System
-
-SENTINEL's modular architecture allows easy extension:
-
-### Core Modules
-
-- **security**: Enhanced security tools and monitoring
-- **distcc**: Distributed compilation management (New!)
-- **hashcat**: Advanced password cracking and analysis
-- **secure_logout**: Automated security cleanup
-- **workspace**: Project space management
-- **network**: Network security tools
-
-### Module Management
-
-```bash
-# List and manage modules
-module_list                    # Show all modules
-module_enable distcc          # Enable distributed compilation
-module_disable network        # Disable network tools
-module_info security         # View module details
-
-# Create custom modules
-module_create custom_tools    # Create new module
-module_edit custom_tools      # Edit existing module
-```
-
-## Security Features
-
-### Runtime Protection
-
-- **PATH Sanitization**: Prevents directory traversal attacks
-- **Environment Hardening**: Secure environment variable handling
-- **Memory Protection**: Automatic memory wiping for sensitive data
-- **Process Isolation**: Sandboxed execution for untrusted code
-
-### Secure Development
-
-- **Build Environment**: Isolated compilation spaces
-- **Dependency Scanning**: Automatic vulnerability checking
-- **Code Analysis**: Integration with static analysis tools
-- **Secure Defaults**: Hardened configuration templates
-
-## Configuration
-
-SENTINEL now features a centralized configuration system that makes it easy to manage all settings in one place.
-
-### Configuration File
-
-The main configuration file is located at:
-```
-~/.sentinel/sentinel_config.sh
-```
-
-This file contains all configuration options organized in sections:
-- Core system configuration
-- Security configuration
-- Module enable/disable configuration
-- Autocomplete system configuration
-- Custom user configuration
-
-### Managing Configuration
-
-You can use the following commands to manage your configuration:
-
-```bash
-# Open the configuration editor
-sentinel-config
-
-# Reload configuration after changes
-sentinel_config_reload
-
-# Get a specific configuration value
-sentinel_get_config SENTINEL_DEBUG_MODULES
-
-# Set a specific configuration value
-sentinel_set_config SENTINEL_DEBUG_MODULES 1
-```
-
-### Configuration Migration
-
-If you're upgrading from a previous version of SENTINEL, you can use the migration tool to move your existing settings:
-
-```bash
-bash ~/Documents/GitHub/SENTINEL/bash_modules.d/migrate_config.sh
-```
-
-This tool will:
-1. Extract settings from bashrc.postcustom
-2. Apply them to the centralized configuration
-3. Update your bashrc.postcustom to use the centralized config
-
-### Configuration Documentation
-
-For comprehensive documentation of all available configuration options, see:
-```
-~/.sentinel/README_CONFIG.md
-```
-
-## Performance Optimization
-
-SENTINEL implements extensive lazy loading mechanisms to significantly reduce terminal startup time.
-
-### Lazy Loading System
-
-The lazy loading system defers loading heavy components until they're actually needed:
-
-```bash
-# Enable/disable lazy loading (default: enabled)
-export U_LAZY_LOAD=1    # Enable lazy loading 
-export U_LAZY_LOAD=0    # Disable lazy loading (load everything at startup)
-```
-
-### Development Environment Lazy Loading
-
-The following development environments are lazy loaded:
-
-- **Pyenv** (Python version manager)
-  - Only loads when `pyenv` command is used
-  - Defers heavy "pyenv init" and "pyenv virtualenv-init" operations
-
-- **NVM** (Node.js version manager)
-  - Only loads when `nvm`, `node`, `npm`, or `npx` commands are used
-  - Prevents loading of NVM scripts and bash completion at startup
-
-- **RVM** (Ruby version manager)
-  - Only loads when `rvm`, `ruby`, `gem`, or `bundle` commands are used
-  - Defers PATH modifications and script sourcing
-
-- **Cargo** (Rust tools)
-  - Only loads when `cargo`, `rustc`, or `rustup` commands are used
-  - Prevents loading of Cargo environment at startup
-
-### Bash Completion Lazy Loading
-
-Completion scripts are only loaded on first tab press:
-- Intercepts first tab press to load completion system
-- Loads completion scripts only when needed
-- Simulates completion environment after loading
-- Reattaches to ongoing completion request
-
-### Prompt Optimization with Caching
-
-Improved prompt rendering with intelligent caching:
-- Caches SSH/sudo connection status indicators for 30 seconds
-- Only updates directory-specific information when directory changes
-- Separate caching for git status information with 2-5 second timeouts
-
-### Extending Lazy Loading
-
-Add lazy loading for additional tools using the generic framework:
-
-```bash
-# In your bashrc.postcustom file:
-
-# Define a loader function
-function __load_custom_tool() {
-    source /path/to/custom/tool/setup.sh
-}
-
-# Create lazy loading wrapper
-lazy_load custom_tool __load_custom_tool
-```
-
-Pre-defined loaders are available for common tools:
-```bash
-lazy_load go __load_go
-lazy_load docker __load_docker
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Module Loading Failures**
-   ```bash
-   # Check module permissions
-   sentinel-check permissions
-
-   # Verify module dependencies
-   sentinel-check dependencies
-
-   # Test module configuration
-   sentinel-test module_name
-   ```
-
-2. **Performance Issues**
-   ```bash
-   # Profile startup time
-   sentinel-profile startup
-
-   # Check resource usage
-   sentinel-status resources
-
-   # Optimize configuration
-   sentinel-optimize
-   ```
-
-### Logging and Debugging
-
-```bash
-# Enable debug logging
-export SENTINEL_DEBUG=1
-
-# View logs
-sentinel-logs view
-
-# Export diagnostic information
-sentinel-diagnostic export
-```
-
-## Credits
-
-SENTINEL is based on the original bashrc work by Jason Thistlethwaite (2013), enhanced by Durandal, and significantly modernized for security and productivity by John (Epimetheus@swordintelligence.airforce).
-
-*Note: Not affiliated with the USAF*
-
-## License
-
-Licensed under GNU GPL v2 or later. See LICENSE file for details.
 
 ---
 
-For more information, visit the [SENTINEL Documentation](https://docs.sentinel-framework.org)
+## 6. Machine Learning Capabilities
 
-## Conversational Assistant
+### Command Learning & Suggestions
+- Markov chain models analyze your command history for contextual suggestions.
+- All data stays local; privacy-focused.
+- Example: `sentinel_ml_stats`, `sentinel_ml_train`
 
-SENTINEL now includes a powerful conversational assistant that helps with shell commands, system administration tasks, and general Linux knowledge. This feature leverages local LLMs with the llama-cpp-python library.
+### Interactive Chat Assistant
+- Local LLMs (llama-cpp-python) for context-aware shell Q&A.
+- Example: `sentinel_chat`, `/help`, `/context`, `/execute <cmd>`
 
-### Features
-
-- Interactive chat interface with context-aware responses
-- Understands your current directory, recent commands, and environment
-- Securely executes commands with HMAC verification
-- Local execution - your data stays on your machine
-- Fully customizable with different models
-
-### Usage
-
-```bash
-# Start interactive chat session
-sentinel_chat
-
-# Ask a direct question
-sentinel_chat "How do I grep JSON logs for errors?"
-
-# Install dependencies if needed
-sentinel_chat_install_deps
-
-# Check status of the chat system
-sentinel_chat_status
-```
-
-### Available Commands in Chat Mode
-
-- `/help` - Show available commands
-- `/exit` or `/quit` - Exit the chat
-- `/clear` - Clear the current conversation
-- `/save` - Save the current conversation
-- `/context` - Show current shell context
-- `/execute <command>` - Securely execute a shell command
-
-## Windows Compatibility Features
-
-SENTINEL now includes comprehensive Windows compatibility features that make it easier to work with bash scripts in a Windows environment.
-
-### Automated Windows Fixes
-
-A suite of PowerShell scripts has been added to automatically fix common issues that arise when using bash scripts on Windows:
-
-- **Line Ending Conversion**: Automatically converts Windows-style CRLF line endings to Unix-style LF
-- **Shebang Correction**: Ensures proper shebang lines for cross-platform compatibility
-- **Function Syntax Fixing**: Corrects bash function syntax to work properly in both environments
-- **File Permission Handling**: Attempts to set executable permissions where possible
-
-To use these fixes:
-
-1. Navigate to the `Windows Code Fixes` directory
-2. Run `.\run_fixes.ps1` in PowerShell
-3. The script will automatically detect and fix all bash-related files
-
-For more details, see the [Windows Code Fixes README](Windows%20Code%20Fixes/README.md).
-
-## Machine Learning Features
-
-SENTINEL now incorporates machine learning capabilities to enhance your shell experience:
-
-### Conversational Assistant
-
-The `sentinel chat` command provides an LLM-backed REPL for context-aware answers to shell queries:
-
-- Ask natural language questions about shell commands
-- Get contextual help based on your current environment
-- Receive command suggestions with explanations
-
-### Command Auto-Learning
-
-SENTINEL uses a Markov model to learn from your command history and provide intelligent suggestions:
-
-- Automatically learns from commands you use frequently
-- Suggests relevant commands based on your usage patterns
-- Adapts to your specific workflow over time
-
-To access this feature, use the `sentinel_suggest` command followed by the beginning of a command you're trying to remember.
+### OpenVINO Acceleration
+- Uses Intel OpenVINO for hardware-accelerated inference if available.
 
 ### GitHub Star Analyzer
+- Downloads and analyzes your starred GitHub repos for tool suggestions.
+- Example: `sgtui`, `sentinel_gitstar_fetch`, `sentinel_gitstar_analyze`
 
-* Automatically download READMEs from your GitHub starred repositories
-* Use machine learning to categorize repositories by purpose and functionality
-* Intelligent search and suggestions for finding the right tool for specific tasks
-* LLM-powered analysis for detailed understanding of repository features
+### Cybersecurity ML Analyzer
+- ML-powered vulnerability detection, pattern-based scanning, LLM-based code review.
+- Example: `securitycheck`, `cyberscan`, `cyberupdate`, `cybersecurity --list-tools`
 
-### Cybersecurity ML Analyzer (New!)
+#### Technical Implementation
+- Markovify for command learning
+- Local LLMs for chat and code review
+- Random Forest, Isolation Forest, and deep learning for security
+- TF-IDF, K-means for repo analysis
 
-SENTINEL now includes an advanced cybersecurity machine learning module that helps identify security vulnerabilities in code:
+#### Customization
+- Edit `~/.sentinel/config.json`, `chat_config.json`, `cybersec/config.json`, `gitstar/config.json` for advanced settings.
 
-* **ML-powered vulnerability detection** that identifies potential security issues
-* **Multi-language support** covering Python, JavaScript, PHP, Java, C/C++, and more
-* **LLM-based code analysis** for advanced security review capabilities
-* **Up-to-date vulnerability database** synchronized with NVD and other sources
-* **Clustered findings** to identify patterns across security issues
-* **Mitigation recommendations** to help fix identified vulnerabilities
+---
 
-```bash
-# Quick security scan of current directory
-securitycheck
+## 7. Security Considerations
 
-# Full scan with options
-cyberscan ~/my-project --recursive --include=py,js,php
+- **HMAC Verification**: All critical data (snippets, tokens) are HMAC-signed.
+- **Permissions**: All scripts and config files should be `chmod 600` or stricter.
+- **Input Validation**: All user input is validated; sensitive data is filtered.
+- **Local Processing**: No data leaves your machine by default.
+- **PATH Sanitization**: Prevents directory traversal attacks.
+- **References**: [CVE-2021-3156](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-3156), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)
 
-# Update vulnerability database
-cyberupdate
+---
 
-# Train custom security models
-cybertrain
+## 8. Troubleshooting
 
-# Generate synthetic security training data
-cyberdata --samples 200
-```
+- `@autocomplete status` or `sentinel_config_reload` for diagnostics
+- Check logs: `sentinel_show_logs "component" 50`
+- Ensure all dependencies are installed and sourced
+- Reset context: `rm -rf ~/.sentinel/context/*.json`
+- Run `./fix_autocomplete.sh` and `./test_autocomplete.sh` for autocomplete issues
+- For Windows, use PowerShell scripts in `Windows Code Fixes` directory
 
-For detailed documentation, see [Cybersecurity ML Documentation](contrib/README_CYBERSEC_ML.md) and [Machine Learning Capabilities](MACHINE_LEARNING.md).
+---
 
-### Installation of ML Features
+## 9. Extending & Contributing
 
-To install the ML components:
+- Add new modules in `bash_modules.d/suggestions/`
+- Follow module template and security guidelines
+- Submit improvements via Pull Request
 
-```bash
-# Activate your virtual environment (if using one)
-source .venv/bin/activate
+---
 
-# Install required dependencies
-pip install markovify numpy
+## 10. References
 
-# Enable the modules
-echo "source ~/.sentinel/blesh_loader.sh" >> ~/.bashrc
-# Load bash_modules to access all functionality
-source ~/Documents/GitHub/SENTINEL/bash_modules
+- [fzf](https://github.com/junegunn/fzf)
+- [ble.sh](https://github.com/akinomyoga/ble.sh)
+- [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)
+- [CVE Database](https://cve.mitre.org/)
+- [SENTINEL Documentation](https://docs.sentinel-framework.org)
 
-# Install cybersecurity ML dependencies
-cyberinstall
-```
+---
 
-### Configuration Migration
+## 11. Changelog
 
-If you're upgrading from a previous version of SENTINEL, you can use the migration tool to move your existing settings:
+*(Add versioned changes here)*
 
-```bash
-bash ~/Documents/GitHub/SENTINEL/bash_modules.d/migrate_config.sh
-```
+---
 
-This tool will:
-1. Extract settings from bashrc.postcustom
-2. Apply them to the centralized configuration
-3. Update your bashrc.postcustom to use the centralized config
-
-## Key Components
-
-- **bash_aliases**: Common command shortcuts and aliases
-- **bash_functions**: Useful shell functions for everyday tasks
-- **bash_modules**: Modular components that can be enabled/disabled
-- **Windows Code Fixes**: Tools to ensure cross-platform compatibility
-
-For detailed documentation on each component, see the individual README files in each directory.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+**Security and technical best practices are enforced throughout. For detailed module-specific usage, see the source code and comments.**

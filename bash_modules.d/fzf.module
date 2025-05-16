@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# SENTINEL - FZF Integration Module
+# Version: 1.0.0
+# Description: Integrates fzf (Fuzzy Finder) with SENTINEL and BLE.sh for enhanced fuzzy finding and completion
+# Dependencies: fzf, ble.sh
+# Maintainer: SENTINEL Team
+
+# --- Module Enable/Disable Guard ---
+if [[ "${SENTINEL_FZF_ENABLED:-0}" != "1" ]]; then
+    echo "SENTINEL FZF module is disabled."
+    echo "To enable, add the following line to your ~/.bashrc.postcustom file:"
+    echo "  export SENTINEL_FZF_ENABLED=1"
+    return 0
+fi
+
+# --- Security: Ensure only user can read/modify this file ---
+chmod 600 "${BASH_SOURCE[0]}" 2>/dev/null || true
+
+# --- Check for fzf ---
+if ! command -v fzf &>/dev/null; then
+    echo "Warning: fzf not found. FZF integration disabled."
+    return 1
+fi
+
+# --- Check for BLE.sh ---
+BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
+if ! type -t bleopt &>/dev/null && [[ -f "$BLESH_MAIN" ]]; then
+    source "$BLESH_MAIN" --attach=overhead
+fi
+if ! type -t bleopt &>/dev/null; then
+    echo "Warning: BLE.sh not loaded. FZF integration will be limited."
+fi
+
+# --- FZF Integration Scripts ---
+FZF_INIT=~/.local/share/blesh/contrib/integration/fzf-initialize.bash
+if [[ -f "$FZF_INIT" ]]; then
+    source "$FZF_INIT"
+    echo "FZF integration loaded via $FZF_INIT"
+else
+    echo "Warning: FZF integration script not found at $FZF_INIT"
+fi
+
+# --- Environment Customization (optional) ---
+export FZF_DEFAULT_COMMAND='fd --type f || find . -type f'
+export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+
+# --- Logging ---
+logger -t SENTINEL "[INFO] FZF module loaded (fzf: $(fzf --version 2>/dev/null || echo 'unknown'), ble.sh: $(type -t bleopt &>/dev/null && bleopt --version 2>/dev/null || echo 'not loaded'))"
+
+# --- Security Note ---
+# Ensure this module and all integration scripts are not world-writable.
+
+# --- End of fzf.module --- 

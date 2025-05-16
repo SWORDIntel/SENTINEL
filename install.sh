@@ -173,6 +173,19 @@ if ! is_done "CORE_MODULES_INSTALLED"; then
   mark_done "CORE_MODULES_INSTALLED"
 fi
 
+# --------- 9a. Enable FZF module if fzf is present ---------
+FZF_BIN="$(command -v fzf 2>/dev/null || true)"
+POSTCUSTOM_FILE="${SENTINEL_HOME}/bashrc.postcustom"
+if [[ -n "$FZF_BIN" ]]; then
+  step "fzf detected at $FZF_BIN; enabling SENTINEL FZF module in bashrc.postcustom"
+  if ! grep -q '^export SENTINEL_FZF_ENABLED=1' "$POSTCUSTOM_FILE"; then
+    echo 'export SENTINEL_FZF_ENABLED=1' >> "$POSTCUSTOM_FILE"
+    ok "Enabled SENTINEL FZF module in $POSTCUSTOM_FILE"
+  fi
+else
+  warn "fzf not found; SENTINEL FZF module not enabled by default. Install fzf and set export SENTINEL_FZF_ENABLED=1 in $POSTCUSTOM_FILE to enable."
+fi
+
 # --------- 10. Final summary --------------------------------------------------
 echo
 ok "Installation completed successfully!"

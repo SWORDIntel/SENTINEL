@@ -191,3 +191,9 @@ export U_LAZY_LOAD=1
 if [[ -f "${HOME}/.sentinel/blesh_loader.sh" ]]; then
     source "${HOME}/.sentinel/blesh_loader.sh"
 fi
+
+# Enable or disable SENTINEL FZF integration module
+# To enable fuzzy finding with fzf and BLE.sh, uncomment the next line:
+# export SENTINEL_FZF_ENABLED=1
+# To disable, set to 0 or comment out:
+# export SENTINEL_FZF_ENABLED=0
