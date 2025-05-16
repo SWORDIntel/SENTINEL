@@ -63,6 +63,30 @@ if ! is_done "DIRS_CREATED"; then
   ok "Directory tree ready"
 fi
 
+# --------- 4a. Python venv and dependencies -----------------------------------
+if ! is_done "PYTHON_VENV_READY"; then
+  step "Setting up Python virtual environment and dependencies"
+  VENV_DIR="${SENTINEL_HOME}/venv"
+  if [[ ! -d "$VENV_DIR" ]]; then
+    python3 -m venv "$VENV_DIR"
+    ok "Virtual environment created at $VENV_DIR"
+  else
+    ok "Virtual environment already exists at $VENV_DIR"
+  fi
+  # Activate venv for this shell
+  # shellcheck disable=SC1090
+  source "$VENV_DIR/bin/activate"
+  step "Installing required Python packages in venv"
+  pip install --upgrade pip
+  pip install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify llama-cpp-python rich
+  if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
+    pip install tensorflow
+    ok "Tensorflow installed (advanced ML features enabled)"
+  fi
+  mark_done "PYTHON_VENV_READY"
+  ok "Python dependencies installed in venv"
+fi
+
 # --------- 5. Install / update BLE.sh ---------------------------------------
 install_blesh() {
   step "Installing BLE.sh to ${BLESH_DIR}"
@@ -184,6 +208,86 @@ if [[ -n "$FZF_BIN" ]]; then
   fi
 else
   warn "fzf not found; SENTINEL FZF module not enabled by default. Install fzf and set export SENTINEL_FZF_ENABLED=1 in $POSTCUSTOM_FILE to enable."
+fi
+
+# --------- 9b. Automated Module Enablement & Audit ---------
+if ! is_done "MODULE_AUDIT_DONE"; then
+  step "Auditing SENTINEL modules for enablement, dependencies, and security"
+  MODULE_AUDIT_LOG="${LOG_DIR}/module_audit.log"
+  : > "$MODULE_AUDIT_LOG"
+
+  MODULE_DIRS=("${SENTINEL_HOME}/bash_modules.d")
+  for dir in "${SENTINEL_HOME}/bash_modules"; do
+    [[ -d "$dir" ]] && MODULE_DIRS+=("$dir")
+  done
+
+  for MODDIR in "${MODULE_DIRS[@]}"; do
+    find "$MODDIR" -type f \( -name '*.module' -o -name '*.sh' \) | while read -r modfile; do
+      modname=$(basename "$modfile")
+      # Extract enablement variable (e.g., SENTINEL_ML_ENABLED)
+      enable_var=$(grep -Eo '\$\{SENTINEL_[A-Z0-9_]+_ENABLED' "$modfile" | head -n1 | sed 's/[${}]//g')
+      # Extract Requires line
+      requires=$(grep -E '^# Requires:' "$modfile" | cut -d: -f2- | xargs)
+      # Check permissions
+      perms=$(stat -c '%a' "$modfile")
+      owner=$(stat -c '%U' "$modfile")
+      group=$(stat -c '%G' "$modfile")
+      # Check if enabled in bashrc.postcustom
+      enabled=0
+      if [[ -n "$enable_var" ]]; then
+        if grep -q "^export $enable_var=1" "${SENTINEL_HOME}/bashrc.postcustom" 2>/dev/null; then
+          enabled=1
+        fi
+      fi
+      # Log module info
+      echo "Module: $modname" >> "$MODULE_AUDIT_LOG"
+      echo "  Enablement variable: ${enable_var:-N/A}" >> "$MODULE_AUDIT_LOG"
+      echo "  Enabled in bashrc.postcustom: $enabled" >> "$MODULE_AUDIT_LOG"
+      echo "  Requires: ${requires:-N/A}" >> "$MODULE_AUDIT_LOG"
+      echo "  Permissions: $perms (owner: $owner, group: $group)" >> "$MODULE_AUDIT_LOG"
+      # Security: warn if not 600
+      if [[ "$perms" != "600" ]]; then
+        warn "Module $modname permissions are $perms (should be 600)"
+        echo "  [WARN] Permissions not 600" >> "$MODULE_AUDIT_LOG"
+      fi
+      # Security: warn if world/group writable
+      if [[ "$perms" =~ [27][27][27] ]]; then
+        warn "Module $modname is world/group writable!"
+        echo "  [WARN] World/group writable" >> "$MODULE_AUDIT_LOG"
+      fi
+      # Audit enablement
+      if [[ -n "$enable_var" && $enabled -eq 0 ]]; then
+        warn "Module $modname present but not enabled in bashrc.postcustom ($enable_var)"
+        echo "  [WARN] Not enabled in bashrc.postcustom" >> "$MODULE_AUDIT_LOG"
+      fi
+      # Audit dependencies (only for Python packages/commands)
+      if [[ -n "$requires" ]]; then
+        for dep in $requires; do
+          if [[ "$dep" =~ ^python ]]; then
+            pkg=${dep#python}
+            pkg=${pkg#,}
+            if ! "${SENTINEL_HOME}/venv/bin/python3" -c "import ${pkg}" 2>/dev/null; then
+              warn "Module $modname requires Python package $pkg but it is not installed in venv"
+              echo "  [WARN] Missing Python package: $pkg" >> "$MODULE_AUDIT_LOG"
+            fi
+          else
+            if ! command -v "$dep" &>/dev/null; then
+              warn "Module $modname requires command $dep but it is not installed"
+              echo "  [WARN] Missing command: $dep" >> "$MODULE_AUDIT_LOG"
+            fi
+          fi
+        done
+      fi
+      # Security: scan for suspicious patterns
+      if grep -Eq 'curl.*\|.*sh|wget.*\|.*sh|>(bash|sh)|eval.*\$\(|base64.*decode' "$modfile"; then
+        warn "Module $modname contains potentially unsafe patterns (curl|sh, eval, etc)"
+        echo "  [WARN] Suspicious code patterns" >> "$MODULE_AUDIT_LOG"
+      fi
+      echo >> "$MODULE_AUDIT_LOG"
+    done
+  done
+  ok "Module audit complete. See $MODULE_AUDIT_LOG for details."
+  mark_done "MODULE_AUDIT_DONE"
 fi
 
 # --------- 10. Final summary --------------------------------------------------

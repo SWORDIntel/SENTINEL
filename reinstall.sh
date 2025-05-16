@@ -6,6 +6,21 @@
 
 set -euo pipefail
 
+# --- Strict Path Security: Avoid GitHub Project Path ---
+# All operations must use current working directory or user home.
+# Never reference or use the GitHub project path directly.
+# Security: Enforced to prevent CWE-22, CWE-73, CWE-426
+# https://cwe.mitre.org/data/definitions/22.html
+# https://cwe.mitre.org/data/definitions/73.html
+# https://cwe.mitre.org/data/definitions/426.html
+
+# --- Validate Working Directory ---
+PROJECT_ROOT="$(pwd)"
+if [[ "$PROJECT_ROOT" =~ github|GitHub|/Documents/GitHub/ ]]; then
+    echo "[ERROR] Refusing to run from a GitHub project path ($PROJECT_ROOT). Move to a safe working directory."
+    exit 1
+fi
+
 # --- Logging Setup ---
 LOG_DIR="$HOME/.sentinel/logs"
 LOG_FILE="$LOG_DIR/reinstall-$(date +%Y%m%d-%H%M%S).log"
