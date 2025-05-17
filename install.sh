@@ -16,6 +16,9 @@
 
 set -euo pipefail
 
+# Ensure SENTINEL_MODULE_DIR is always set (safe with set -u)
+: "${SENTINEL_MODULE_DIR:=${HOME}/.bash.modules.d}"
+
 # --------- 1. Globals & helpers ---------------------------------------------
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 SENTINEL_HOME="${HOME}/.sentinel"
@@ -161,13 +164,12 @@ fi
 # --------- 9. Install core modules  (bash_modules or bash.modules.d) ---------
 if ! is_done "CORE_MODULES_INSTALLED"; then
   MODULE_SRC="${PROJECT_ROOT}/bash_modules.d"
-  MODULE_DST="${HOME}/bash.modules.d"
+  MODULE_DST="${SENTINEL_MODULE_DIR}"
 
   if [[ -d "$MODULE_SRC" ]]; then
     step "Copying core bash modules from '${MODULE_SRC}/'"
     rsync -a --delete "${MODULE_SRC}/" "${MODULE_DST}/"
     ok "Modules synced → ${MODULE_DST}"
-
     # Automatically run install-autocomplete.sh if present
     AUTOCOMPLETE_INSTALLER="${MODULE_SRC}/install-autocomplete.sh"
     if [[ -f "$AUTOCOMPLETE_INSTALLER" ]]; then
@@ -204,7 +206,7 @@ if ! is_done "MODULE_AUDIT_DONE"; then
   : > "$MODULE_AUDIT_LOG"
 
   # Only check these locations for modules (per security policy)
-  MODULE_DIRS=("${HOME}/bash.modules.d")
+  MODULE_DIRS=("${SENTINEL_MODULE_DIR}")
 
   for MODDIR in "${MODULE_DIRS[@]}"; do
     [[ -d "$MODDIR" ]] || continue

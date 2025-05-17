@@ -6,14 +6,23 @@
 
 set -euo pipefail
 
+# Ensure SENTINEL_MODULE_DIR is always set (safe with set -u)
+: "${SENTINEL_MODULE_DIR:=${HOME}/.bash.modules.d}"
+
 # Color codes
 c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m'; c_blue=$'\033[1;34m'; c_reset=$'\033[0m'
 
 SENTINEL_HOME="${HOME}/.sentinel"
 POSTCUSTOM="${SENTINEL_HOME}/bashrc.postcustom"
-MODULE_DIRS=("${HOME}/bash.modules.d")
+# Use SENTINEL_MODULE_DIR for module directory
+MODULE_DIRS=("${SENTINEL_MODULE_DIR}")
 LOG_FILE="${SENTINEL_HOME}/logs/postinstall_check.log"
 : > "$LOG_FILE"
+
+# Warn if no module directories found
+if [[ ! -d "${MODULE_DIRS[0]}" ]]; then
+    echo -e "${c_red}[ERROR] Module directory not found: ${MODULE_DIRS[0]}${c_reset}" | tee -a "$LOG_FILE"
+fi
 
 summary() {
     echo -e "$1" | tee -a "$LOG_FILE"
