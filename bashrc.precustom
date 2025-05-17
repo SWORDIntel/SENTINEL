@@ -53,7 +53,7 @@ export VENV_AUTO=1                # Enable Python venv auto-activation (function
 export SENTINEL_SECURE_RM=1       # Use secure rm (functions)
 
 # Quiet module loading
-export SENTINEL_QUIET_MODULES=1   # Suppress module load output (modules)
+export SENTINEL_QUIET_MODULES=0   # Suppress module load output (modules)
 
 # SENTINEL Secure Bash History
 export SENTINEL_SECURE_BASH_HISTORY=0      # Secure bash history (logout.module)
@@ -64,7 +64,7 @@ export SENTINEL_SECURE_RECENT=0            # Clean recent files (logout.module)
 export SENTINEL_SECURE_VIM_UNDO=1          # Clean vim undo (logout.module)
 export SENTINEL_SECURE_CLIPBOARD=0        # Clean clipboard (logout.module)
 export SENTINEL_SECURE_CLEAR_SCREEN=0      # Clear screen on logout (logout.module)
-
+export SENTINEL_AUTOCOMPLETE_ENABLED=1
 # Lazy load (for performance)
 export U_LAZY_LOAD=1               # Enable lazy loading (core)
 

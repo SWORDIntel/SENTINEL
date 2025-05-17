@@ -1,3 +1,4 @@
+@ -1,404 +0,0 @@
 #!/usr/bin/env python3
 # sentinel_chat.py: Context-aware shell assistant powered by local LLMs
 # Requires: pip install llama-cpp-python rich readline

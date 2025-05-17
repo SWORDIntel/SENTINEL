@@ -22,20 +22,14 @@ POSTCUSTOM="${SENTINEL_DIR}/bashrc.postcustom"
 BASH_MODULES="${SENTINEL_DIR}/bash_modules"
 MODULES_DIR="${SENTINEL_DIR}/bash_modules.d"
 SENTINEL_CONFIG_DIR="${HOME}/.sentinel"
-CONFIG_FILE="${SENTINEL_CONFIG_DIR}/sentinel_config.sh"
 BACKUP_DIR="${SENTINEL_CONFIG_DIR}/backups/$(date +%Y%m%d%H%M%S)"
 BASH_LOGOUT_MODULE="${MODULES_DIR}/logout.module"
 UPDATE_SCRIPT="${BACKUP_DIR}/update_postcustom.sh"
 
 # Load config_loader.module to use its functions
 source_config_loader() {
-    local config_loader="${MODULES_DIR}/suggestions/config_loader.module"
-    if [[ -f "$config_loader" ]]; then
-        source "$config_loader"
-    else
-        echo -e "${RED}Error: Could not find config_loader.module${NC}"
-        exit 1
-    fi
+    # Remove reference to suggestions/config_loader.module
+    # Remove or comment out this line
 }
 
 # Print banner
@@ -68,11 +62,6 @@ backup_files() {
     if [[ -f "$POSTCUSTOM" ]]; then
         cp "$POSTCUSTOM" "$BACKUP_DIR/bashrc.postcustom.bak"
         echo "✓ Backed up: bashrc.postcustom"
-    fi
-    
-    if [[ -f "$CONFIG_FILE" ]]; then
-        cp "$CONFIG_FILE" "$BACKUP_DIR/sentinel_config.sh.bak"
-        echo "✓ Backed up: sentinel_config.sh"
     fi
     
     if [[ -f "$BASH_LOGOUT_MODULE" ]]; then
@@ -228,7 +217,7 @@ extract_module_configs() {
     echo "Extracting configuration from module files..."
     
     # List of modules to check
-    local modules=("suggestions/autocomplete.module" "osint.module" "suggestions/logging.module")
+    local modules=("osint.module")
     
     for module in "${modules[@]}"; do
         local module_path="${MODULES_DIR}/${module}"

@@ -1,30 +1,4 @@
 #!/usr/bin/env bash
-# SENTINEL Post-Custom Configuration
-# This file is loaded at the end of .bashrc.sentinel
-# Add your custom configurations here
-
-# Source centralized configuration
-if [[ -f $HOME/.sentinel/sentinel_config.sh ]]; then
-    source $HOME/.sentinel/sentinel_config.sh
-fi
-
-#!/usr/bin/env bash
-# Add your custom configurations here
-
-# Source centralized configuration
-
-
-#!/usr/bin/env bash
-# Add your custom configurations here
-
-# Source centralized configuration
-
-#!/usr/bin/env bash
-# Add your custom configurations here
-
-# Source centralized configuration
-
-#!/usr/bin/env bash
 # ~/bashrc.postcustom
 #
 # This file is included very last after running bashrc. 
@@ -48,19 +22,26 @@ fi
 
 # Obfuscation Module
 # ------------------
+export SENTINEL_OBFUSCATE_ENABLED=1
 export OBFUSCATE_OUTPUT_DIR="${HOME}/secure/obfuscated_files"
+# Optional: set a custom temp directory for obfuscation
+# export OBFUSCATE_TEMP_DIR="/tmp/obfuscate_temp"
 
 # OSINT Module
 # ------------
+export SENTINEL_OSINT_ENABLED=1
 
 # ML Modules
 # ----------
+export SENTINEL_ML_ENABLED=1
 
 # Chat Module
 # -----------
+export SENTINEL_CHAT_ENABLED=1
 
 # GitHub Star Analyzer
 # -------------------
+export SENTINEL_GITSTAR_ENABLED=1
 
 # Hashcat Configuration
 # --------------------
@@ -70,6 +51,7 @@ export HASHCAT_OUTPUT_DIR="${HOME}/.hashcat/cracked"
 
 # Secure Logout Configuration
 # --------------------------
+export SENTINEL_CYBERSEC_ENABLED=1
 
 # Distcc Configuration
 # -------------------
@@ -197,11 +179,6 @@ fi
 # =============================
 # Uncomment to enable/disable specific SENTINEL feature modules:
 export SENTINEL_FZF_ENABLED=1
-export SENTINEL_ML_ENABLED=1
-export SENTINEL_OSINT_ENABLED=1
-export SENTINEL_CYBERSEC_ENABLED=1
-export SENTINEL_GITSTAR_ENABLED=1
-export SENTINEL_CHAT_ENABLED=1
 # =============================
 
 # =============================

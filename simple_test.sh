@@ -15,7 +15,6 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-SENTINEL_CONFIG="${HOME}/.sentinel/sentinel_config.sh"
 SENTINEL_DIR="$(pwd)"
 
 # Banner

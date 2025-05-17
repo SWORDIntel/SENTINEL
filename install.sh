@@ -160,29 +160,16 @@ fi
 
 # --------- 9. Install core modules  (bash_modules or bash.modules.d) ---------
 if ! is_done "CORE_MODULES_INSTALLED"; then
-  MODULE_SRC=""
-  MODULE_DST=""
-  for cand in "bash_modules" "bash.modules.d"; do
-    if [[ -d "${PROJECT_ROOT}/${cand}" ]]; then
-      MODULE_SRC="${PROJECT_ROOT}/${cand}"
-      MODULE_DST="${SENTINEL_HOME}/${cand}"
-      break
-    fi
-  done
+  MODULE_SRC="${PROJECT_ROOT}/bash_modules.d"
+  MODULE_DST="${HOME}/bash.modules.d"
 
-  if [[ -n ${MODULE_SRC} ]]; then
-    step "Copying core bash modules from '${cand}/'"
+  if [[ -d "$MODULE_SRC" ]]; then
+    step "Copying core bash modules from '${MODULE_SRC}/'"
     rsync -a --delete "${MODULE_SRC}/" "${MODULE_DST}/"
     ok "Modules synced → ${MODULE_DST}"
 
-    # Provide stable autocomplete path when using bash.modules.d layout
-    if [[ ${cand} == "bash.modules.d" && ! -e "${SENTINEL_HOME}/autocomplete" ]]; then
-      ln -s "${MODULE_DST}/autocomplete" "${SENTINEL_HOME}/autocomplete"
-      ok "Symlink ~/.sentinel/autocomplete → bash.modules.d/autocomplete created"
-    fi
-
     # Automatically run install-autocomplete.sh if present
-    local AUTOCOMPLETE_INSTALLER="${MODULE_SRC}/install-autocomplete.sh"
+    AUTOCOMPLETE_INSTALLER="${MODULE_SRC}/install-autocomplete.sh"
     if [[ -f "$AUTOCOMPLETE_INSTALLER" ]]; then
       step "Running modular autocomplete installer: $AUTOCOMPLETE_INSTALLER"
       bash "$AUTOCOMPLETE_INSTALLER" || warn "install-autocomplete.sh failed; check logs."
@@ -217,7 +204,7 @@ if ! is_done "MODULE_AUDIT_DONE"; then
   : > "$MODULE_AUDIT_LOG"
 
   # Only check these locations for modules (per security policy)
-  MODULE_DIRS=("${HOME}/.bash_modules.d" "${HOME}/bash_modules.d")
+  MODULE_DIRS=("${HOME}/bash.modules.d")
 
   for MODDIR in "${MODULE_DIRS[@]}"; do
     [[ -d "$MODDIR" ]] || continue

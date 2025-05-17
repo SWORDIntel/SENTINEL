@@ -1,21 +1,35 @@
+# Always first (enforced by loader)
 blesh_installer
+
+# Core shell enhancements and completion
 autocomplete
-bash_logout
-command_chains
-distcc
 fzf
 fuzzy_correction
+
+# Logging and security (should be early for audit and protection)
+logging
+shell_security
+
+# Session/logout
+bash_logout
+
+# Utility/support modules (used by others)
+command_chains
+snippets
+text_formatting
+
+# Specialized/external tool integrations
+distcc
 hashcat
 hmac
-logging
 obfuscate
 project_suggestions
-sentinel_chat
-sentinel_context
-sentinel_cybersec_ml
 sentinel_gitstar
+
+# AI/ML and contextual modules
+sentinel_context
+sentinel_chat
+sentinel_cybersec_ml
 sentinel_ml
 sentinel_ml_enhanced
-sentinel_osint
-shell_security
-snippets 
+sentinel_osint 

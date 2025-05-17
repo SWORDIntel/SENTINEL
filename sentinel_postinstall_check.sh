@@ -11,7 +11,7 @@ c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m'; c_blue=$'\03
 
 SENTINEL_HOME="${HOME}/.sentinel"
 POSTCUSTOM="${SENTINEL_HOME}/bashrc.postcustom"
-MODULE_DIRS=("${HOME}/.bash_modules.d" "${HOME}/bash_modules.d" "${SENTINEL_HOME}/bash_modules" "${SENTINEL_HOME}/bash.modules.d")
+MODULE_DIRS=("${HOME}/bash.modules.d")
 LOG_FILE="${SENTINEL_HOME}/logs/postinstall_check.log"
 : > "$LOG_FILE"
 
@@ -87,4 +87,24 @@ for MODDIR in "${MODULE_DIRS[@]}"; do
     summary ""
 done
 
-summary "${c_blue}Audit complete. Review above for any ✖ or ⚠ warnings.${c_reset}\nLog: $LOG_FILE\n" 
+summary "${c_blue}Audit complete. Review above for any ✖ or ⚠ warnings.${c_reset}\n"
+
+# Count issues
+errors=$(grep -c '✖' "$LOG_FILE" || true)
+warnings=$(grep -c '⚠' "$LOG_FILE" || true)
+
+# Print summary to terminal
+printf "\n${c_blue}SENTINEL Post-Install Audit Summary${c_reset}\n"
+printf "  ${c_red}✖ Errors:   %s${c_reset}\n" "$errors"
+printf "  ${c_yellow}⚠ Warnings: %s${c_reset}\n" "$warnings"
+printf "  Log file: %s\n" "$LOG_FILE"
+
+# Print actionable next steps if issues found
+if [[ $errors -gt 0 || $warnings -gt 0 ]]; then
+    printf "\n${c_yellow}Review the above output for details. To fix most issues:${c_reset}\n"
+    printf "  - Enable modules in ~/.sentinel/bashrc.postcustom\n"
+    printf "  - Install missing Python packages in ~/.sentinel/venv\n"
+    printf "  - Set file permissions to 600 for modules\n\n"
+else
+    printf "\n${c_green}No errors or warnings detected. SENTINEL is fully enabled!${c_reset}\n\n"
+fi 

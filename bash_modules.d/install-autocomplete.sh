@@ -63,10 +63,9 @@ _check_command() {
 }
 
 # Get script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SENTINEL_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-ALIASES_DIR="$SENTINEL_DIR/bash_aliases.d"
-MODULES_DIR="$SENTINEL_DIR/bash_modules.d/suggestions"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_ROOT="$SCRIPT_DIR/.."
+ALIASES_DIR="$REPO_ROOT/bash_aliases.d"
 
 _print_banner
 
@@ -88,12 +87,6 @@ if [[ ! -d "$ALIASES_DIR" ]]; then
     exit 1
 fi
 
-if [[ ! -d "$MODULES_DIR" ]]; then
-    _error "SENTINEL suggestions module directory not found: $MODULES_DIR"
-    _error "Please ensure the modular autocomplete files are in place"
-    exit 1
-fi
-
 # Verify required files
 required_modules=(
     "$MODULES_DIR/autocomplete.module"
@@ -103,7 +96,6 @@ required_modules=(
     "$MODULES_DIR/snippets.module"
     "$MODULES_DIR/fuzzy_correction.module"
     "$MODULES_DIR/command_chains.module"
-    "$MODULES_DIR/project_suggestions.module"
 )
 
 missing_files=0
@@ -193,7 +185,6 @@ The system is organized into the following modules:
 - **snippets.module**: Secure command snippet storage and expansion
 - **fuzzy_correction.module**: Intelligent command correction
 - **command_chains.module**: Command prediction based on usage patterns
-- **project_suggestions.module**: Context-aware project suggestions
 
 ## Features
 
