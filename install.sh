@@ -28,6 +28,17 @@ MODULES_DIR="${HOME}/bash_modules.d"
 # Colour helpers
 c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m'; c_blue=$'\033[1;34m'; c_reset=$'\033[0m'
 
+# Robust error handler for fatal errors (security: prevents silent failures)
+fail() {
+    echo "${c_red}✖${c_reset}  $*" | tee -a "${LOG_DIR}/install.log" >&2
+    exit 1
+}
+
+# Success logger for status lines (security: ensures auditability)
+ok() {
+    echo "${c_green}✔${c_reset}  $*" | tee -a "${LOG_DIR}/install.log"
+}
+
 # Ensure log directory exists
 mkdir -p "${LOG_DIR}"
 chmod 700 "${LOG_DIR}"
@@ -127,7 +138,14 @@ setup_python_venv() {
   source "$VENV_DIR/bin/activate"
   step "Installing required Python packages in venv"
   "$VENV_DIR/bin/pip" install --upgrade pip
-  "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
+  # Install dependencies from requirements.txt if available
+  if [[ -f "${PROJECT_ROOT}/requirements.txt" ]]; then
+    log "Installing Python dependencies from requirements.txt for reproducibility and security."
+    "$VENV_DIR/bin/pip" install -r "${PROJECT_ROOT}/requirements.txt" || fail "Failed to install requirements.txt dependencies"
+  else
+    log "requirements.txt not found, falling back to hardcoded package list."
+    "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
+  fi
   if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
     "$VENV_DIR/bin/pip" install tensorflow
     ok "Tensorflow installed (advanced ML features enabled)"

@@ -2,3 +2,4 @@
 *.local.sh#
 .cursor
 /.venv
+/__pycache__
