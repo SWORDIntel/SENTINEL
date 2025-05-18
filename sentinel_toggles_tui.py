@@ -26,6 +26,7 @@ logging.basicConfig(filename=os.path.expanduser('~/logs/toggle_tui.log'),
                     level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
 
+
 def parse_exports(filepath, keys=None):
     exports = {}
     try:
@@ -39,6 +40,7 @@ def parse_exports(filepath, keys=None):
     except Exception as e:
         logging.error(f"Failed to parse {filepath}: {e}")
     return exports
+
 
 def update_exports(filepath, updates):
     try:
@@ -56,6 +58,7 @@ def update_exports(filepath, updates):
     except Exception as e:
         logging.error(f"Failed to update {filepath}: {e}")
         return False
+
 
 FEATURE_TOGGLES = [
     'SENTINEL_FZF_ENABLED',
@@ -85,24 +88,29 @@ CORE_TOGGLES = [
     'SENTINEL_SECURE_CLEAR_SCREEN', 'U_LAZY_LOAD', 'BASHRC_PROFILE'
 ]
 
+
 class ToggleForm(npyscreen.ActionForm):
     def create(self):
         self.add(npyscreen.FixedText, value="SENTINEL Toggle TUI", editable=False, color='STANDOUT')
         self.add(npyscreen.FixedText, value="(Use arrows/space to toggle, ^S to save, ^Q to quit)", editable=False)
-        self.add(npyscreen.FixedText, value="\n[Security Warning] Only trusted users should edit these files!", editable=False, color='DANGER')
-        
+        self.add(
+            npyscreen.FixedText,
+            value="\n[Security Warning] Only trusted users should edit these files!",
+            editable=False,
+            color='DANGER')
+
         self.add(npyscreen.FixedText, value="\nFeature Module Toggles:", editable=False, color='LABEL')
         self.feature_toggles = self.add(npyscreen.TitleMultiSelect, max_height=8, name="Feature Modules",
                                         values=FEATURE_TOGGLES, scroll_exit=True)
-        
+
         self.add(npyscreen.FixedText, value="\nConfiguration Caching and Module System:", editable=False, color='LABEL')
         self.cache_toggles = self.add(npyscreen.TitleMultiSelect, max_height=8, name="Config Cache/Modules",
-                                     values=CONFIG_CACHE_TOGGLES, scroll_exit=True)
-        
+                                      values=CONFIG_CACHE_TOGGLES, scroll_exit=True)
+
         self.add(npyscreen.FixedText, value="\nCore/Security Toggles:", editable=False, color='LABEL')
-        self.core_toggles = self.add(npyscreen.TitleMultiSelect, max_height=12, name="Core/Security", 
+        self.core_toggles = self.add(npyscreen.TitleMultiSelect, max_height=12, name="Core/Security",
                                      values=CORE_TOGGLES, scroll_exit=True)
-        
+
         self.status = self.add(npyscreen.FixedText, value="", editable=False, color='CAUTION')
         self.help_btn = self.add(npyscreen.ButtonPress, name="Help", when_pressed_function=self.show_help)
         self.reload_btn = self.add(npyscreen.ButtonPress, name="Reload", when_pressed_function=self.reload)
@@ -112,11 +120,13 @@ class ToggleForm(npyscreen.ActionForm):
         self.feature_vals = parse_exports(BASHRC_POSTCUSTOM, FEATURE_TOGGLES)
         self.cache_vals = parse_exports(BASHRC_POSTCUSTOM, CONFIG_CACHE_TOGGLES)
         self.core_vals = parse_exports(BASHRC_PRECUSTOM, CORE_TOGGLES)
-        
-        self.feature_toggles.value = [i for i, k in enumerate(FEATURE_TOGGLES) if self.feature_vals.get(k, ('0',))[0] == '1']
-        self.cache_toggles.value = [i for i, k in enumerate(CONFIG_CACHE_TOGGLES) if self.cache_vals.get(k, ('0',))[0] == '1']
+
+        self.feature_toggles.value = [i for i, k in enumerate(
+            FEATURE_TOGGLES) if self.feature_vals.get(k, ('0',))[0] == '1']
+        self.cache_toggles.value = [i for i, k in enumerate(
+            CONFIG_CACHE_TOGGLES) if self.cache_vals.get(k, ('0',))[0] == '1']
         self.core_toggles.value = [i for i, k in enumerate(CORE_TOGGLES) if self.core_vals.get(k, ('0',))[0] == '1']
-        
+
         self.status.value = ""
         self.display()
 
@@ -124,10 +134,10 @@ class ToggleForm(npyscreen.ActionForm):
         feature_updates = {k: '1' if i in self.feature_toggles.value else '0' for i, k in enumerate(FEATURE_TOGGLES)}
         cache_updates = {k: '1' if i in self.cache_toggles.value else '0' for i, k in enumerate(CONFIG_CACHE_TOGGLES)}
         core_updates = {k: '1' if i in self.core_toggles.value else '0' for i, k in enumerate(CORE_TOGGLES)}
-        
+
         # Merge feature and cache updates for postcustom
         postcustom_updates = {**feature_updates, **cache_updates}
-        
+
         if npyscreen.notify_yes_no("Save changes to toggles? (Backups will be made)", title="Confirm Save"):
             ok1 = update_exports(BASHRC_POSTCUSTOM, postcustom_updates)
             ok2 = update_exports(BASHRC_PRECUSTOM, core_updates)
@@ -155,9 +165,11 @@ class ToggleForm(npyscreen.ActionForm):
             " - SENTINEL_MODULE_VERIFY: Security verification for modules\n",
             title="Help / Security Notice")
 
+
 class SentinelToggleApp(npyscreen.NPSAppManaged):
     def onStart(self):
         self.addForm('MAIN', ToggleForm)
+
 
 if __name__ == '__main__':
     try:
@@ -165,4 +177,4 @@ if __name__ == '__main__':
         app.run()
     except Exception as e:
         logging.error(f"Fatal error in TUI: {e}")
-        print(f"[ERROR] {e}\nSee ~/logs/toggle_tui.log for details.") 
+        print(f"[ERROR] {e}\nSee ~/logs/toggle_tui.log for details.")

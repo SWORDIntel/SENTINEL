@@ -39,6 +39,16 @@ ok() {
     echo "${c_green}✔${c_reset}  $*" | tee -a "${LOG_DIR}/install.log"
 }
 
+# Progress step logger for status lines (security: ensures auditability)
+step() {
+    echo "${c_blue}→${c_reset}  $*" | tee -a "${LOG_DIR}/install.log"
+}
+
+# Warning logger for non-fatal issues (security: ensures visibility of issues)
+warn() {
+    echo "${c_yellow}!${c_reset}  $*" | tee -a "${LOG_DIR}/install.log" >&2
+}
+
 # Ensure log directory exists
 mkdir -p "${LOG_DIR}"
 chmod 700 "${LOG_DIR}"
@@ -144,7 +154,7 @@ setup_python_venv() {
     "$VENV_DIR/bin/pip" install -r "${PROJECT_ROOT}/requirements.txt" || fail "Failed to install requirements.txt dependencies"
   else
     log "requirements.txt not found, falling back to hardcoded package list."
-    "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
+  "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
   fi
   if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
     "$VENV_DIR/bin/pip" install tensorflow

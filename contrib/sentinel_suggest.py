@@ -16,7 +16,7 @@ except ImportError as e:
 
 # Config files
 HISTORY_FILE = os.path.expanduser("~/logs/command_history")
-MODEL_FILE   = os.path.expanduser("~/models/command_model.json")
+MODEL_FILE = os.path.expanduser("~/models/command_model.json")
 
 # Attempt to load existing model
 model = None
@@ -36,6 +36,8 @@ if model is None and os.path.exists(HISTORY_FILE):
             f.write(model.to_json())
 
 # Generate suggestions based on current prefix
+
+
 def suggest(prefix, n=5):
     suggestions = []
     if model:
@@ -46,6 +48,7 @@ def suggest(prefix, n=5):
             if len(suggestions) >= n:
                 break
     return suggestions
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

@@ -20,7 +20,6 @@ from datetime import datetime
 # Third-party imports (with robust error handling)
 try:
     import requests
-    from bs4 import BeautifulSoup
     import numpy as np
     from tqdm import tqdm
     DEPENDENCIES_MET = True
@@ -79,9 +78,10 @@ Path(READMES_DIR).mkdir(parents=True, exist_ok=True)
 Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
 Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
 
+
 class GitHubStarAnalyzer:
     """Analyzes READMEs from starred GitHub repositories using ML techniques"""
-    
+
     def __init__(self):
         self.repos_data = self._load_repos_data()
         self.categories = self._load_categories()
@@ -89,11 +89,11 @@ class GitHubStarAnalyzer:
         self.vectors = None
         self.clusters = None
         self.llm = None
-        
+
         # Initialize ML components if available
         if ML_AVAILABLE:
             self._initialize_ml()
-        
+
         # Initialize LLM if available
         if LLM_AVAILABLE:
             self._initialize_llm()
@@ -107,7 +107,7 @@ class GitHubStarAnalyzer:
             except json.JSONDecodeError:
                 return {"repositories": [], "last_updated": time.time()}
         return {"repositories": [], "last_updated": time.time()}
-    
+
     def _load_categories(self):
         """Load repository categories from JSON file"""
         if os.path.exists(CATEGORIES_FILE):
@@ -117,7 +117,7 @@ class GitHubStarAnalyzer:
             except json.JSONDecodeError:
                 return {"categories": {}, "last_updated": time.time()}
         return {"categories": {}, "last_updated": time.time()}
-    
+
     def _initialize_ml(self):
         """Initialize machine learning components"""
         self.vectorizer = TfidfVectorizer(
@@ -127,7 +127,7 @@ class GitHubStarAnalyzer:
             min_df=2,
             max_df=0.85
         )
-        
+
         # Load pre-computed vectors if available
         if os.path.exists(VECTORS_FILE):
             try:
@@ -136,7 +136,7 @@ class GitHubStarAnalyzer:
                 self.clusters = data.get('clusters')
             except Exception as e:
                 print(f"Error loading vectors: {e}")
-    
+
     def _initialize_llm(self):
         """Initialize the LLM for advanced analysis"""
         if os.path.exists(DEFAULT_MODEL_PATH):
@@ -153,23 +153,23 @@ class GitHubStarAnalyzer:
                 self.llm = None
         else:
             print(f"Model file not found: {DEFAULT_MODEL_PATH}")
-    
+
     def save_repos_data(self):
         """Save repository data to JSON file"""
         with open(DATA_FILE, "w") as f:
             json.dump(self.repos_data, f, indent=2)
-    
+
     def save_categories(self):
         """Save repository categories to JSON file"""
         with open(CATEGORIES_FILE, "w") as f:
             json.dump(self.categories, f, indent=2)
-    
+
     def _generate_token_for_auth(self, password):
         """Generate a secure token for GitHub API authentication"""
         salt = os.urandom(16)
         key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
         return base64.b64encode(salt + key).decode('utf-8')
-    
+
     def _verify_token(self, token, password):
         """Verify a token against a password"""
         try:
@@ -179,27 +179,27 @@ class GitHubStarAnalyzer:
             return hmac.compare_digest(key, verification_key)
         except Exception:
             return False
-    
+
     def fetch_starred_repos(self, username, password=None):
         """Fetch starred repositories for a given GitHub username"""
         if not DEPENDENCIES_MET:
             print("Dependencies not met. Cannot fetch repositories.")
             return False
-        
+
         headers = {
             "User-Agent": USER_AGENT
         }
-        
+
         # Authentication (if provided)
         auth = None
         if password:
             auth = (username, password)
             print("Using authenticated request")
-        
+
         # Fetch starred repositories
         page = 1
         all_repos = []
-        
+
         with tqdm(desc="Fetching starred repositories", unit="page") as pbar:
             while True:
                 try:
@@ -209,12 +209,12 @@ class GitHubStarAnalyzer:
                         headers=headers,
                         auth=auth
                     )
-                    
+
                     if response.status_code == 200:
                         repos = response.json()
                         if not repos:
                             break
-                        
+
                         all_repos.extend(repos)
                         page += 1
                         pbar.update(1)
@@ -225,7 +225,7 @@ class GitHubStarAnalyzer:
                 except Exception as e:
                     print(f"Error fetching repositories: {e}")
                     break
-        
+
         # Process and store the repositories
         processed_repos = []
         for repo in all_repos:
@@ -245,32 +245,32 @@ class GitHubStarAnalyzer:
                 "readme_downloaded": False,
                 "analyzed": False
             })
-        
+
         # Update repos data
         self.repos_data["repositories"] = processed_repos
         self.repos_data["last_updated"] = time.time()
         self.save_repos_data()
-        
+
         print(f"Successfully fetched {len(processed_repos)} starred repositories for {username}")
-        
+
         # Download READMEs
         self.download_readmes()
-        
+
         return True
-    
+
     def download_readmes(self):
         """Download README files for all repositories"""
         if not DEPENDENCIES_MET:
             print("Dependencies not met. Cannot download READMEs.")
             return False
-        
+
         headers = {
             "User-Agent": USER_AGENT
         }
-        
-        repos_to_update = [repo for repo in self.repos_data["repositories"] 
+
+        repos_to_update = [repo for repo in self.repos_data["repositories"]
                            if not repo.get("readme_downloaded", False)]
-        
+
         with tqdm(repos_to_update, desc="Downloading READMEs", unit="repo") as pbar:
             for repo in pbar:
                 try:
@@ -279,13 +279,13 @@ class GitHubStarAnalyzer:
                         f"https://raw.githubusercontent.com/{repo['full_name']}/master/README.md",
                         headers=headers
                     )
-                    
+
                     if response.status_code == 200:
                         # Save the README
                         readme_path = os.path.join(READMES_DIR, f"{repo['full_name'].replace('/', '_')}.md")
                         with open(readme_path, "w", encoding="utf-8") as f:
                             f.write(response.text)
-                        
+
                         # Update repository info
                         repo["readme_path"] = readme_path
                         repo["readme_downloaded"] = True
@@ -296,12 +296,12 @@ class GitHubStarAnalyzer:
                             f"https://raw.githubusercontent.com/{repo['full_name']}/master/README.markdown",
                             headers=headers
                         )
-                        
+
                         if response.status_code == 200:
                             readme_path = os.path.join(READMES_DIR, f"{repo['full_name'].replace('/', '_')}.md")
                             with open(readme_path, "w", encoding="utf-8") as f:
                                 f.write(response.text)
-                            
+
                             repo["readme_path"] = readme_path
                             repo["readme_downloaded"] = True
                             pbar.set_description(f"Downloaded README for {repo['full_name']}")
@@ -311,12 +311,12 @@ class GitHubStarAnalyzer:
                                 f"https://raw.githubusercontent.com/{repo['full_name']}/master/README",
                                 headers=headers
                             )
-                            
+
                             if response.status_code == 200:
                                 readme_path = os.path.join(READMES_DIR, f"{repo['full_name'].replace('/', '_')}.md")
                                 with open(readme_path, "w", encoding="utf-8") as f:
                                     f.write(response.text)
-                                
+
                                 repo["readme_path"] = readme_path
                                 repo["readme_downloaded"] = True
                                 pbar.set_description(f"Downloaded README for {repo['full_name']}")
@@ -324,35 +324,35 @@ class GitHubStarAnalyzer:
                                 pbar.set_description(f"No README found for {repo['full_name']}")
                 except Exception as e:
                     print(f"Error downloading README for {repo['full_name']}: {e}")
-        
+
         # Save the updated repository data
         self.save_repos_data()
-        
+
         # Count successful downloads
-        downloaded_count = sum(1 for repo in self.repos_data["repositories"] 
-                              if repo.get("readme_downloaded", False))
+        downloaded_count = sum(1 for repo in self.repos_data["repositories"]
+                               if repo.get("readme_downloaded", False))
         print(f"Successfully downloaded {downloaded_count} README files")
-        
-        return True 
+
+        return True
 
     def analyze_readmes(self):
         """Analyze README files using ML techniques"""
         if not ML_AVAILABLE:
             print("Machine learning libraries not available. Cannot perform analysis.")
             return False
-        
+
         # Get repositories with downloaded READMEs
-        repos_with_readme = [repo for repo in self.repos_data["repositories"] 
+        repos_with_readme = [repo for repo in self.repos_data["repositories"]
                              if repo.get("readme_downloaded", False)]
-        
+
         if not repos_with_readme:
             print("No README files available for analysis.")
             return False
-        
+
         # Read README contents
         readme_contents = []
         readme_ids = []
-        
+
         for repo in repos_with_readme:
             try:
                 with open(repo["readme_path"], "r", encoding="utf-8") as f:
@@ -361,130 +361,130 @@ class GitHubStarAnalyzer:
                     readme_ids.append(repo["id"])
             except Exception as e:
                 print(f"Error reading README for {repo['full_name']}: {e}")
-        
+
         print(f"Analyzing {len(readme_contents)} README files...")
-        
+
         # Vectorize README contents
         self.vectors = self.vectorizer.fit_transform(readme_contents)
-        
+
         # Determine optimal number of clusters (max 20)
         n_repos = len(readme_contents)
         n_clusters = min(20, max(3, n_repos // 10))
-        
+
         # Apply K-means clustering
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         self.clusters = kmeans.fit_predict(self.vectors)
-        
+
         # Save vectors and clusters for future use
         np.savez(VECTORS_FILE, vectors=self.vectors, clusters=self.clusters)
-        
+
         # Extract and store most common terms for each cluster
         cluster_terms = {}
         for i in range(n_clusters):
             # Get indices of repositories in this cluster
             cluster_indices = [j for j, c in enumerate(self.clusters) if c == i]
-            
+
             # Get the repository information for this cluster
             cluster_repos = [readme_ids[j] for j in cluster_indices]
-            
+
             # Get the top features for this cluster
             if cluster_indices:
                 cluster_vectors = self.vectors[cluster_indices]
                 centroid = cluster_vectors.mean(axis=0)
-                
+
                 # Get feature names
                 feature_names = self.vectorizer.get_feature_names_out()
-                
+
                 # Get top terms
                 centroid_arr = centroid.toarray().flatten()
                 top_indices = centroid_arr.argsort()[-20:][::-1]
                 top_terms = [feature_names[idx] for idx in top_indices]
-                
+
                 cluster_terms[str(i)] = {
                     "terms": top_terms,
                     "repos": cluster_repos
                 }
-        
+
         # Update categories
         self.categories["categories"] = cluster_terms
         self.categories["last_updated"] = time.time()
         self.save_categories()
-        
+
         # Update repositories with cluster information
         for i, repo_id in enumerate(readme_ids):
             for repo in self.repos_data["repositories"]:
                 if repo["id"] == repo_id:
                     repo["cluster"] = int(self.clusters[i])
                     repo["analyzed"] = True
-        
+
         self.save_repos_data()
-        
+
         # Use LLM for advanced analysis if available
         if LLM_AVAILABLE and self.llm:
             self.analyze_with_llm()
-        
+
         print("Analysis complete. Repositories categorized into clusters.")
         return True
-    
+
     def analyze_with_llm(self):
         """Use LLM to analyze repositories for more detailed insights"""
         if not LLM_AVAILABLE or not self.llm:
             print("LLM not available for advanced analysis.")
             return False
-        
+
         print("Performing advanced analysis with LLM...")
-        
+
         # Get repositories with downloaded READMEs
-        repos_with_readme = [repo for repo in self.repos_data["repositories"] 
+        repos_with_readme = [repo for repo in self.repos_data["repositories"]
                              if repo.get("readme_downloaded", False)]
-        
+
         # Sample repositories from each cluster for analysis
         cluster_to_repos = defaultdict(list)
         for repo in repos_with_readme:
             if repo.get("analyzed", False) and "cluster" in repo:
                 cluster_to_repos[repo["cluster"]].append(repo)
-        
+
         # Process a representative subset from each cluster
         analyzed_repos = 0
-        total_clusters = len(cluster_to_repos)
-        
+        len(cluster_to_repos)
+
         for cluster_id, repos in tqdm(cluster_to_repos.items(), desc="Analyzing clusters"):
             # Select up to 5 repos from each cluster for detailed analysis
             sample_repos = repos[:5]
-            
+
             for repo in tqdm(sample_repos, desc=f"Cluster {cluster_id}", leave=False):
                 if repo.get("llm_analyzed", False):
                     continue
-                
+
                 try:
                     # Read README content
                     with open(repo["readme_path"], "r", encoding="utf-8") as f:
                         readme_content = f.read()
-                    
+
                     # Truncate if too long
                     max_chars = 8000  # Limit due to context window
                     if len(readme_content) > max_chars:
                         readme_content = readme_content[:max_chars] + "..."
-                    
+
                     # Prepare prompt for LLM
                     prompt = f"""
                     Analyze the following GitHub repository README:
-                    
+
                     Repository: {repo['full_name']}
                     Language: {repo['language'] or 'Unknown'}
-                    
+
                     README:
                     ```
                     {readme_content}
                     ```
-                    
+
                     Task:
                     1. Identify the main purpose of this repository in one sentence.
                     2. List the key features of this software.
                     3. Categorize this repository (e.g., "Web Framework", "Data Visualization", "DevOps Tool", etc.)
                     4. Rate the documentation quality from 1-5.
                     5. List potential use cases for this software.
-                    
+
                     Format your response in valid JSON as follows:
                     {{
                         "purpose": "Brief one-sentence description",
@@ -496,7 +496,7 @@ class GitHubStarAnalyzer:
                         "complexity": "Beginner|Intermediate|Advanced"
                     }}
                     """
-                    
+
                     # Generate analysis with LLM
                     output = self.llm(
                         prompt,
@@ -505,16 +505,16 @@ class GitHubStarAnalyzer:
                         stop=["```"],
                         echo=False
                     )
-                    
+
                     # Extract JSON from response
                     result_text = output["choices"][0]["text"].strip()
-                    
+
                     # Find JSON content
                     json_match = re.search(r'({[\s\S]*})', result_text)
                     if json_match:
                         try:
                             analysis = json.loads(json_match.group(1))
-                            
+
                             # Store analysis in repository data
                             repo["llm_analysis"] = analysis
                             repo["llm_analyzed"] = True
@@ -523,69 +523,69 @@ class GitHubStarAnalyzer:
                             print(f"Error parsing LLM output: {e}")
                 except Exception as e:
                     print(f"Error analyzing {repo['full_name']}: {e}")
-        
+
         # Save updated repository data
         self.save_repos_data()
-        
+
         # Update category names based on LLM analysis
         self.update_category_names()
-        
+
         print(f"LLM analysis complete for {analyzed_repos} repositories.")
         return True
-    
+
     def update_category_names(self):
         """Update cluster names based on LLM analysis"""
         if not self.categories["categories"]:
             return
-        
+
         # Map repository IDs to their analysis
         id_to_analysis = {}
         for repo in self.repos_data["repositories"]:
             if repo.get("llm_analyzed", False) and "llm_analysis" in repo:
                 id_to_analysis[repo["id"]] = repo["llm_analysis"]
-        
+
         # Update each cluster with a meaningful name
         for cluster_id, cluster_data in self.categories["categories"].items():
             # Get analyses for repositories in this cluster
-            analyses = [id_to_analysis[repo_id] for repo_id in cluster_data["repos"] 
-                       if repo_id in id_to_analysis]
-            
+            analyses = [id_to_analysis[repo_id] for repo_id in cluster_data["repos"]
+                        if repo_id in id_to_analysis]
+
             if analyses:
                 # Count categories
                 categories = [analysis.get("category", "Unknown") for analysis in analyses]
                 category_counter = Counter(categories)
                 most_common = category_counter.most_common(1)[0][0]
-                
+
                 # Count subcategories
                 subcategories = []
                 for analysis in analyses:
                     subcategories.extend(analysis.get("subcategories", []))
                 subcategory_counter = Counter(subcategories)
                 top_subcategories = [sc for sc, _ in subcategory_counter.most_common(3)]
-                
+
                 # Update cluster information
                 cluster_data["name"] = most_common
                 cluster_data["subcategories"] = top_subcategories
-        
+
         # Save updated categories
         self.save_categories()
-    
+
     def search_repositories(self, query):
         """Search for repositories matching the query"""
         if not self.repos_data["repositories"]:
             print("No repositories available. Fetch repositories first.")
             return []
-        
+
         # Ensure query is lowercase for case-insensitive search
         query = query.lower()
-        
+
         # Search in repository names and descriptions
         basic_matches = []
         for repo in self.repos_data["repositories"]:
             name = repo["name"].lower()
             full_name = repo["full_name"].lower()
             description = (repo["description"] or "").lower()
-            
+
             score = 0
             if query in name:
                 score += 3
@@ -593,24 +593,24 @@ class GitHubStarAnalyzer:
                 score += 2
             if query in description:
                 score += 1
-            
+
             if score > 0:
                 basic_matches.append((repo, score))
-        
+
         # If ML is available, use vectorization for semantic search
         if ML_AVAILABLE and self.vectors is not None and self.vectorizer is not None:
             # Get repositories with downloaded READMEs
-            repos_with_readme = [repo for repo in self.repos_data["repositories"] 
-                                if repo.get("readme_downloaded", False)]
-            
+            repos_with_readme = [repo for repo in self.repos_data["repositories"]
+                                 if repo.get("readme_downloaded", False)]
+
             readme_ids = [repo["id"] for repo in repos_with_readme]
-            
+
             # Vectorize the query
             query_vector = self.vectorizer.transform([query])
-            
+
             # Calculate similarity with all README vectors
             similarities = cosine_similarity(query_vector, self.vectors).flatten()
-            
+
             # Get matching repositories
             semantic_matches = []
             for i, sim in enumerate(similarities):
@@ -619,12 +619,12 @@ class GitHubStarAnalyzer:
                     repo = next((r for r in repos_with_readme if r["id"] == repo_id), None)
                     if repo:
                         semantic_matches.append((repo, sim * 5))  # Scale the score
-        
+
             # Combine and deduplicate results
             all_matches = basic_matches + semantic_matches
             seen_ids = set()
             unique_matches = []
-            
+
             for repo, score in all_matches:
                 if repo["id"] not in seen_ids:
                     seen_ids.add(repo["id"])
@@ -635,45 +635,45 @@ class GitHubStarAnalyzer:
                         if r["id"] == repo["id"]:
                             unique_matches[i] = (r, max(s, score))
                             break
-            
+
             # Sort by score in descending order
             sorted_matches = sorted(unique_matches, key=lambda x: x[1], reverse=True)
             return [repo for repo, _ in sorted_matches]
-        
+
         # If ML not available, just use basic matches
         sorted_matches = sorted(basic_matches, key=lambda x: x[1], reverse=True)
         return [repo for repo, _ in sorted_matches]
-    
+
     def suggest_repositories(self, task_description):
         """Suggest repositories for a specific task"""
         if not self.repos_data["repositories"]:
             print("No repositories available. Fetch repositories first.")
             return []
-        
+
         suggestions = []
-        
+
         # If LLM is available, use it for advanced suggestions
         if LLM_AVAILABLE and self.llm:
             # Get repositories with LLM analysis
-            analyzed_repos = [repo for repo in self.repos_data["repositories"] 
-                             if repo.get("llm_analyzed", False)]
-            
+            analyzed_repos = [repo for repo in self.repos_data["repositories"]
+                              if repo.get("llm_analyzed", False)]
+
             # Prepare prompt for LLM
             repo_descriptions = "\n".join([
                 f"{i+1}. {repo['full_name']}: {repo.get('llm_analysis', {}).get('purpose', 'Unknown purpose')}"
                 for i, repo in enumerate(analyzed_repos[:50])  # Limit to 50 to fit context
             ])
-            
+
             prompt = f"""
             I need to {task_description}
-            
+
             Here are some GitHub repositories I have starred:
             {repo_descriptions}
-            
+
             Which numbered repositories would be most useful for this task? List the top 5 matches with their numbers and a brief explanation of why each is suitable.
             Format your response as a valid JSON array of objects with 'id', 'name', and 'reason' fields.
             """
-            
+
             # Generate suggestions with LLM
             try:
                 output = self.llm(
@@ -683,16 +683,16 @@ class GitHubStarAnalyzer:
                     stop=["```"],
                     echo=False
                 )
-                
+
                 # Extract JSON from response
                 result_text = output["choices"][0]["text"].strip()
-                
+
                 # Find JSON content
                 json_match = re.search(r'(\[[\s\S]*\])', result_text)
                 if json_match:
                     try:
                         llm_suggestions = json.loads(json_match.group(1))
-                        
+
                         # Convert to actual repository objects
                         for suggestion in llm_suggestions:
                             if "id" in suggestion and 1 <= suggestion["id"] <= len(analyzed_repos):
@@ -714,16 +714,16 @@ class GitHubStarAnalyzer:
         else:
             # Fallback to basic search
             suggestions = self._basic_suggest(task_description)
-        
+
         # Sort by score in descending order
         sorted_suggestions = sorted(suggestions, key=lambda x: x["score"], reverse=True)
         return sorted_suggestions
-    
+
     def _basic_suggest(self, task_description):
         """Basic suggestion without LLM"""
         # Use search as a fallback
         matches = self.search_repositories(task_description)
-        
+
         suggestions = []
         for i, repo in enumerate(matches[:10]):  # Top 10 matches
             suggestions.append({
@@ -731,9 +731,9 @@ class GitHubStarAnalyzer:
                 "reason": f"Matches keywords in '{task_description}'",
                 "score": 1.0 - (i * 0.1)  # Higher score for earlier matches
             })
-        
+
         return suggestions
-    
+
     def get_statistics(self):
         """Get statistics about downloaded repositories"""
         if not self.repos_data["repositories"]:
@@ -746,40 +746,40 @@ class GitHubStarAnalyzer:
                 "clusters": {},
                 "last_updated": None
             }
-        
+
         # Count repositories
         total_repos = len(self.repos_data["repositories"])
-        readmes_downloaded = sum(1 for repo in self.repos_data["repositories"] 
-                                if repo.get("readme_downloaded", False))
-        analyzed_repos = sum(1 for repo in self.repos_data["repositories"] 
-                            if repo.get("analyzed", False))
-        llm_analyzed = sum(1 for repo in self.repos_data["repositories"] 
-                          if repo.get("llm_analyzed", False))
-        
+        readmes_downloaded = sum(1 for repo in self.repos_data["repositories"]
+                                 if repo.get("readme_downloaded", False))
+        analyzed_repos = sum(1 for repo in self.repos_data["repositories"]
+                             if repo.get("analyzed", False))
+        llm_analyzed = sum(1 for repo in self.repos_data["repositories"]
+                           if repo.get("llm_analyzed", False))
+
         # Count languages
         languages = defaultdict(int)
         for repo in self.repos_data["repositories"]:
             lang = repo.get("language") or "Unknown"
             languages[lang] += 1
-        
+
         # Count clusters
         clusters = defaultdict(int)
         for repo in self.repos_data["repositories"]:
             if repo.get("analyzed", False) and "cluster" in repo:
                 clusters[str(repo["cluster"])] += 1
-        
+
         # Get cluster names
         cluster_names = {}
         if self.categories and "categories" in self.categories:
             for cluster_id, cluster_data in self.categories["categories"].items():
                 name = cluster_data.get("name") or f"Cluster {cluster_id}"
                 cluster_names[cluster_id] = {"name": name, "count": clusters.get(cluster_id, 0)}
-        
+
         # Format last updated date
         last_updated = None
         if "last_updated" in self.repos_data:
             last_updated = datetime.fromtimestamp(self.repos_data["last_updated"]).strftime("%Y-%m-%d %H:%M:%S")
-        
+
         return {
             "total_repos": total_repos,
             "readmes_downloaded": readmes_downloaded,
@@ -791,10 +791,12 @@ class GitHubStarAnalyzer:
         }
 
 # Main CLI interface
+
+
 def main():
     """Main function for CLI interface"""
     parser = argparse.ArgumentParser(description="SENTINEL GitHub Star Analyzer")
-    
+
     # Add arguments
     parser.add_argument("--fetch", metavar="USERNAME", help="Fetch starred repositories for a GitHub username")
     parser.add_argument("--password", help="GitHub password for authentication (optional)")
@@ -804,25 +806,25 @@ def main():
     parser.add_argument("--stats", action="store_true", help="Show statistics about downloaded repositories")
     parser.add_argument("--update", metavar="USERNAME", help="Update repositories for a GitHub username")
     parser.add_argument("--verbose", action="store_true", help="Show verbose output")
-    
+
     args = parser.parse_args()
-    
+
     # Check if dependencies are met
     if not DEPENDENCIES_MET:
         print("Required dependencies missing. Please install them first.")
         print("pip install requests beautifulsoup4 tqdm numpy scipy scikit-learn")
         return 1
-    
+
     # Initialize the analyzer
     analyzer = GitHubStarAnalyzer()
-    
+
     # Handle commands
     if args.fetch:
         analyzer.fetch_starred_repos(args.fetch, args.password)
-    
+
     elif args.analyze:
         analyzer.analyze_readmes()
-    
+
     elif args.search:
         results = analyzer.search_repositories(args.search)
         if results:
@@ -835,7 +837,7 @@ def main():
                     print("")
         else:
             print("No matching repositories found.")
-    
+
     elif args.suggest:
         suggestions = analyzer.suggest_repositories(args.suggest)
         if suggestions:
@@ -850,7 +852,7 @@ def main():
                 print("")
         else:
             print("No suitable repositories found.")
-    
+
     elif args.stats:
         stats = analyzer.get_statistics()
         print("\nGitHub Starred Repository Statistics:")
@@ -858,58 +860,63 @@ def main():
         print(f"READMEs downloaded: {stats['readmes_downloaded']}")
         print(f"Analyzed repositories: {stats['analyzed_repos']}")
         print(f"LLM-analyzed repositories: {stats['llm_analyzed']}")
-        
+
         print("\nTop Languages:")
         for lang, count in list(stats['languages'].items())[:10]:  # Top 10 languages
             print(f"  {lang}: {count}")
-        
+
         if stats['clusters']:
             print("\nRepository Clusters:")
             for cluster_id, data in stats['clusters'].items():
                 print(f"  {data['name']}: {data['count']} repositories")
-        
+
         if stats['last_updated']:
             print(f"\nLast updated: {stats['last_updated']}")
-    
+
     elif args.update:
         analyzer.fetch_starred_repos(args.update, args.password)
         analyzer.analyze_readmes()
-    
+
     else:
         parser.print_help()
-    
+
     return 0
 
 # Module functions for bash integration
+
+
 def fetch_starred_repos(username, password=None):
     """Fetch starred repositories for a GitHub username"""
     analyzer = GitHubStarAnalyzer()
     return analyzer.fetch_starred_repos(username, password)
+
 
 def analyze_readmes():
     """Analyze downloaded README files"""
     analyzer = GitHubStarAnalyzer()
     return analyzer.analyze_readmes()
 
+
 def search_repositories(query):
     """Search for repositories matching the query"""
     analyzer = GitHubStarAnalyzer()
     results = analyzer.search_repositories(query)
-    
+
     if results:
         print(f"Found {len(results)} matching repositories:")
         for i, repo in enumerate(results[:20]):  # Limit to top 20
             print(f"{i+1}. {repo['full_name']} - {repo['description'] or 'No description'}")
     else:
         print("No matching repositories found.")
-    
+
     return results
+
 
 def suggest_repositories(task):
     """Suggest repositories for a specific task"""
     analyzer = GitHubStarAnalyzer()
     suggestions = analyzer.suggest_repositories(task)
-    
+
     if suggestions:
         print(f"Top {len(suggestions)} suggested repositories for '{task}':")
         for i, suggestion in enumerate(suggestions):
@@ -918,13 +925,15 @@ def suggest_repositories(task):
             print(f"   Reason: {suggestion['reason']}")
     else:
         print("No suitable repositories found.")
-    
+
     return suggestions
+
 
 def get_statistics():
     """Get statistics about downloaded repositories"""
     analyzer = GitHubStarAnalyzer()
     return analyzer.get_statistics()
 
+
 if __name__ == "__main__":
-    sys.exit(main()) 
+    sys.exit(main())

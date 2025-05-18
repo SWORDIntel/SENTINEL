@@ -12,6 +12,7 @@ import os
 import subprocess
 import venv
 
+
 def create_or_use_venv(venv_dir=".venv"):
     if os.path.exists(venv_dir):
         print(f"[i] Reusing existing virtual environment at: {venv_dir}")
@@ -34,6 +35,6 @@ def create_or_use_venv(venv_dir=".venv"):
 
     print(f"\n[→] Activate it using:\n  source {venv_dir}/bin/activate")
 
+
 if __name__ == "__main__":
     create_or_use_venv()
-
