@@ -14,12 +14,11 @@ c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m';
 c_blue=$'\033[1;34m'; c_magenta=$'\033[1;35m'; c_cyan=$'\033[1;36m'; c_reset=$'\033[0m'
 
 # Define paths
-SENTINEL_HOME="${HOME}/.sentinel"
-VENV_DIR="${SENTINEL_HOME}/venv"
-VERIFICATION_LOG="${SENTINEL_HOME}/logs/verification.log"
+VENV_DIR="${HOME}/venv"
+VERIFICATION_LOG="${HOME}/logs/verification.log"
 
 # Ensure log directory exists
-mkdir -p "${SENTINEL_HOME}/logs"
+mkdir -p "${HOME}/logs"
 : > "${VERIFICATION_LOG}"  # Clear log file
 
 # Logging functions
@@ -71,7 +70,7 @@ section "Testing Environment Sourcing"
 # Create test script that sources SENTINEL environment
 cat > "${TESTDIR}/source_test.sh" << 'EOT'
 #!/usr/bin/env bash
-source "${HOME}/.sentinel/bashrc.postcustom" 2>/dev/null
+source "${HOME}/bashrc.postcustom" 2>/dev/null
 # Output environment variables for verification
 echo "BLESH_LOADED=${SENTINEL_BLESH_LOADED:-not_set}"
 echo "VENV_AUTO=${VENV_AUTO:-not_set}"
@@ -132,7 +131,7 @@ EOT
 
 cat > "${TESTDIR}/python_test_venv.sh" << 'EOT'
 #!/usr/bin/env bash
-source "${HOME}/.sentinel/bashrc.postcustom" 2>/dev/null
+source "${HOME}/bashrc.postcustom" 2>/dev/null
 cd "$1"
 # Check if in venv initially
 if [ -n "${VIRTUAL_ENV:-}" ]; then
@@ -175,7 +174,7 @@ section "Testing Autocomplete System"
 # Create a script to test if autocomplete can be called
 cat > "${TESTDIR}/autocomplete_test.sh" << 'EOT'
 #!/usr/bin/env bash
-source "${HOME}/.sentinel/bashrc.postcustom" 2>/dev/null
+source "${HOME}/bashrc.postcustom" 2>/dev/null
 # Run autocomplete status command (should produce output)
 @autocomplete status 2>&1
 if [[ $? -eq 0 ]]; then
@@ -309,7 +308,7 @@ fi
 log ""
 log "Troubleshooting tips:"
 log "1. Run the post-install test script: bash sentinel_post_install_test.sh"
-log "2. Check logs in ${SENTINEL_HOME}/logs/"
+log "2. Check logs in ${HOME}/logs/"
 log "3. For autocomplete issues, run: @autocomplete fix"
 log "4. For full reinstallation, run: bash reinstall.sh"
 

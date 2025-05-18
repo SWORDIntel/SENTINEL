@@ -3,8 +3,8 @@
 # SENTINEL – Framework installer
 # -----------------------------------------------
 # Hardened edition  •  v2.3.0  •  2025-05-16
-# Installs/repairs  ~/.sentinel  and patches the
-# user's Bash startup chain in an idempotent way.
+# Installs/repairs directly to user's home directory
+# and patches the user's Bash startup chain in an idempotent way.
 ###############################################################################
 # Coding standards
 #   • Strict mode:  set -euo pipefail
@@ -19,12 +19,11 @@ set -euo pipefail
 
 # Define critical variables
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-SENTINEL_HOME="${HOME}/.sentinel"
-LOG_DIR="${SENTINEL_HOME}/logs"
-STATE_FILE="${SENTINEL_HOME}/install.state"
+LOG_DIR="${HOME}/logs"
+STATE_FILE="${HOME}/install.state"
 BLESH_DIR="${HOME}/.local/share/blesh"
-BLESH_LOADER="${SENTINEL_HOME}/blesh_loader.sh"
-MODULES_DIR="${SENTINEL_HOME}/bash_modules.d"
+BLESH_LOADER="${HOME}/blesh_loader.sh"
+MODULES_DIR="${HOME}/bash_modules.d"
 
 # Colour helpers
 c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m'; c_blue=$'\033[1;34m'; c_reset=$'\033[0m'
@@ -64,13 +63,13 @@ ok "All required CLI tools present"
 # 2. Create directory structure
 ###############################################################################
 if ! is_done "DIRS_CREATED"; then
-  step "Creating directory tree under ${SENTINEL_HOME}"
+  step "Creating directory tree under ${HOME}"
   mkdir -p \
-    "${SENTINEL_HOME}"/{autocomplete/{snippets,context,projects,params},logs,bash_modules.d} \
+    "${HOME}"/{autocomplete/{snippets,context,projects,params},logs,bash_modules.d} \
     "${HOME}/.cache/blesh" \
     "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib}
   
-  chmod 700 "${SENTINEL_HOME}" "${LOG_DIR}" \
+  chmod 700 "${LOG_DIR}" \
     "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib}
     
   mark_done "DIRS_CREATED"
@@ -82,7 +81,7 @@ fi
 ###############################################################################
 if ! is_done "PYTHON_VENV_READY"; then
   step "Setting up Python virtual environment and dependencies"
-  VENV_DIR="${SENTINEL_HOME}/venv"
+  VENV_DIR="${HOME}/venv"
   
   # Create venv if it doesn't exist
   if [[ ! -d "$VENV_DIR" ]]; then
@@ -177,11 +176,11 @@ patch_bashrc() {
   else
     # Patch existing bashrc to load SENTINEL
     step "Patching existing bashrc to load SENTINEL"
-    if ! grep -q "source.*sentinel/bashrc.postcustom" "$rc"; then
+    if ! grep -q "source.*bashrc.postcustom" "$rc"; then
       echo '' >> "$rc"
       echo '# SENTINEL Framework Integration' >> "$rc"
-      echo 'if [[ -f "${HOME}/.sentinel/bashrc.postcustom" ]]; then' >> "$rc"
-      echo '    source "${HOME}/.sentinel/bashrc.postcustom"' >> "$rc"
+      echo 'if [[ -f "${HOME}/bashrc.postcustom" ]]; then' >> "$rc"
+      echo '    source "${HOME}/bashrc.postcustom"' >> "$rc"
       echo 'fi' >> "$rc"
       ok "Patched $rc to load SENTINEL"
     else
@@ -200,11 +199,11 @@ fi
 ###############################################################################
 if ! is_done "POSTCUSTOM_READY"; then
   step "Deploying bashrc.postcustom"
-  install -m 644 "${PROJECT_ROOT}/bashrc.postcustom" "${SENTINEL_HOME}/bashrc.postcustom"
+  install -m 644 "${PROJECT_ROOT}/bashrc.postcustom" "${HOME}/bashrc.postcustom"
   
   # Enable VENV_AUTO by default
-  if ! grep -q '^export VENV_AUTO=1' "${SENTINEL_HOME}/bashrc.postcustom"; then
-    echo 'export VENV_AUTO=1  # Enable Python venv auto-activation' >> "${SENTINEL_HOME}/bashrc.postcustom"
+  if ! grep -q '^export VENV_AUTO=1' "${HOME}/bashrc.postcustom"; then
+    echo 'export VENV_AUTO=1  # Enable Python venv auto-activation' >> "${HOME}/bashrc.postcustom"
   fi
   
   ok "bashrc.postcustom in place with VENV_AUTO enabled"
@@ -293,7 +292,7 @@ fi
 # 10. Enable FZF module if present
 ###############################################################################
 FZF_BIN="$(command -v fzf 2>/dev/null || true)"
-POSTCUSTOM_FILE="${SENTINEL_HOME}/bashrc.postcustom"
+POSTCUSTOM_FILE="${HOME}/bashrc.postcustom"
 
 if [[ -n "$FZF_BIN" ]]; then
   step "fzf detected at $FZF_BIN; enabling SENTINEL FZF module"
@@ -314,10 +313,11 @@ if ! is_done "PERMISSIONS_SECURED"; then
   step "Securing permissions on all SENTINEL files and modules"
   
   # Secure all directories
-  find "${SENTINEL_HOME}" -type d -exec chmod 700 {} \;
+  find "${HOME}/bash_modules.d" -type d -exec chmod 700 {} \;
+  find "${HOME}/logs" -type d -exec chmod 700 {} \;
   
   # Secure all files
-  find "${SENTINEL_HOME}" -type f -exec chmod 600 {} \;
+  find "${HOME}/bash_modules.d" -type f -exec chmod 600 {} \;
   
   # Make executable files executable
   find "${HOME}/bash_aliases.d" -type f -exec chmod 700 {} \;
@@ -347,7 +347,7 @@ fi
 step "Verifying installation"
 
 # Check that essential directories exist
-for dir in "${SENTINEL_HOME}" "${SENTINEL_HOME}/autocomplete" "${MODULES_DIR}"; do
+for dir in "${HOME}/autocomplete" "${MODULES_DIR}"; do
   if [[ ! -d "$dir" ]]; then
     warn "Essential directory $dir is missing!"
   else
@@ -356,7 +356,7 @@ for dir in "${SENTINEL_HOME}" "${SENTINEL_HOME}/autocomplete" "${MODULES_DIR}"; 
 done
 
 # Check that essential files exist
-for file in "${HOME}/.bashrc" "${SENTINEL_HOME}/bashrc.postcustom" "${BLESH_LOADER}"; do
+for file in "${HOME}/.bashrc" "${HOME}/bashrc.postcustom" "${BLESH_LOADER}"; do
   if [[ ! -f "$file" ]]; then
     warn "Essential file $file is missing!"
   else
@@ -365,11 +365,11 @@ for file in "${HOME}/.bashrc" "${SENTINEL_HOME}/bashrc.postcustom" "${BLESH_LOAD
 done
 
 # Check that Python venv exists and has basic packages
-VENV_PYTHON="${SENTINEL_HOME}/venv/bin/python3"
+VENV_PYTHON="${HOME}/venv/bin/python3"
 if [[ ! -f "$VENV_PYTHON" ]]; then
   warn "Python virtual environment not properly installed"
 else
-  ok "Python virtual environment found at ${SENTINEL_HOME}/venv"
+  ok "Python virtual environment found at ${HOME}/venv"
   
   # Test importing a few key packages
   for pkg in numpy markovify tqdm; do
@@ -393,7 +393,7 @@ fi
 ###############################################################################
 echo
 ok "Installation completed successfully!"
-echo "• Open a new terminal OR run:  source '${SENTINEL_HOME}/bashrc.postcustom'"
+echo "• Open a new terminal OR run:  source '${HOME}/bashrc.postcustom'"
 echo "• Verify with:                @autocomplete status"
 echo "• Logs:                       ${LOG_DIR}/install.log"
 echo 

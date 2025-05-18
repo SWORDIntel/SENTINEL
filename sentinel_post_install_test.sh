@@ -14,13 +14,12 @@ c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m';
 c_blue=$'\033[1;34m'; c_purple=$'\033[1;35m'; c_cyan=$'\033[1;36m'; c_reset=$'\033[0m'
 
 # Define paths
-SENTINEL_HOME="${HOME}/.sentinel"
-VENV_DIR="${SENTINEL_HOME}/venv"
-MODULES_DIR="${SENTINEL_HOME}/bash_modules.d"
-TEST_LOG="${SENTINEL_HOME}/logs/post_install_test.log"
+VENV_DIR="${HOME}/venv"
+MODULES_DIR="${HOME}/bash_modules.d"
+TEST_LOG="${HOME}/logs/post_install_test.log"
 
 # Ensure log directory exists
-mkdir -p "${SENTINEL_HOME}/logs"
+mkdir -p "${HOME}/logs"
 
 # Test functions
 log() { printf '[%(%F %T)T] %b\n' -1 "$*" | tee -a "${TEST_LOG}"; }
@@ -78,19 +77,18 @@ log "Test results will be logged to: ${TEST_LOG}"
 header "File System Structure Tests"
 
 # Check critical directories
-for dir in "${SENTINEL_HOME}" "${SENTINEL_HOME}/autocomplete" "${MODULES_DIR}" "${VENV_DIR}"; do
+for dir in "${HOME}/autocomplete" "${MODULES_DIR}" "${VENV_DIR}"; do
     run_test "Directory exists: $dir" "[[ -d \"$dir\" ]]"
 done
 
 # Check critical files
-run_test "BLE.sh loader exists" "[[ -f \"${SENTINEL_HOME}/blesh_loader.sh\" ]]"
-run_test "bashrc.postcustom exists" "[[ -f \"${SENTINEL_HOME}/bashrc.postcustom\" ]]"
+run_test "BLE.sh loader exists" "[[ -f \"${HOME}/blesh_loader.sh\" ]]"
+run_test "bashrc.postcustom exists" "[[ -f \"${HOME}/bashrc.postcustom\" ]]"
 run_test "Autocomplete script exists" "[[ -f \"${HOME}/bash_aliases.d/autocomplete\" ]]"
 run_test ".bash_modules exists" "[[ -f \"${HOME}/.bash_modules\" ]]"
 
 # Check permissions
-run_test "SENTINEL_HOME has secure permissions" "stat -c %a \"${SENTINEL_HOME}\" | grep -E '^700$'"
-run_test "Logs directory has secure permissions" "stat -c %a \"${SENTINEL_HOME}/logs\" | grep -E '^700$'"
+run_test "Logs directory has secure permissions" "stat -c %a \"${HOME}/logs\" | grep -E '^700$'"
 run_test "Autocomplete script is executable" "stat -c %a \"${HOME}/bash_aliases.d/autocomplete\" | grep -E '^700$'"
 
 ###############################################################################
@@ -112,7 +110,7 @@ done
 header "Bash Integration Tests"
 
 run_test "SENTINEL inclusion in .bashrc" "grep -q 'SENTINEL Framework Integration' \"${HOME}/.bashrc\""
-run_test "VENV_AUTO is enabled" "grep -q 'export VENV_AUTO=1' \"${SENTINEL_HOME}/bashrc.postcustom\""
+run_test "VENV_AUTO is enabled" "grep -q 'export VENV_AUTO=1' \"${HOME}/bashrc.postcustom\""
 
 ###############################################################################
 # 4. Module checks
@@ -142,7 +140,7 @@ header "Basic Functionality Tests"
 TEST_SCRIPT=$(mktemp)
 cat > "$TEST_SCRIPT" << 'EOT'
 #!/usr/bin/env bash
-source "${HOME}/.sentinel/bashrc.postcustom" 2>/dev/null
+source "${HOME}/bashrc.postcustom" 2>/dev/null
 command -v @autocomplete >/dev/null 2>&1
 EOT
 chmod +x "$TEST_SCRIPT"
@@ -155,8 +153,8 @@ rm -f "$TEST_SCRIPT"
 ###############################################################################
 header "Security Checks"
 
-run_test "No world-writable files in SENTINEL_HOME" "! find \"${SENTINEL_HOME}\" -type f -perm -o=w -print | grep -q ."
-run_test "No world-writable directories in SENTINEL_HOME" "! find \"${SENTINEL_HOME}\" -type d -perm -o=w -print | grep -q ."
+run_test "No world-writable files in bash_modules.d" "! find \"${HOME}/bash_modules.d\" -type f -perm -o=w -print | grep -q ."
+run_test "No world-writable directories in bash_modules.d" "! find \"${HOME}/bash_modules.d\" -type d -perm -o=w -print | grep -q ."
 
 ###############################################################################
 # Final summary
@@ -174,7 +172,7 @@ fi
 
 log ""
 log "Next steps:"
-log "1. Restart your terminal or run: source ${SENTINEL_HOME}/bashrc.postcustom"
+log "1. Restart your terminal or run: source ${HOME}/bashrc.postcustom"
 log "2. Verify autocomplete with: @autocomplete status"
 log "3. If you encounter issues, run: @autocomplete fix"
 

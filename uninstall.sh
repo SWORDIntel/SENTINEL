@@ -18,17 +18,26 @@ ok()   { log "${c_green}✔${c_reset}  $*"; }
 warn() { log "${c_yellow}⚠${c_reset}  $*"; }
 fail() { log "${c_red}✖${c_reset}  $*"; exit 1; }
 
-# Define paths
-SENTINEL_HOME="${HOME}/.sentinel"
+# Define paths for SENTINEL components
 SENTINEL_DIRS=(
     "${HOME}/bash_aliases.d"
     "${HOME}/bash_completion.d"
     "${HOME}/bash_functions.d"
     "${HOME}/contrib"
+    "${HOME}/logs"
+    "${HOME}/autocomplete"
+    "${HOME}/bash_modules.d"
+    "${HOME}/venv"
 )
 SENTINEL_FILES=(
     "${HOME}/.bash_modules"
+    "${HOME}/blesh_loader.sh"
+    "${HOME}/bashrc.postcustom"
+    "${HOME}/install.state"
 )
+
+# Check for legacy installation
+LEGACY_SENTINEL_HOME="${HOME}/.sentinel"
 
 # Get confirmation
 step "This will completely remove SENTINEL from your system"
@@ -43,11 +52,22 @@ step "Creating backup of current SENTINEL installation"
 BACKUP_DIR="${HOME}/sentinel_backup_$(date +%Y%m%d%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 
-if [[ -d "${SENTINEL_HOME}" ]]; then
-    cp -r "${SENTINEL_HOME}" "${BACKUP_DIR}/"
-    ok "SENTINEL home directory backed up to ${BACKUP_DIR}"
+# Backup legacy directory if it exists
+if [[ -d "${LEGACY_SENTINEL_HOME}" ]]; then
+    cp -r "${LEGACY_SENTINEL_HOME}" "${BACKUP_DIR}/"
+    ok "Legacy SENTINEL home directory backed up to ${BACKUP_DIR}"
 fi
 
+# Backup current SENTINEL files
+for file in "${SENTINEL_FILES[@]}"; do
+    if [[ -f "$file" ]]; then
+        file_name=$(basename "$file")
+        cp "$file" "${BACKUP_DIR}/"
+        ok "File $file_name backed up to ${BACKUP_DIR}"
+    fi
+done
+
+# Backup current SENTINEL directories
 for dir in "${SENTINEL_DIRS[@]}"; do
     if [[ -d "$dir" ]]; then
         dir_name=$(basename "$dir")
@@ -56,13 +76,11 @@ for dir in "${SENTINEL_DIRS[@]}"; do
     fi
 done
 
-for file in "${SENTINEL_FILES[@]}" "${HOME}/.bashrc"; do
-    if [[ -f "$file" ]]; then
-        file_name=$(basename "$file")
-        cp "$file" "${BACKUP_DIR}/"
-        ok "File $file_name backed up to ${BACKUP_DIR}"
-    fi
-done
+# Also backup .bashrc
+if [[ -f "${HOME}/.bashrc" ]]; then
+    cp "${HOME}/.bashrc" "${BACKUP_DIR}/"
+    ok "File .bashrc backed up to ${BACKUP_DIR}"
+fi
 
 # Restore original .bashrc if a sentinel backup exists
 if [[ -f "${HOME}/.bashrc.sentinel.bak" ]]; then
@@ -78,14 +96,21 @@ else
     fi
 fi
 
-# Remove SENTINEL home directory
-step "Removing SENTINEL home directory"
-if [[ -d "${SENTINEL_HOME}" ]]; then
-    rm -rf "${SENTINEL_HOME}"
-    ok "Removed ${SENTINEL_HOME}"
-else
-    warn "SENTINEL home directory not found at ${SENTINEL_HOME}"
+# Remove legacy SENTINEL home directory if it exists
+if [[ -d "${LEGACY_SENTINEL_HOME}" ]]; then
+    step "Removing legacy SENTINEL home directory"
+    rm -rf "${LEGACY_SENTINEL_HOME}"
+    ok "Removed ${LEGACY_SENTINEL_HOME}"
 fi
+
+# Remove SENTINEL files
+step "Removing SENTINEL files"
+for file in "${SENTINEL_FILES[@]}"; do
+    if [[ -f "$file" ]]; then
+        rm -f "$file"
+        ok "Removed $file"
+    fi
+done
 
 # Remove SENTINEL directories
 step "Removing SENTINEL directories"
@@ -98,15 +123,6 @@ for dir in "${SENTINEL_DIRS[@]}"; do
         else
             warn "Keeping $dir (may contain custom files)"
         fi
-    fi
-done
-
-# Remove SENTINEL files
-step "Removing SENTINEL files"
-for file in "${SENTINEL_FILES[@]}"; do
-    if [[ -f "$file" ]]; then
-        rm -f "$file"
-        ok "Removed $file"
     fi
 done
 
@@ -125,12 +141,6 @@ fi
 if [[ -f "${HOME}/.blerc" ]]; then
     rm -f "${HOME}/.blerc"
     ok "Removed .blerc configuration file"
-fi
-
-# Clean up Python virtual environment
-if [[ -d "${SENTINEL_HOME}/venv" ]]; then
-    rm -rf "${SENTINEL_HOME}/venv"
-    ok "Removed Python virtual environment"
 fi
 
 # Final message

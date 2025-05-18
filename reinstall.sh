@@ -19,8 +19,7 @@ warn() { log "${c_yellow}⚠${c_reset}  $*"; }
 fail() { log "${c_red}✖${c_reset}  $*"; exit 1; }
 
 # Define paths
-SENTINEL_HOME="${HOME}/.sentinel"
-STATE_FILE="${SENTINEL_HOME}/install.state"
+STATE_FILE="${HOME}/install.state"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
 # Get confirmation
@@ -36,12 +35,21 @@ step "Creating backup of current setup"
 BACKUP_DIR="${HOME}/sentinel_backup_$(date +%Y%m%d%H%M%S)"
 mkdir -p "$BACKUP_DIR"
 
-if [[ -d "${SENTINEL_HOME}" ]]; then
-    cp -r "${SENTINEL_HOME}" "${BACKUP_DIR}/"
-    ok "SENTINEL home directory backed up to ${BACKUP_DIR}"
+# Check for old sentinel home directory (legacy)
+if [[ -d "${HOME}/.sentinel" ]]; then
+    cp -r "${HOME}/.sentinel" "${BACKUP_DIR}/"
+    ok "Legacy SENTINEL home directory backed up to ${BACKUP_DIR}"
 fi
 
-for dir in bash_aliases.d bash_completion.d bash_functions.d contrib; do
+# Back up key SENTINEL files from HOME
+for file in blesh_loader.sh bashrc.postcustom; do
+    if [[ -f "${HOME}/${file}" ]]; then
+        cp "${HOME}/${file}" "${BACKUP_DIR}/"
+        ok "${file} backed up to ${BACKUP_DIR}"
+    fi
+done
+
+for dir in bash_aliases.d bash_completion.d bash_functions.d contrib logs autocomplete bash_modules.d venv; do
     if [[ -d "${HOME}/${dir}" ]]; then
         cp -r "${HOME}/${dir}" "${BACKUP_DIR}/"
         ok "${dir} backed up to ${BACKUP_DIR}"
@@ -61,16 +69,39 @@ if [[ ! -f "${SCRIPT_DIR}/install.sh" ]]; then
 fi
 
 # Remove existing installation
-step "Removing existing SENTINEL installation"
-if [[ -d "${SENTINEL_HOME}" ]]; then
-    rm -rf "${SENTINEL_HOME}"
-    ok "Removed ${SENTINEL_HOME}"
+step "Removing existing SENTINEL installation files"
+
+# Remove old sentinel directory if it exists (legacy)
+if [[ -d "${HOME}/.sentinel" ]]; then
+    rm -rf "${HOME}/.sentinel"
+    ok "Removed legacy ${HOME}/.sentinel directory"
 fi
 
-# Remove state file to force complete reinstall
-if [[ -f "${STATE_FILE}" ]]; then
-    rm -f "${STATE_FILE}"
-    ok "Removed installation state file"
+# Remove specific SENTINEL files from HOME
+for file in blesh_loader.sh bashrc.postcustom install.state; do
+    if [[ -f "${HOME}/${file}" ]]; then
+        rm -f "${HOME}/${file}"
+        ok "Removed ${HOME}/${file}"
+    fi
+done
+
+# Remove SENTINEL directories
+for dir in autocomplete bash_modules.d logs; do
+    if [[ -d "${HOME}/${dir}" ]]; then
+        rm -rf "${HOME}/${dir}"
+        ok "Removed ${HOME}/${dir}"
+    fi
+done
+
+# Remove venv directory if it exists
+if [[ -d "${HOME}/venv" ]]; then
+    read -p "Remove Python virtual environment at ${HOME}/venv? [y/N]: " confirm_venv
+    if [[ "$confirm_venv" =~ ^[Yy]$ ]]; then
+        rm -rf "${HOME}/venv"
+        ok "Removed Python virtual environment"
+    else
+        warn "Keeping Python virtual environment at ${HOME}/venv"
+    fi
 fi
 
 # Remove modular directories
@@ -103,7 +134,7 @@ bash "${SCRIPT_DIR}/install.sh"
 
 # Verify installation
 step "Verifying installation"
-if [[ -d "${SENTINEL_HOME}" ]] && [[ -f "${SENTINEL_HOME}/bashrc.postcustom" ]]; then
+if [[ -f "${HOME}/bashrc.postcustom" ]]; then
     ok "SENTINEL installation verified"
 else
     fail "Installation verification failed"
@@ -112,6 +143,6 @@ fi
 # Final message
 echo
 ok "SENTINEL has been successfully reinstalled!"
-echo "• Open a new terminal OR run:  source '${SENTINEL_HOME}/bashrc.postcustom'"
+echo "• Open a new terminal OR run:  source '${HOME}/bashrc.postcustom'"
 echo "• Verify with:                @autocomplete status"
 echo "• A backup of your previous installation is available at: ${BACKUP_DIR}" 
