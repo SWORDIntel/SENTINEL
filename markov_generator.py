@@ -21,6 +21,7 @@ Usage:
 Author: SENTINEL Team
 """
 
+# Standard library imports
 import os
 import sys
 import time
@@ -31,12 +32,13 @@ import hashlib
 from typing import List, Dict, Optional, Union, Any
 from pathlib import Path
 
+# Third-party imports (with robust error handling)
 try:
     import markovify
     import numpy as np
     from tqdm import tqdm
     from unidecode import unidecode
-except ImportError:
+except ImportError as e:
     print("Error: Required libraries not found. Install with:")
     print("pip install markovify numpy tqdm unidecode")
     sys.exit(1)
@@ -47,7 +49,7 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(os.path.expanduser("~/.sentinel/markov_generator.log"))
+        logging.FileHandler(os.path.expanduser("~/logs/markov_generator.log"))
     ]
 )
 logger = logging.getLogger("sentinel_markov")

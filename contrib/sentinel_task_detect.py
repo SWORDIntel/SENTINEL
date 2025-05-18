@@ -2,6 +2,7 @@
 # sentinel_task_detect.py: Sophisticated task detection for SENTINEL
 # Detects user tasks based on command patterns, file context, and project structure
 
+# Standard library imports
 import os
 import sys
 import json
@@ -50,7 +51,7 @@ if os.path.exists(CHAIN_MODULE_PATH):
         CHAIN_AVAILABLE = False
 
 # Constants
-TASK_DIR = os.path.expanduser("~/.sentinel/tasks")
+TASK_DIR = os.path.expanduser("~/tasks")
 TASK_DB_FILE = os.path.join(TASK_DIR, "task_database.json")
 PROJECT_PROFILES_FILE = os.path.join(TASK_DIR, "project_profiles.json")
 TASK_HISTORY_FILE = os.path.join(TASK_DIR, "task_history.json")

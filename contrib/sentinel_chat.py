@@ -1,8 +1,8 @@
-@ -1,404 +0,0 @@
 #!/usr/bin/env python3
 # sentinel_chat.py: Context-aware shell assistant powered by local LLMs
 # Requires: pip install llama-cpp-python rich readline
 
+# Standard library imports
 import os
 import sys
 import json
@@ -16,6 +16,7 @@ import shutil
 from datetime import datetime
 import signal
 
+# Third-party imports (with robust error handling)
 try:
     from llama_cpp import Llama
     from rich.console import Console
@@ -27,9 +28,9 @@ except ImportError:
     DEPS_AVAILABLE = False
 
 # Constants
-MODEL_DIR = os.path.expanduser("~/.sentinel/models")
-HISTORY_FILE = os.path.expanduser("~/.sentinel/chat_history.jsonl")
-CONFIG_FILE = os.path.expanduser("~/.sentinel/chat_config.json")
+MODEL_DIR = os.path.expanduser("~/models")
+HISTORY_FILE = os.path.expanduser("~/logs/chat_history.jsonl")
+CONFIG_FILE = os.path.expanduser("~/config/chat_config.json")
 DEFAULT_MODEL = "mistral-7b-instruct-v0.2.Q4_K_M.gguf"
 DEFAULT_MODEL_URL = "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
 

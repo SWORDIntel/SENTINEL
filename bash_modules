@@ -78,6 +78,12 @@ module_enable() {
     local module_file=""
     local debug_mode="${SENTINEL_DEBUG_MODULES:-0}"
     
+    # Validate module name: only allow alphanumeric, underscore, dash
+    if [[ ! "$module_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        eerror "Invalid module name: $module_name"
+        return 1
+    fi
+    
     [[ "$debug_mode" == "1" ]] && echo "DEBUG: Attempting to load module '$module_name'" >&2
     
     # First try to find module in root directory
@@ -116,6 +122,15 @@ module_enable() {
                 done
             fi
         fi
+        return 1
+    fi
+    
+    # Security: Enforce strict permissions (CVE-2016-7545 mitigation)
+    # Only load modules with 600 permissions (owner read/write)
+    local perms
+    perms=$(stat -c %a "$module_file")
+    if [[ "$perms" != "600" ]]; then
+        eerror "Security warning: Module file '$module_file' permissions are $perms (should be 600). Refusing to load."
         return 1
     fi
     

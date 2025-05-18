@@ -29,7 +29,7 @@ if declare -F sentinel_log >/dev/null; then
 fi
 
 # Define paths
-SENTINEL_MARKOV_DIR="${HOME}/.sentinel/markov"
+SENTINEL_MARKOV_DIR="${HOME}/markov"
 SENTINEL_MARKOV_SCRIPT="${PROJECT_ROOT:-$HOME/Documents/GitHub/SENTINEL}/markov_generator.py"
 SENTINEL_MARKOV_CORPUS="${SENTINEL_MARKOV_DIR}/corpus"
 SENTINEL_MARKOV_CONFIG="${SENTINEL_MARKOV_DIR}/config.json"

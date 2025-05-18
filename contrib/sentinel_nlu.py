@@ -2,6 +2,7 @@
 # sentinel_nlu.py: Natural language understanding for SENTINEL
 # Translates natural language into shell commands and generates scripts
 
+# Standard library imports
 import os
 import sys
 import json
@@ -12,6 +13,14 @@ import subprocess
 from pathlib import Path
 import importlib.util
 from collections import defaultdict
+
+# Third-party imports (with robust error handling)
+LLAMA_AVAILABLE = False
+try:
+    from llama_cpp import Llama
+    LLAMA_AVAILABLE = True
+except ImportError:
+    print("llama-cpp-python not available, advanced NLU features will be limited")
 
 # Try to import the context module
 CONTEXT_AVAILABLE = False
@@ -65,20 +74,13 @@ if os.path.exists(CHAIN_MODULE_PATH):
         print(f"Error loading chain prediction module: {e}")
         CHAIN_AVAILABLE = False
 
-# Check if we can import any LLM interface
-LLAMA_AVAILABLE = False
-try:
-    from llama_cpp import Llama
-    LLAMA_AVAILABLE = True
-except ImportError:
-    print("llama-cpp-python not available, advanced NLU features will be limited")
-
 # Constants
-NLU_DIR = os.path.expanduser("~/.sentinel/nlu")
+NLU_DIR = os.path.expanduser("~/nlu")
 COMMANDS_DB_FILE = os.path.join(NLU_DIR, "commands_database.json")
 PROMPTS_FILE = os.path.join(NLU_DIR, "prompt_templates.json")
 TRANSLATIONS_FILE = os.path.join(NLU_DIR, "translations_history.json")
-DEFAULT_MODEL_PATH = os.path.expanduser("~/.sentinel/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf")
+HISTORY_FILE = os.path.join(NLU_DIR, "nlu_history.jsonl")
+DEFAULT_MODEL_PATH = os.path.expanduser("~/models/mistral-7b-instruct-v0.2.Q4_K_M.gguf")
 
 # Ensure directories exist
 Path(NLU_DIR).mkdir(parents=True, exist_ok=True)
@@ -446,7 +448,7 @@ Please explain:
             user_prompt = prompt_template["user_template"].format(
                 query=query,
                 current_dir=os.getcwd(),
-                os.info=os.uname().sysname + " " + os.uname().release,
+                os_info=os.uname().sysname + " " + os.uname().release,
                 context_info=context_info
             )
             

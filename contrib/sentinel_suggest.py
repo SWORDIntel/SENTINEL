@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
 # sentinel_suggest.py: ML-powered CLI suggestions
 # Requires: pip install markovify
+
+# Standard library imports
 import os
 import sys
-import markovify
 
-# Paths for history and serialized model
-HISTORY_FILE = os.path.expanduser("~/.sentinel_history")
-MODEL_FILE   = os.path.expanduser("~/.sentinel_model.json")
+# Third-party imports (with robust error handling)
+try:
+    import markovify
+except ImportError as e:
+    print(f"Missing dependency: {e}")
+    print("Install with: pip install markovify")
+    sys.exit(1)
+
+# Config files
+HISTORY_FILE = os.path.expanduser("~/logs/command_history")
+MODEL_FILE   = os.path.expanduser("~/models/command_model.json")
 
 # Attempt to load existing model
 model = None

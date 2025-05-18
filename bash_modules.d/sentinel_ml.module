@@ -44,15 +44,15 @@ if python3 -c "import openvino" &>/dev/null; then
     echo "OpenVINO detected! Hardware acceleration enabled for SENTINEL ML."
 fi
 
-# Ensure the .sentinel directory exists
-if [ ! -d "${HOME}/.sentinel" ]; then
-    mkdir -p "${HOME}/.sentinel"
-    echo "Created ${HOME}/.sentinel directory"
+# Ensure the models directory exists
+if [ ! -d "${HOME}/models" ]; then
+    mkdir -p "${HOME}/models"
+    echo "Created ${HOME}/models directory"
 fi
 
 # Path to ML scripts - use installed script if available
 CONTRIB_ML_DIR="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/contrib"
-INSTALLED_ML_DIR="${HOME}/.sentinel"
+INSTALLED_ML_DIR="${HOME}"
 
 # Check for installed version first
 if [ -f "${INSTALLED_ML_DIR}/sentinel_autolearn.py" ]; then

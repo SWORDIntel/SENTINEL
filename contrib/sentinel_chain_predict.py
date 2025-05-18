@@ -2,16 +2,24 @@
 # sentinel_chain_predict.py: Advanced command chain prediction for SENTINEL
 # Implements predictive command chains using context data and Markov models
 
+# Standard library imports
 import os
 import sys
 import json
 import time
 import random
 import hashlib
-import numpy as np
 from pathlib import Path
 from collections import defaultdict, Counter
 import importlib.util
+
+# Third-party imports (with robust error handling)
+MARKOVIFY_AVAILABLE = False
+try:
+    import markovify
+    MARKOVIFY_AVAILABLE = True
+except ImportError:
+    print("Warning: markovify not available, some features will be limited")
 
 # Try to import the context module
 CONTEXT_AVAILABLE = False
@@ -20,14 +28,6 @@ context_module = None
 # Path to the context module
 SENTINEL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONTEXT_MODULE_PATH = os.path.join(SENTINEL_DIR, "contrib", "sentinel_context.py")
-
-# Try to import markovify
-MARKOVIFY_AVAILABLE = False
-try:
-    import markovify
-    MARKOVIFY_AVAILABLE = True
-except ImportError:
-    print("Warning: markovify not available, some features will be limited")
 
 # Try to import the context module
 if os.path.exists(CONTEXT_MODULE_PATH):
@@ -42,7 +42,7 @@ if os.path.exists(CONTEXT_MODULE_PATH):
         CONTEXT_AVAILABLE = False
 
 # Constants
-CHAIN_DIR = os.path.expanduser("~/.sentinel/chains")
+CHAIN_DIR = os.path.expanduser("~/chains")
 CHAIN_MODEL_FILE = os.path.join(CHAIN_DIR, "command_chains.json")
 CHAIN_STATS_FILE = os.path.join(CHAIN_DIR, "chain_stats.json")
 TASK_CHAINS_FILE = os.path.join(CHAIN_DIR, "task_chains.json")

@@ -2,6 +2,7 @@
 # sentinel_gitstar_tui.py: Terminal-based UI for GitHub starred repositories analyzer
 # Provides an intuitive interface to the SENTINEL GitStar functionality
 
+# Standard library imports
 import os
 import sys
 import curses
@@ -11,6 +12,7 @@ import signal
 from pathlib import Path
 import importlib.util
 
+# Third-party imports (with robust error handling)
 try:
     import npyscreen
     from tqdm import tqdm

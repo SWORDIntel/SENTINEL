@@ -4,12 +4,11 @@ A secure, high-performance Markov chain text generator integrated with the SENTI
 
 ## Features
 
-- **Multiple Input Sources**: Process text from files, directories, or stdin
-- **Security-Focused**: Input validation, file permission controls, and hash verification
-- **Advanced Generation**: Adjustable state size and retention parameters
+- **Intelligent Generation**: Advanced state-based Markov chain text generation
+- **Corpus Management**: Add, list, and analyze corpus files
+- **Secure Processing**: Validation of inputs and secure file handling
 - **Terminal Integration**: Seamless integration with SENTINEL shell environment
-- **Command Suggestion**: Generate contextual command suggestions based on shell history
-- **Corpus Management**: Add, list, and maintain text corpus with statistics
+- **Command Suggestions**: Optional integration with command prediction system
 
 ## Installation
 
@@ -17,137 +16,122 @@ The Markov generator is included with SENTINEL. To ensure all dependencies are i
 
 ```bash
 # Activate the SENTINEL Python environment
-source ~/venv/bin/activate
+source "$HOME/venv/bin/activate"
 
-# Install required dependencies
+# Install dependencies
 pip install markovify numpy tqdm unidecode
 ```
 
 Enable the module in SENTINEL:
 
 ```bash
-# Add the module to your active modules
+# Add to your modules configuration
 echo "sentinel_markov" >> ~/.bash_modules
-
-# Source bashrc to load the module
-source ~/.bashrc
 ```
 
 ## Usage
 
 ### Basic Text Generation
 
-Generate text from a file with default settings:
+Generate text from an input file:
+
 ```bash
-sentinel_markov generate -i input.txt
+sentinel_markov generate -i input.txt -o output.txt -s 3 -c 10
 ```
 
-### Advanced Options
-
-Generate text with custom parameters:
-```bash
-sentinel_markov generate -i input.txt -s 3 -c 10 -l 320 -o output.txt
-```
-
-Parameters:
-- `-i, --input`: Input file path
-- `-o, --output`: Output file path
+Where:
+- `-i, --input`: Input file path (required)
+- `-o, --output`: Output file path (optional)
 - `-s, --state-size`: Markov chain state size (default: 2)
 - `-c, --count`: Number of sentences to generate (default: 5)
 - `-l, --max-length`: Maximum sentence length (default: 280)
 
-### Direct Python Script Usage
-
-The Python script can be used directly for more advanced scenarios:
-
-```bash
-./markov_generator.py --input input.txt --state-size 3 --count 10 --output output.txt
-./markov_generator.py --corpus-dir ./corpus/ --state-size 2
-cat input.txt | ./markov_generator.py --stdin --count 5
-```
-
 ### Corpus Management
 
-Add files to your corpus:
+Add a file to the corpus:
+
 ```bash
-sentinel_markov corpus file.txt
+sentinel_markov corpus ~/Documents/sample.txt
 ```
 
-List corpus files:
+List all corpus files:
+
 ```bash
 sentinel_markov list
 ```
 
 View corpus statistics:
+
 ```bash
 sentinel_markov corpus-stats
 ```
 
-Clean cache and outputs:
+Clean cached data:
+
 ```bash
 sentinel_markov clean
 ```
 
+## Advanced Configuration
+
+The Markov generator can be customized through its configuration file. The default configuration is created on first run, but you can modify it to adjust behavior:
+
+```json
+{
+    "state_size": 2,
+    "default_count": 5,
+    "max_length": 280,
+    "retention_ratio": 1.0,
+    "extensions": [".txt", ".md", ".rst"],
+    "security": {
+        "max_file_size": 10485760,
+        "validate_input": true,
+        "log_level": "info"
+    }
+}
+```
+
 ## Technical Details
 
-### Architecture
+### Algorithm
 
-The generator uses a multi-stage pipeline:
-1. **Secure Input Handling**: Validates file permissions and content safety
-2. **Text Preprocessing**: Normalizes and improves text quality for model generation
-3. **Model Building**: Creates Markov chain models with configurable state size
-4. **Text Generation**: Produces output based on probabilistic state transitions
-5. **Output Processing**: Filters and formats results for readability
+The generator uses a state-based Markov chain that:
 
-### State Size Explained
+1. Analyzes input text and builds probabilistic state transitions
+2. Generates new sequences based on learned probability distributions
+3. Applies validation rules to ensure output quality and security
 
-The `state_size` parameter controls how many words the model uses for context:
+### Security Features
 
-- **State Size 1**: Context of 1 word, more random outputs
-- **State Size 2**: Context of 2 words, balanced coherence/creativity
-- **State Size 3+**: Larger context, more coherent but less creative
-
-For most applications, a state size of 2-3 provides the best results.
-
-### Security Considerations
-
-The Markov generator implements several security features:
-
-- **Input Validation**: Validates all files before processing
-- **Secure File Permissions**: Sets appropriate permissions on corpus and output files
-- **Size Limits**: Prevents processing of excessively large files
-- **Hash Verification**: Logs file hashes for security auditing
-- **Error Handling**: Comprehensive error handling and logging
+- Input validation and sanitization
+- File size limits and format validation
+- ASCII conversion to prevent unicode-based issues
+- Permissioned file operations
 
 ## Integration with SENTINEL
 
 The Markov generator integrates with other SENTINEL features:
 
-- **Command Prediction**: Uses shell history to suggest commands
-- **Context Awareness**: Can use current context for better suggestions
+- **Command Prediction**: Can suggest commands based on Markov analysis of shell history
+- **Module System**: Respects SENTINEL's module dependency management
 - **Logging System**: Integrates with SENTINEL's logging infrastructure
-- **Security Framework**: Uses HMAC verification when available
 
 ## Troubleshooting
 
-### Common Issues
+- **Empty Output**: Input may be too small or contain incompatible formatting
+- **Slow Performance**: Reduce state size or input file size
+- **Permissions Errors**: Check file permissions in ${HOME}/markov/
+- **Missing Dependencies**: Ensure all Python packages are installed
 
-- **Missing Python Packages**: Ensure all dependencies are installed
-- **Permissions Errors**: Check file permissions in ~/.sentinel/markov/
-- **Low-Quality Output**: Try increasing the state size or using larger corpus files
-
-### Logs
-
-Check the logs for detailed error information:
+For detailed logs, check:
 ```bash
-cat ~/.sentinel/markov_generator.log
+cat ${HOME}/logs/markov_generator.log
 ```
 
 ## License
 
 This component is part of the SENTINEL project and is subject to the same license terms.
 
-## Credits
+## Authors
 
-- Markovify library: https://github.com/jsvine/markovify
 - SENTINEL Team 

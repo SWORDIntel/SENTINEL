@@ -32,12 +32,12 @@ c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m'; c_blue=$'\03
 mkdir -p "${LOG_DIR}"
 chmod 700 "${LOG_DIR}"
 
-# Logging functions
-log() { printf '[%(%F %T)T] %b\n' -1 "$*" | tee -a "${LOG_DIR}/install.log"; }
-step() { log "${c_blue}==>${c_reset} $*"; }
-ok()   { log "${c_green}✔${c_reset}  $*"; }
-warn() { log "${c_yellow}⚠${c_reset}  $*"; }
-fail() { log "${c_red}✖${c_reset}  $*"; exit 1; }
+# Enhanced logging with timestamp
+log() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local log_file="${LOG_DIR}/install.log"
+    echo "[$timestamp] $*" | tee -a "$log_file"
+}
 
 # Error handler
 trap 'fail "Installer aborted on line $LINENO; see ${LOG_DIR}/install.log"' ERR
@@ -45,6 +45,25 @@ trap 'fail "Installer aborted on line $LINENO; see ${LOG_DIR}/install.log"' ERR
 # State management functions
 mark_done()  { echo "$1" >> "${STATE_FILE}"; }
 is_done()    { grep -qxF "$1" "${STATE_FILE:-/dev/null}" 2>/dev/null; }
+
+# Unattended install flag
+INTERACTIVE=1
+for arg in "$@"; do
+  case "$arg" in
+    --non-interactive)
+      INTERACTIVE=0
+      ;;
+  esac
+ done
+
+# OS detection for permissions (placeholder for future logic)
+OS_TYPE="$(uname)"
+
+# Python version check before venv setup
+PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
+if [[ ! "$PYTHON_VERSION" =~ ^3\.[6-9] ]] && [[ ! "$PYTHON_VERSION" =~ ^3\.[1-9][0-9] ]]; then
+  fail "Python 3.6+ is required (found $PYTHON_VERSION)"
+fi
 
 ###############################################################################
 # 1. Dependency check
@@ -62,51 +81,60 @@ ok "All required CLI tools present"
 ###############################################################################
 # 2. Create directory structure
 ###############################################################################
-if ! is_done "DIRS_CREATED"; then
+setup_directories() {
+  if is_done "DIRS_CREATED"; then
+    if [[ -d "${HOME}/logs" && -d "${HOME}/bash_modules.d" ]]; then
+      ok "Directory tree already exists"
+      return
+    else
+      warn "State file marked DIRS_CREATED but directories missing, re-creating"
+    fi
+  fi
   step "Creating directory tree under ${HOME}"
   mkdir -p \
     "${HOME}"/{autocomplete/{snippets,context,projects,params},logs,bash_modules.d} \
     "${HOME}/.cache/blesh" \
     "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib}
-  
   chmod 700 "${LOG_DIR}" \
     "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib}
-    
   mark_done "DIRS_CREATED"
   ok "Directory tree ready"
-fi
+}
 
 ###############################################################################
 # 3. Python venv and dependencies
 ###############################################################################
-if ! is_done "PYTHON_VENV_READY"; then
+setup_python_venv() {
+  if is_done "PYTHON_VENV_READY"; then
+    if [[ -f "${HOME}/venv/bin/activate" ]]; then
+      ok "Python venv already exists"
+      return
+    else
+      warn "State file marked PYTHON_VENV_READY but venv missing, re-creating"
+    fi
+  fi
   step "Setting up Python virtual environment and dependencies"
   VENV_DIR="${HOME}/venv"
-  
-  # Create venv if it doesn't exist
   if [[ ! -d "$VENV_DIR" ]]; then
-    python3 -m venv "$VENV_DIR"
+    python3 -m venv "$VENV_DIR" || fail "Failed to create Python virtual environment"
+    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
+      fail "Virtual environment creation failed - activate script not found"
+    fi
     ok "Virtual environment created at $VENV_DIR"
   else
     ok "Virtual environment already exists at $VENV_DIR"
   fi
-  
-  # Activate venv for this shell session
   source "$VENV_DIR/bin/activate"
-  
   step "Installing required Python packages in venv"
   "$VENV_DIR/bin/pip" install --upgrade pip
   "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
-  
-  # Enable advanced ML if needed
   if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
     "$VENV_DIR/bin/pip" install tensorflow
     ok "Tensorflow installed (advanced ML features enabled)"
   fi
-  
   mark_done "PYTHON_VENV_READY"
   ok "Python dependencies installed in venv"
-fi
+}
 
 ###############################################################################
 # 4. Install BLE.sh (for enhanced autocomplete)
@@ -114,7 +142,11 @@ fi
 install_blesh() {
   step "Installing BLE.sh to ${BLESH_DIR}"
   mkdir -p "${BLESH_DIR}"
-  git clone --depth=1 https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
+  safe_git_clone --depth=1 https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
+  git -C "${BLESH_DIR}" checkout v0.4.0
+  if [[ ! -f "${BLESH_DIR}/ble.sh" ]]; then
+    fail "BLE.sh repository doesn't contain expected files"
+  fi
   make -C "${BLESH_DIR}" install PREFIX="${HOME}/.local" >/dev/null
   ok "BLE.sh installed"
 }
@@ -133,6 +165,7 @@ fi
 ###############################################################################
 if ! is_done "BLESH_LOADER_DROPPED"; then
   step "Writing BLE.sh loader ${BLESH_LOADER}"
+  install -m 644 /dev/null "${BLESH_LOADER}"
   cat > "${BLESH_LOADER}" <<'EOF'
 # Auto-generated by SENTINEL installer
 # shellcheck shell=bash
@@ -143,7 +176,6 @@ if [[ -f ${BLESH_MAIN} ]]; then
   source "${BLESH_MAIN}" --attach=overhead
 fi
 EOF
-  chmod 644 "${BLESH_LOADER}"
   mark_done "BLESH_LOADER_DROPPED"
   ok "BLE.sh loader ready"
 fi
@@ -154,19 +186,20 @@ fi
 patch_bashrc() {
   local rc="$1"
   local sentinel_bashrc="${PROJECT_ROOT}/bashrc"
-  
-  # Backup existing bashrc
   if [[ -f "$rc" ]]; then
-    cp "$rc" "$rc.sentinel.bak.$(date +%s)"
+    safe_cp "$rc" "$rc.sentinel.bak.$(date +%s)"
     ok "Backed up $rc to $rc.sentinel.bak.$(date +%s)"
   fi
-  
-  # Prompt for replacement
   step "Prompting for full replacement of $rc with SENTINEL bashrc"
-  read -p "Replace your $rc with SENTINEL's secure version? [y/N]: " confirm
-  if [[ "$confirm" =~ ^[Yy]$ ]]; then
+  if [[ $INTERACTIVE -eq 1 ]]; then
+    read -t 30 -p "Replace your $rc with SENTINEL's secure version? [y/N]: " confirm || confirm="n"
+  else
+    confirm="n"
+    log "Non-interactive mode: using default answer '$confirm'"
+  fi
+  if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     if [[ -f "$sentinel_bashrc" ]]; then
-      cp "$sentinel_bashrc" "$rc"
+      safe_cp "$sentinel_bashrc" "$rc"
       chmod 644 "$rc"
       ok "SENTINEL bashrc installed as $rc"
       log "Replaced $rc with SENTINEL bashrc at $(date)"
@@ -174,7 +207,6 @@ patch_bashrc() {
       warn "SENTINEL bashrc not found at $sentinel_bashrc; skipping replacement."
     fi
   else
-    # Patch existing bashrc to load SENTINEL
     step "Patching existing bashrc to load SENTINEL"
     if ! grep -q "source.*bashrc.postcustom" "$rc"; then
       echo '' >> "$rc"
@@ -404,9 +436,26 @@ echo "2. If that doesn't work, run: bash $0"
 # Run post-install check if present
 POSTINSTALL_CHECK_SCRIPT="${PROJECT_ROOT}/sentinel_postinstall_check.sh"
 if [[ -f "$POSTINSTALL_CHECK_SCRIPT" ]]; then
-  step "Running SENTINEL post-install enablement and dependency check"
+  step "Running SENTINEL post-installation verification"
   bash "$POSTINSTALL_CHECK_SCRIPT"
-  ok "Post-install check complete. See summary above."
+  ok "Post-installation verification complete. See summary above."
 else
-  warn "Post-install check script not found at $POSTINSTALL_CHECK_SCRIPT. Skipping."
-fi 
+  warn "Post-installation verification script not found at $POSTINSTALL_CHECK_SCRIPT. Skipping."
+fi
+
+# Safe wrapper for rsync, cp, git clone
+safe_rsync() {
+  if ! rsync "$@"; then
+    fail "rsync operation failed: $*"
+  fi
+}
+safe_cp() {
+  if ! cp "$@"; then
+    fail "cp operation failed: $*"
+  fi
+}
+safe_git_clone() {
+  if ! git clone "$@"; then
+    fail "git clone operation failed: $*"
+  fi
+} 

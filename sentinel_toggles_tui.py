@@ -22,7 +22,7 @@ BASHRC_PRECUSTOM = os.path.expanduser('~/bashrc.precustom')
 BASHRC_POSTCUSTOM = os.path.expanduser('~/bashrc.postcustom')
 BACKUP_SUFFIX = '.bak'
 
-logging.basicConfig(filename=os.path.expanduser('~/.sentinel/toggle_tui.log'),
+logging.basicConfig(filename=os.path.expanduser('~/logs/toggle_tui.log'),
                     level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s')
 
@@ -165,4 +165,4 @@ if __name__ == '__main__':
         app.run()
     except Exception as e:
         logging.error(f"Fatal error in TUI: {e}")
-        print(f"[ERROR] {e}\nSee ~/.sentinel/toggle_tui.log for details.") 
+        print(f"[ERROR] {e}\nSee ~/logs/toggle_tui.log for details.") 

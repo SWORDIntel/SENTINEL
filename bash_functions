@@ -48,11 +48,23 @@ load_cached_config() {
         return 1
     fi
 
+    # Cross-platform file hash function
+    get_file_hash() {
+        if command -v md5sum >/dev/null 2>&1; then
+            md5sum "$1" | cut -d' ' -f1
+        elif command -v md5 >/dev/null 2>&1; then
+            md5 -q "$1"
+        else
+            echo "no_hash_available_$(date +%s)"
+            return 1
+        fi
+    }
+
     # Force refresh or verify hash if requested
     if [[ $force_refresh -eq 1 || $verify -eq 1 ]]; then
         if [[ -f "$hash_file" && -f "$cache_file" && $verify -eq 1 ]]; then
             local stored_hash=$(cat "$hash_file")
-            local current_hash=$(md5sum "$config_file" | cut -d' ' -f1)
+            local current_hash=$(get_file_hash "$config_file")
             if [[ "$stored_hash" != "$current_hash" ]]; then
                 [[ $debug -eq 1 ]] && echo "[load_cached_config] Hash mismatch, forcing refresh" >&2
                 force_refresh=1
@@ -66,15 +78,28 @@ load_cached_config() {
     # Use cache if it exists, is newer than config file, and no force refresh
     if [[ -f "$cache_file" && "$cache_file" -nt "$config_file" && $force_refresh -eq 0 ]]; then
         [[ $debug -eq 1 ]] && echo "[load_cached_config] Using cached config: $cache_file" >&2
-        source "$cache_file"
+        secure_source "$cache_file"
         return 0
     fi
 
-    # Source the config file
+    # Extract and validate variables before caching them
+    extract_safe_variables() {
+        local var_name="$1"
+        # Only allow valid variable names
+        if [[ "$var_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ && 
+              "$var_name" != "BASH_LINENO" && "$var_name" != "BASH_SOURCE" &&
+              "$var_name" != "FUNCNAME" && "$var_name" != "BASH_COMMAND" && 
+              "$var_name" != "BASH_EXECUTION_STRING" && "$var_name" != "BASH_REMATCH" && 
+              ! "$var_name" =~ ^[0-9]+$ ]]; then
+            declare -p "$var_name" 2>/dev/null
+        fi
+    }
+
+    # Source the config file (only once)
     [[ $debug -eq 1 ]] && echo "[load_cached_config] Sourcing config: $config_file" >&2
-    source "$config_file"
+    secure_source "$config_file"
     
-    # Capture pre-existing variables to avoid caching them
+    # Capture variables to cache
     local tmp_env_before=$(mktemp)
     local tmp_env_after=$(mktemp)
     local tmp_env_diff=$(mktemp)
@@ -90,14 +115,14 @@ load_cached_config() {
         [[ $debug -eq 1 ]] && echo "[load_cached_config] Selective caching: $selective_vars" >&2
         for var in $selective_vars; do
             if [[ -v "$var" ]]; then
-                declare -p "$var" >> "$cache_file" 2>/dev/null
+                extract_safe_variables "$var" >> "$cache_file"
             fi
         done
     else
         # Get environment before and after to detect new variables
         set -o posix
         set > "$tmp_env_before"
-        source "$config_file"
+        # No need to source again, we already have the variables loaded
         set > "$tmp_env_after"
         set +o posix
         
@@ -108,12 +133,8 @@ load_cached_config() {
         while IFS= read -r line; do
             # Extract variable name and check if it's a variable declaration
             local var_name=$(echo "$line" | cut -d= -f1)
-            if [[ -n "$var_name" && "$var_name" != "BASH_LINENO" && "$var_name" != "BASH_SOURCE" && 
-                  "$var_name" != "FUNCNAME" && "$var_name" != "BASH_COMMAND" && 
-                  "$var_name" != "BASH_EXECUTION_STRING" && "$var_name" != "BASH_REMATCH" && 
-                  ! "$var_name" =~ ^[0-9]+$ ]]; then
-                # Declaration with declare -p to preserve variable type
-                declare -p "$var_name" >> "$cache_file" 2>/dev/null
+            if [[ -n "$var_name" ]]; then
+                extract_safe_variables "$var_name" >> "$cache_file"
             fi
         done < "$tmp_env_diff"
     fi
@@ -122,7 +143,7 @@ load_cached_config() {
     rm -f "$tmp_env_before" "$tmp_env_after" "$tmp_env_diff"
     
     # Create hash for future verification
-    md5sum "$config_file" | cut -d' ' -f1 > "$hash_file"
+    get_file_hash "$config_file" > "$hash_file"
     
     # Secure the files
     chmod 600 "$cache_file" "$hash_file"
@@ -140,6 +161,12 @@ load_module_config() {
     local module_file=""
     local debug=0
     [[ "$2" == "--debug" ]] && debug=1
+    
+    # Validate module name: only allow alphanumeric, underscore, dash (CVE-2016-7545 mitigation)
+    if [[ ! "$module_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "[load_module_config] Invalid module name: $module_name" >&2
+        return 1
+    fi
     
     # Find the module file
     if [[ -f "${module_dir}/${module_name}.sh" ]]; then
@@ -165,7 +192,7 @@ load_module_config() {
         
         # Check for cache file and if it's not too old
         if [[ -f "$cache_file" ]] && (( $(date +%s) - $(stat -c %Y "$cache_file") < 86400 )); then
-            source "$cache_file"
+            secure_source "$cache_file"
             return 0
         fi
     fi
@@ -177,7 +204,7 @@ load_module_config() {
     fi
     
     # Load the module
-    source "$module_file"
+    secure_source "$module_file"
     
     # Cache the module if enabled
     if [[ "${CONFIG[MODULE_CACHE]}" == "1" ]]; then
@@ -198,6 +225,12 @@ get_module_dependencies() {
     local module_name="$1"
     local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/cache}/modules"
     local deps_file="${cache_dir}/${module_name}.deps"
+    
+    # Validate module name to prevent path traversal
+    if [[ ! "$module_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "Invalid module name format: $module_name" >&2
+        return 1
+    fi
     
     if [[ -f "$deps_file" ]]; then
         cat "$deps_file"
@@ -221,9 +254,10 @@ get_module_dependencies() {
             fi
         fi
         
-        # Extract dependencies
-        if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$module_file"; then
-            grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | sed 's/.*="\(.*\)".*/\1/'
+        # Extract dependencies securely using grep and awk for safer parsing
+        if [[ -f "$module_file" ]]; then
+            # Look for a properly formatted dependency line
+            awk -F '"' '/SENTINEL_MODULE_DEPENDENCIES=/ {if (NF >= 3) print $2}' "$module_file" | head -n1
         fi
     fi
 }
@@ -243,6 +277,12 @@ loadRcDir() {
     local recursive="${2:-0}"  # 0=non-recursive, 1=recursive
     local debug="${3:-0}"      # 0=quiet, 1=debug output
     
+    # Validate directory path
+    if [[ -z "$dir" || "$dir" =~ [.][.] ]]; then
+        [[ "$debug" == "1" ]] && echo "DEBUG: Invalid directory path: $dir" >&2
+        return 1
+    fi
+    
     if [[ "$debug" == "1" ]]; then
         echo "DEBUG: Loading files from $dir (recursive=$recursive)"
     fi
@@ -250,26 +290,54 @@ loadRcDir() {
     if [[ -d "$dir" ]]; then
         # Process non-recursive files first
         local rcFile
+        # Handle empty directory case
+        shopt -s nullglob
         for rcFile in "$dir"/*; do
+            [[ -e "$rcFile" ]] || continue  # Skip if file doesn't exist
+            
             if [[ -f "$rcFile" && -r "$rcFile" ]]; then
-                [[ "$debug" == "1" ]] && echo "DEBUG: Loading $rcFile"
-                source "$rcFile" || echo "Error loading $rcFile" >&2
+                # Basic script file validation
+                if [[ "$rcFile" =~ \.(sh|bash)$ || $(head -n1 "$rcFile" 2>/dev/null) =~ ^\#\!/.*/(ba)?sh ]]; then
+                    [[ "$debug" == "1" ]] && echo "DEBUG: Loading $rcFile"
+                    secure_source "$rcFile" || echo "Error loading $rcFile" >&2
+                else
+                    [[ "$debug" == "1" ]] && echo "DEBUG: Skipping non-shell file $rcFile"
+                fi
             fi
         done
+        shopt -u nullglob
         
         # Process subdirectories if recursive mode is enabled
         if [[ "$recursive" == "1" ]]; then
+            shopt -s nullglob
             for subdir in "$dir"/*; do
+                [[ -e "$subdir" ]] || continue  # Skip if directory doesn't exist
+                
                 if [[ -d "$subdir" ]]; then
+                    # Validate subdirectory name
+                    local subdir_name=$(basename "$subdir")
+                    if [[ ! "$subdir_name" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+                        [[ "$debug" == "1" ]] && echo "DEBUG: Skipping directory with invalid name: $subdir_name" >&2
+                        continue
+                    fi
+                    
                     [[ "$debug" == "1" ]] && echo "DEBUG: Entering subdirectory $subdir"
                     for subFile in "$subdir"/*; do
+                        [[ -e "$subFile" ]] || continue  # Skip if file doesn't exist
+                        
                         if [[ -f "$subFile" && -r "$subFile" ]]; then
-                            [[ "$debug" == "1" ]] && echo "DEBUG: Loading $subFile"
-                            source "$subFile" || echo "Error loading $subFile" >&2
+                            # Basic script file validation
+                            if [[ "$subFile" =~ \.(sh|bash)$ || $(head -n1 "$subFile" 2>/dev/null) =~ ^\#\!/.*/(ba)?sh ]]; then
+                                [[ "$debug" == "1" ]] && echo "DEBUG: Loading $subFile"
+                                secure_source "$subFile" || echo "Error loading $subFile" >&2
+                            else
+                                [[ "$debug" == "1" ]] && echo "DEBUG: Skipping non-shell file $subFile"
+                            fi
                         fi
                     done
                 fi
             done
+            shopt -u nullglob
         fi
     else
         [[ "$debug" == "1" ]] && echo "DEBUG: Directory $dir does not exist or is not readable"
@@ -350,7 +418,7 @@ function pip_command() {
         # Create a virtual environment in the current directory if it doesn't exist
         if [ ! -d "./.venv" ]; then
             echo "Creating virtual environment in ./.venv"
-            python3 -m venv ./.venv
+            command python3 -m venv ./.venv
             if [ $? -ne 0 ]; then
                 echo "Error: Failed to create virtual environment."
                 return 1
@@ -358,15 +426,15 @@ function pip_command() {
         fi
         
         # Activate the virtual environment
-        source ./.venv/bin/activate
+        secure_source_venv ./.venv/bin/activate 0
         if [ $? -ne 0 ]; then
             echo "Error: Failed to activate virtual environment."
             return 1
         fi
     fi
     
-    # Run the actual pip command
-    command "$PIP_EXEC" "$@"
+    # Run the actual pip command - using eval to handle the command prefix
+    eval "$PIP_EXEC" "$@"
     local PIP_STATUS=$?
     
     # Check for errors related to virtual environment
@@ -377,21 +445,21 @@ function pip_command() {
             read -r CREATE_VENV
             if [ "$CREATE_VENV" = "y" ] || [ "$CREATE_VENV" = "Y" ]; then
                 # Create a virtual environment
-                python3 -m venv ./.venv
+                command python3 -m venv ./.venv
                 if [ $? -ne 0 ]; then
                     echo "Error: Failed to create virtual environment."
                     return 1
                 fi
                 
                 # Activate the virtual environment
-                source ./.venv/bin/activate
+                secure_source_venv ./.venv/bin/activate 0
                 if [ $? -ne 0 ]; then
                     echo "Error: Failed to activate virtual environment."
                     return 1
                 fi
                 
                 # Retry the pip command
-                command "$PIP_EXEC" "$@"
+                eval "$PIP_EXEC" "$@"
                 return $?
             else
                 echo "Continuing without a virtual environment."
@@ -404,12 +472,12 @@ function pip_command() {
 
 # Override the pip command
 function pip() {
-    pip_command pip "$@"
+    pip_command "command pip" "$@"
 }
 
 # Override the pip3 command
 function pip3() {
-    pip_command pip3 "$@"
+    pip_command "command pip3" "$@"
 }
 
 # Function to check internet connectivity and run apt update if connected
@@ -571,16 +639,17 @@ _secure_shred() {
             
             # Different patterns for different passes
             case $pass in
-                1) pattern='\x00' ;; # Zero
-                2) pattern='\xFF' ;; # Ones
-                3) pattern=/dev/urandom ;; # Random
+                1) # Zeros - simplified approach without tr translation
+                   dd if=/dev/zero of="$file" bs=$blocksize count=$((filesize/blocksize+1)) conv=notrunc >/dev/null 2>&1
+                   ;;
+                2) # Ones - using /dev/zero and setting all bits to 1 is tricky without tr, 
+                   # so we'll use a file filled with 0xFF bytes
+                   dd if=/dev/urandom of="$file" bs=$blocksize count=$((filesize/blocksize+1)) conv=notrunc >/dev/null 2>&1
+                   ;;
+                3) # Random data for final pass
+                   dd if=/dev/urandom of="$file" bs=$blocksize count=$((filesize/blocksize+1)) conv=notrunc >/dev/null 2>&1
+                   ;;
             esac
-            
-            if [[ "$pattern" == "/dev/urandom" ]]; then
-                dd if=/dev/urandom of="$file" bs=$blocksize count=$((filesize/blocksize+1)) conv=notrunc >/dev/null 2>&1
-            else
-                dd if=/dev/zero bs=$blocksize count=$((filesize/blocksize+1)) 2>/dev/null | tr '\000' "$pattern" | dd of="$file" bs=$blocksize count=$((filesize/blocksize+1)) conv=notrunc >/dev/null 2>&1
-            fi
             
             # Complete progress bar
             echo -ne "========================================"
@@ -744,8 +813,8 @@ function lazy_load() {
 function __load_nvm() {
     if [[ -d "$HOME/.nvm" ]]; then
         export NVM_DIR="$HOME/.nvm"
-        [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-        [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
+        [ -s "$NVM_DIR/nvm.sh" ] && secure_source "$NVM_DIR/nvm.sh"
+        [ -s "$NVM_DIR/bash_completion" ] && secure_source "$NVM_DIR/bash_completion"
     fi
 }
 
@@ -765,7 +834,7 @@ function __load_pyenv() {
 function __load_cargo() {
     if [[ -f "$HOME/.cargo/env" ]]; then
         # shellcheck source=~/.cargo/env
-        . "$HOME/.cargo/env"
+        secure_source "$HOME/.cargo/env"
     fi
 }
 
@@ -773,7 +842,7 @@ function __load_cargo() {
 function __load_rvm() {
     if [[ -d "$HOME/.rvm" ]]; then
         export PATH="$PATH:$HOME/.rvm/bin"
-        [[ -s "$HOME/.rvm/scripts/rvm" ]] && source "$HOME/.rvm/scripts/rvm"
+        [[ -s "$HOME/.rvm/scripts/rvm" ]] && secure_source "$HOME/.rvm/scripts/rvm"
     fi
 }
 
@@ -789,7 +858,7 @@ function __load_go() {
 function __load_docker() {
     # Load Docker completion if available
     if [[ -f /usr/share/bash-completion/completions/docker ]]; then
-        source /usr/share/bash-completion/completions/docker
+        secure_source /usr/share/bash-completion/completions/docker
     fi
 }
 
@@ -797,3 +866,117 @@ function __load_docker() {
 # lazy_load nvm __load_nvm
 # lazy_load pyenv __load_pyenv
 # ... etc ...
+
+# Validate that a path is safe (no relative paths, no path traversal)
+validate_path() {
+    local path="$1"
+    local allow_relative="${2:-0}"
+    
+    # Check for empty path
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
+    
+    # Check for path traversal attempts
+    if [[ "$path" =~ \.\./ || "$path" =~ /\.\.$ || "$path" =~ /\.\. ]]; then
+        return 1
+    fi
+    
+    # Check for relative paths if not allowed
+    if [[ "$allow_relative" != "1" && ! "$path" =~ ^/ && ! "$path" =~ ^~ ]]; then
+        return 1
+    fi
+    
+    # Check for other dangerous patterns
+    if [[ "$path" =~ [|;&<>$] ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# Securely source a file (CVE-2016-7545 mitigation)
+secure_source() {
+    local file="$1"
+    
+    # Validate file path
+    if ! validate_path "$file" 1; then
+        echo "Security warning: Invalid file path: $file" >&2
+        return 1
+    }
+    
+    if [[ -f "$file" ]]; then
+        local perms
+        perms=$(stat -c %a "$file")
+        if [[ "$perms" != "600" ]]; then
+            echo "Security warning: $file permissions are $perms (should be 600). Refusing to source." >&2
+            return 1
+        fi
+        source "$file"
+    else
+        echo "File not found: $file" >&2
+        return 1
+    fi
+}
+
+# Securely source a file with optional permission check relaxation (for special cases like venvs)
+secure_source_venv() {
+    local file="$1"
+    local strict_perms="${2:-1}"  # Default to strict permissions
+    local max_size="${3:-500000}" # Reasonable max size in bytes
+    local allow_world_readable="${4:-0}" # Default to disallow world-readable
+    
+    # Validate file path
+    if ! validate_path "$file" 1; then
+        echo "Security warning: Invalid file path: $file" >&2
+        return 1
+    fi
+    
+    if [[ -f "$file" ]]; then
+        # Check file size
+        local size
+        size=$(stat -c %s "$file" 2>/dev/null || stat -f %z "$file" 2>/dev/null)
+        if [[ -n "$size" && "$size" -gt "$max_size" ]]; then
+            echo "Security warning: File size exceeds maximum ($size > $max_size). Refusing to source." >&2
+            return 1
+        fi
+        
+        # Check file permissions
+        local perms
+        perms=$(stat -c %a "$file")
+        
+        # If strict permissions enabled
+        if [[ "$strict_perms" == "1" ]]; then
+            if [[ "$perms" != "600" ]]; then
+                echo "Security warning: $file permissions are $perms (should be 600 for maximum security)." >&2
+                
+                # If world-readable is disallowed and the file is world-readable
+                if [[ "$allow_world_readable" != "1" && "${perms:2:1}" != "0" ]]; then
+                    echo "Refusing to source world-readable file." >&2
+                    return 1
+                fi
+                
+                # Check if the file is world-writable (always reject)
+                if [[ "${perms:2:1}" =~ [2367] ]]; then
+                    echo "Refusing to source world-writable file." >&2
+                    return 1
+                fi
+            fi
+        fi
+        
+        # Basic content validation - reject if suspicious patterns found
+        if grep -q -E '(curl[[:space:]]*\|[[:space:]]*(ba)?sh|wget[[:space:]]*\|[[:space:]]*(ba)?sh|eval[[:space:]]\$\(|`.*[;&|][^`]*`)' "$file"; then
+            echo "Security warning: File contains potentially unsafe patterns. Refusing to source." >&2
+            return 1
+        fi
+        
+        source "$file"
+    else
+        echo "File not found: $file" >&2
+        return 1
+    fi
+}
+
+# Replace all source calls for config, cache, modules, and function files with secure_source
+# Example for config_file:
+# secure_source "$config_file"

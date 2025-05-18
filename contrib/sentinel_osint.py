@@ -3,23 +3,31 @@
 # This script analyzes OSINT tool usage patterns and provides intelligent suggestions
 # based on the user's own GitHub starred repositories
 
+# Standard library imports
 import os
 import sys
 import json
 import argparse
 import datetime
 import re
-import numpy as np
 from collections import Counter, defaultdict
-from tqdm import tqdm
-import requests
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.cluster import KMeans
-from sklearn.neighbors import NearestNeighbors
-from sklearn.metrics.pairwise import cosine_similarity
-import scipy.sparse as sp
 
-# Check if llama-cpp is available for advanced suggestions
+# Third-party imports (with robust error handling)
+try:
+    import numpy as np
+    from tqdm import tqdm
+    import requests
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.cluster import KMeans
+    from sklearn.neighbors import NearestNeighbors
+    from sklearn.metrics.pairwise import cosine_similarity
+    import scipy.sparse as sp
+except ImportError as e:
+    print(f"Missing dependency: {e}")
+    print("Install with: pip install numpy tqdm requests scikit-learn scipy")
+    sys.exit(1)
+
+# LLM support (optional)
 LLM_AVAILABLE = False
 try:
     from llama_cpp import Llama
@@ -502,7 +510,7 @@ def suggest_tools_with_llm(task_description, tools_db):
     # Find LLM model in models directory
     model_files = [f for f in os.listdir(MODELS_DIR) if f.endswith('.gguf')]
     if not model_files:
-        print("No LLM model found. Please download a model to ~/.sentinel/osint/models/")
+        print("No LLM model found. Please download a model to ~/models/osint/")
         print("Falling back to TF-IDF matching")
         return suggest_tools_for_task(task_description, tools_db)
     
@@ -639,7 +647,7 @@ def generate_workflow_with_llm(investigation_type):
     # Find LLM model in models directory
     model_files = [f for f in os.listdir(MODELS_DIR) if f.endswith('.gguf')]
     if not model_files:
-        print("No LLM model found. Please download a model to ~/.sentinel/osint/models/")
+        print("No LLM model found. Please download a model to ~/models/osint/")
         print("Falling back to generic workflow")
         return generate_workflow(investigation_type)
     

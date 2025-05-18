@@ -12,7 +12,7 @@ from datetime import datetime
 import hmac
 
 # Constants
-CONTEXT_DIR = os.path.expanduser("~/.sentinel/context")
+CONTEXT_DIR = os.path.expanduser("~/context")
 CONTEXT_FILE = os.path.join(CONTEXT_DIR, "shared_context.json")
 PATTERNS_FILE = os.path.join(CONTEXT_DIR, "command_patterns.json")
 TASK_CONTEXT_FILE = os.path.join(CONTEXT_DIR, "task_context.json")

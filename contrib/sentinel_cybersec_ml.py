@@ -2,6 +2,7 @@
 # sentinel_cybersec_ml.py: Advanced cybersecurity machine learning module for SENTINEL
 # Builds on GitHub Star Analyzer to add specialized cybersecurity analysis capabilities
 
+# Standard library imports
 import os
 import sys
 import json
@@ -18,15 +19,7 @@ from collections import defaultdict, Counter
 from datetime import datetime
 import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
-logger = logging.getLogger("sentinel_cybersec")
-
-# Try to load required libraries
+# Third-party imports (with robust error handling)
 try:
     import requests
     import numpy as np
@@ -34,11 +27,10 @@ try:
     import joblib
     DEPENDENCIES_MET = True
 except ImportError as e:
-    logger.error(f"Missing dependency: {e}")
-    logger.error("Install requirements with: pip install requests tqdm numpy joblib scikit-learn scipy tensorflow")
+    logging.error(f"Missing dependency: {e}")
+    logging.error("Install requirements with: pip install requests tqdm numpy joblib scikit-learn scipy tensorflow")
     DEPENDENCIES_MET = False
 
-# Check for machine learning libraries
 ML_AVAILABLE = False
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
@@ -48,10 +40,9 @@ try:
     from sklearn.model_selection import train_test_split
     ML_AVAILABLE = True
 except ImportError as e:
-    logger.error(f"Machine learning libraries not available: {e}")
-    logger.error("Install with: pip install scikit-learn scipy")
+    logging.error(f"Machine learning libraries not available: {e}")
+    logging.error("Install with: pip install scikit-learn scipy")
 
-# Check for advanced ML libraries
 ADV_ML_AVAILABLE = False
 try:
     import tensorflow as tf
@@ -59,17 +50,16 @@ try:
     from tensorflow.keras.layers import Dense, LSTM, Embedding, Input, Conv1D, MaxPooling1D, Flatten, Dropout
     ADV_ML_AVAILABLE = True
 except ImportError as e:
-    logger.warning(f"Advanced ML libraries not available: {e}")
-    logger.warning("Install with: pip install tensorflow")
+    logging.warning(f"Advanced ML libraries not available: {e}")
+    logging.warning("Install with: pip install tensorflow")
 
-# Check for LLM support
 LLM_AVAILABLE = False
 try:
     from llama_cpp import Llama
     LLM_AVAILABLE = True
 except ImportError:
-    logger.warning("llama-cpp-python not available, advanced analysis will be limited")
-    logger.warning("Install with: pip install llama-cpp-python")
+    logging.warning("llama-cpp-python not available, advanced analysis will be limited")
+    logging.warning("Install with: pip install llama-cpp-python")
 
 # Try to import the context module and gitstar analyzer for integration
 CONTEXT_AVAILABLE = False
@@ -87,9 +77,9 @@ if os.path.exists(CONTEXT_MODULE_PATH):
         context_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(context_module)
         CONTEXT_AVAILABLE = True
-        logger.info("Context module loaded successfully")
+        logging.info("Context module loaded successfully")
     except Exception as e:
-        logger.error(f"Error loading sentinel_context module: {e}")
+        logging.error(f"Error loading sentinel_context module: {e}")
         CONTEXT_AVAILABLE = False
 
 if os.path.exists(GITSTAR_MODULE_PATH):
@@ -98,9 +88,9 @@ if os.path.exists(GITSTAR_MODULE_PATH):
         gitstar_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gitstar_module)
         GITSTAR_AVAILABLE = True
-        logger.info("GitStar module loaded successfully")
+        logging.info("GitStar module loaded successfully")
     except Exception as e:
-        logger.error(f"Error loading sentinel_gitstar module: {e}")
+        logging.error(f"Error loading sentinel_gitstar module: {e}")
         GITSTAR_AVAILABLE = False
 
 # Constants
@@ -175,7 +165,7 @@ class CybersecurityMLAnalyzer:
                             config[key] = value
                     return config
             except json.JSONDecodeError:
-                logger.warning("Invalid config file, using defaults")
+                logging.warning("Invalid config file, using defaults")
                 return DEFAULT_CONFIG.copy()
         
         # Create default config
@@ -190,7 +180,7 @@ class CybersecurityMLAnalyzer:
                 with open(VULN_DB_PATH, "r") as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                logger.warning("Invalid vulnerability database, creating new one")
+                logging.warning("Invalid vulnerability database, creating new one")
                 return {"vulnerabilities": [], "last_updated": 0}
         return {"vulnerabilities": [], "last_updated": 0}
     
@@ -201,30 +191,30 @@ class CybersecurityMLAnalyzer:
                 with open(SIGNATURE_DB_PATH, "r") as f:
                     return json.load(f)
             except json.JSONDecodeError:
-                logger.warning("Invalid signature database, creating new one")
+                logging.warning("Invalid signature database, creating new one")
                 return {"signatures": [], "last_updated": 0}
         return {"signatures": [], "last_updated": 0}
     
     def _initialize_ml(self):
         """Initialize basic machine learning components"""
-        logger.info("Initializing machine learning components")
+        logging.info("Initializing machine learning components")
         
         # Load pre-trained models if they exist
         vulncode_model_path = os.path.join(MODELS_DIR, "vulncode_classifier.joblib")
         if os.path.exists(vulncode_model_path):
             try:
                 self.models["vulncode_classifier"] = joblib.load(vulncode_model_path)
-                logger.info("Loaded vulnerability code classifier model")
+                logging.info("Loaded vulnerability code classifier model")
             except Exception as e:
-                logger.error(f"Error loading vulnerability code classifier: {e}")
+                logging.error(f"Error loading vulnerability code classifier: {e}")
         
         anomaly_model_path = os.path.join(MODELS_DIR, "anomaly_detector.joblib")
         if os.path.exists(anomaly_model_path):
             try:
                 self.models["anomaly_detector"] = joblib.load(anomaly_model_path)
-                logger.info("Loaded anomaly detection model")
+                logging.info("Loaded anomaly detection model")
             except Exception as e:
-                logger.error(f"Error loading anomaly detection model: {e}")
+                logging.error(f"Error loading anomaly detection model: {e}")
         
         # Initialize text vectorizers for code analysis
         self.models["code_vectorizer"] = TfidfVectorizer(
@@ -237,20 +227,20 @@ class CybersecurityMLAnalyzer:
     
     def _initialize_advanced_ml(self):
         """Initialize advanced ML components (TensorFlow based)"""
-        logger.info("Initializing advanced machine learning components")
+        logging.info("Initializing advanced machine learning components")
         
         # Load deep learning models if they exist
         dl_model_path = os.path.join(MODELS_DIR, "deep_vulncode_model.h5")
         if os.path.exists(dl_model_path):
             try:
                 self.models["deep_vulncode"] = load_model(dl_model_path)
-                logger.info("Loaded deep learning vulnerability model")
+                logging.info("Loaded deep learning vulnerability model")
             except Exception as e:
-                logger.error(f"Error loading deep learning model: {e}")
+                logging.error(f"Error loading deep learning model: {e}")
     
     def _initialize_llm(self):
         """Initialize the LLM for advanced analysis"""
-        logger.info("Initializing LLM")
+        logging.info("Initializing LLM")
         
         model_path = self.config.get("model_path", DEFAULT_MODEL_PATH)
         if os.path.exists(model_path):
@@ -262,12 +252,12 @@ class CybersecurityMLAnalyzer:
                     n_threads=os.cpu_count() or 4,
                     verbose=False
                 )
-                logger.info(f"LLM initialized with {model_path}")
+                logging.info(f"LLM initialized with {model_path}")
             except Exception as e:
-                logger.error(f"Error initializing LLM: {e}")
+                logging.error(f"Error initializing LLM: {e}")
                 self.llm = None
         else:
-            logger.warning(f"Model file not found: {model_path}")
+            logging.warning(f"Model file not found: {model_path}")
     
     def save_config(self):
         """Save configuration to file"""
@@ -311,12 +301,12 @@ class CybersecurityMLAnalyzer:
             # Compare signatures with constant-time comparison
             return hmac.compare_digest(original_signature, new_signature)
         except Exception as e:
-            logger.error(f"Token verification error: {e}")
+            logging.error(f"Token verification error: {e}")
             return False
     
     def update_vulnerability_database(self, force=False):
         """Update vulnerability database from online sources"""
-        logger.info("Checking for vulnerability database updates")
+        logging.info("Checking for vulnerability database updates")
         
         current_time = time.time()
         last_update = self.vulnerability_db.get("last_updated", 0)
@@ -324,12 +314,12 @@ class CybersecurityMLAnalyzer:
         
         # Check if update is needed
         if not force and (current_time - last_update) < update_frequency:
-            logger.info("Vulnerability database is up to date")
+            logging.info("Vulnerability database is up to date")
             return False
         
         try:
             # Update from NVD
-            logger.info("Updating from NVD database")
+            logging.info("Updating from NVD database")
             nvd_endpoint = self.config["api_endpoints"]["nvd"]
             
             # Get last 30 days of vulnerabilities
@@ -351,11 +341,11 @@ class CybersecurityMLAnalyzer:
                         if self._is_code_vulnerability(cve):
                             self._process_cve_record(cve)
                     
-                    logger.info(f"Added/updated vulnerabilities from NVD")
+                    logging.info(f"Added/updated vulnerabilities from NVD")
                 except json.JSONDecodeError:
-                    logger.error("Invalid JSON response from NVD")
+                    logging.error("Invalid JSON response from NVD")
             else:
-                logger.error(f"Error fetching from NVD: {response.status_code}")
+                logging.error(f"Error fetching from NVD: {response.status_code}")
             
             # Update last_updated timestamp
             self.vulnerability_db["last_updated"] = current_time
@@ -364,7 +354,7 @@ class CybersecurityMLAnalyzer:
             return True
         
         except Exception as e:
-            logger.error(f"Error updating vulnerability database: {e}")
+            logging.error(f"Error updating vulnerability database: {e}")
             return False
     
     def _is_code_vulnerability(self, cve):
@@ -479,15 +469,15 @@ class CybersecurityMLAnalyzer:
             return []
         
         except Exception as e:
-            logger.error(f"Error generating signatures with LLM: {e}")
+            logging.error(f"Error generating signatures with LLM: {e}")
             return []
     
     def scan_codebase(self, directory, recursive=True, file_types=None, excluded_dirs=None):
         """Scan a codebase for potential security vulnerabilities"""
-        logger.info(f"Scanning codebase in {directory}")
+        logging.info(f"Scanning codebase in {directory}")
         
         if not os.path.exists(directory) or not os.path.isdir(directory):
-            logger.error(f"Directory {directory} does not exist")
+            logging.error(f"Directory {directory} does not exist")
             return {"success": False, "error": "Directory does not exist"}
         
         # Use default excluded dirs if not specified
@@ -531,7 +521,7 @@ class CybersecurityMLAnalyzer:
                     
                     # Skip files that are too large
                     if os.path.getsize(file_path) > self.config.get("max_file_size", DEFAULT_CONFIG["max_file_size"]):
-                        logger.warning(f"Skipping {file_path} - exceeds size limit")
+                        logging.warning(f"Skipping {file_path} - exceeds size limit")
                         continue
                     
                     # Check file extension
@@ -542,7 +532,7 @@ class CybersecurityMLAnalyzer:
                 if not recursive:
                     break
             
-            logger.info(f"Found {len(files_to_scan)} files to scan")
+            logging.info(f"Found {len(files_to_scan)} files to scan")
             
             # Scan each file
             with tqdm(total=len(files_to_scan), desc="Scanning files") as pbar:
@@ -572,8 +562,8 @@ class CybersecurityMLAnalyzer:
             with open(result_file, "w") as f:
                 json.dump(scan_result, f, indent=2)
             
-            logger.info(f"Scan completed. Found {scan_result['statistics']['total_issues']} potential issues in {scan_result['statistics']['files_with_issues']} files")
-            logger.info(f"Results saved to {result_file}")
+            logging.info(f"Scan completed. Found {scan_result['statistics']['total_issues']} potential issues in {scan_result['statistics']['files_with_issues']} files")
+            logging.info(f"Results saved to {result_file}")
             
             # Add machine learning analysis if available
             if ML_AVAILABLE and len(scan_result["findings"]) > 0:
@@ -582,7 +572,7 @@ class CybersecurityMLAnalyzer:
             return scan_result
             
         except Exception as e:
-            logger.error(f"Error scanning codebase: {e}")
+            logging.error(f"Error scanning codebase: {e}")
             return {"success": False, "error": str(e)}
     
     def _scan_single_file(self, file_path):
@@ -621,7 +611,7 @@ class CybersecurityMLAnalyzer:
             return file_findings
             
         except Exception as e:
-            logger.error(f"Error scanning {file_path}: {e}")
+            logging.error(f"Error scanning {file_path}: {e}")
             return []
     
     def _get_language_from_extension(self, ext):
@@ -691,7 +681,7 @@ class CybersecurityMLAnalyzer:
                     
                     findings.append(finding)
             except Exception as e:
-                logger.error(f"Error matching signature {signature.get('id', 'unknown')}: {e}")
+                logging.error(f"Error matching signature {signature.get('id', 'unknown')}: {e}")
         
         return findings
     
@@ -821,7 +811,7 @@ class CybersecurityMLAnalyzer:
                     
                     findings.append(finding)
             except Exception as e:
-                logger.error(f"Error matching pattern {pattern}: {e}")
+                logging.error(f"Error matching pattern {pattern}: {e}")
         
         return findings
     
@@ -891,7 +881,7 @@ class CybersecurityMLAnalyzer:
             return findings
         
         except Exception as e:
-            logger.error(f"Error in ML analysis: {e}")
+            logging.error(f"Error in ML analysis: {e}")
             return []
     
     def _split_into_code_blocks(self, content, max_lines=30):
@@ -1015,7 +1005,7 @@ class CybersecurityMLAnalyzer:
             return findings
             
         except Exception as e:
-            logger.error(f"Error in LLM analysis: {e}")
+            logging.error(f"Error in LLM analysis: {e}")
             return []
     
     def _analyze_scan_with_ml(self, scan_result, result_file):
@@ -1023,7 +1013,7 @@ class CybersecurityMLAnalyzer:
         if not ML_AVAILABLE:
             return
         
-        logger.info("Performing machine learning analysis on scan results")
+        logging.info("Performing machine learning analysis on scan results")
         
         try:
             # Analyze patterns in findings
@@ -1097,18 +1087,18 @@ class CybersecurityMLAnalyzer:
                 with open(result_file, "w") as f:
                     json.dump(scan_result, f, indent=2)
                 
-                logger.info(f"Added ML cluster analysis: {len(cluster_summaries)} clusters identified")
+                logging.info(f"Added ML cluster analysis: {len(cluster_summaries)} clusters identified")
             
         except Exception as e:
-            logger.error(f"Error in ML analysis of scan results: {e}")
+            logging.error(f"Error in ML analysis of scan results: {e}")
     
     def train_models(self, training_data_path=None):
         """Train machine learning models for vulnerability detection"""
         if not ML_AVAILABLE:
-            logger.error("ML libraries are not available, cannot train models")
+            logging.error("ML libraries are not available, cannot train models")
             return False
         
-        logger.info("Training machine learning models")
+        logging.info("Training machine learning models")
         
         try:
             # Default training data
@@ -1117,7 +1107,7 @@ class CybersecurityMLAnalyzer:
             
             # Check if file exists
             if not os.path.exists(training_data_path):
-                logger.error(f"Training data not found: {training_data_path}")
+                logging.error(f"Training data not found: {training_data_path}")
                 return False
             
             # Load training data
@@ -1133,7 +1123,7 @@ class CybersecurityMLAnalyzer:
                 labels.append(1 if sample.get("is_vulnerable", False) else 0)
             
             if not code_samples:
-                logger.error("No code samples found in training data")
+                logging.error("No code samples found in training data")
                 return False
             
             # Split into training and testing sets
@@ -1141,7 +1131,7 @@ class CybersecurityMLAnalyzer:
                 code_samples, labels, test_size=0.2, random_state=42
             )
             
-            logger.info(f"Training with {len(X_train)} samples, testing with {len(X_test)} samples")
+            logging.info(f"Training with {len(X_train)} samples, testing with {len(X_test)} samples")
             
             # Vectorize the code
             vectorizer = TfidfVectorizer(
@@ -1169,8 +1159,8 @@ class CybersecurityMLAnalyzer:
             y_pred = classifier.predict(X_test_vec)
             accuracy = classifier.score(X_test_vec, y_test)
             
-            logger.info(f"Model accuracy: {accuracy:.4f}")
-            logger.info("\nClassification Report:\n" + classification_report(y_test, y_pred))
+            logging.info(f"Model accuracy: {accuracy:.4f}")
+            logging.info("\nClassification Report:\n" + classification_report(y_test, y_pred))
             
             # Train anomaly detection model
             anomaly_detector = IsolationForest(
@@ -1194,20 +1184,20 @@ class CybersecurityMLAnalyzer:
             joblib.dump(classifier, os.path.join(MODELS_DIR, "vulncode_classifier.joblib"))
             joblib.dump(anomaly_detector, os.path.join(MODELS_DIR, "anomaly_detector.joblib"))
             
-            logger.info("Models trained and saved successfully")
+            logging.info("Models trained and saved successfully")
             return True
             
         except Exception as e:
-            logger.error(f"Error training models: {e}")
+            logging.error(f"Error training models: {e}")
             return False
     
     def generate_training_data(self, output_path=None, sample_count=1000):
         """Generate training data for ML models using LLM"""
         if not LLM_AVAILABLE or not self.llm:
-            logger.error("LLM is not available, cannot generate training data")
+            logging.error("LLM is not available, cannot generate training data")
             return False
         
-        logger.info(f"Generating {sample_count} training samples with LLM")
+        logging.info(f"Generating {sample_count} training samples with LLM")
         
         # Default output path
         if output_path is None:
@@ -1221,10 +1211,10 @@ class CybersecurityMLAnalyzer:
                     with open(output_path, "r") as f:
                         existing_data = json.load(f)
                 except json.JSONDecodeError:
-                    logger.warning(f"Could not parse existing file {output_path}, starting fresh")
+                    logging.warning(f"Could not parse existing file {output_path}, starting fresh")
             
             existing_samples = len(existing_data.get("samples", []))
-            logger.info(f"Found {existing_samples} existing training samples")
+            logging.info(f"Found {existing_samples} existing training samples")
             
             # Languages to generate samples for
             languages = ["python", "javascript", "php", "java", "ruby", "go"]
@@ -1318,25 +1308,25 @@ class CybersecurityMLAnalyzer:
             with open(output_path, "w") as f:
                 json.dump(training_data, f, indent=2)
             
-            logger.info(f"Generated {len(new_samples)} new training samples, total: {len(all_samples)}")
-            logger.info(f"Training data saved to {output_path}")
+            logging.info(f"Generated {len(new_samples)} new training samples, total: {len(all_samples)}")
+            logging.info(f"Training data saved to {output_path}")
             
             return True
             
         except Exception as e:
-            logger.error(f"Error generating training data: {e}")
+            logging.error(f"Error generating training data: {e}")
             return False
 
     def analyze_github_repositories(self, username=None):
         """Load security tools from GitHub starred repositories and use them for analysis"""
         if not GITSTAR_AVAILABLE or not gitstar_module:
-            logger.error("GitHub Star Analyzer module is not available")
+            logging.error("GitHub Star Analyzer module is not available")
             return {
                 "success": False,
                 "error": "GitHub Star Analyzer module is not available. Please ensure sentinel_gitstar.py is properly installed."
             }
         
-        logger.info("Loading security tools from GitHub starred repositories")
+        logging.info("Loading security tools from GitHub starred repositories")
         
         try:
             # Get repositories from GitStar module
@@ -1351,26 +1341,26 @@ class CybersecurityMLAnalyzer:
                         repos = json.load(f)
             
             if not repos:
-                logger.error("No GitHub repositories found")
+                logging.error("No GitHub repositories found")
                 return {
                     "success": False,
                     "error": "No repositories found. Please run sentinel_gitstar_fetch first."
                 }
             
-            logger.info(f"Found {len(repos)} repositories to analyze")
+            logging.info(f"Found {len(repos)} repositories to analyze")
             
             # Identify security tools among repositories
             security_tools = self._identify_security_tools(repos)
             
             if not security_tools:
-                logger.warning("No security tools found among starred repositories")
+                logging.warning("No security tools found among starred repositories")
                 return {
                     "success": True,
                     "tools_found": 0,
                     "message": "No security tools found among starred repositories. Consider starring some security tools on GitHub."
                 }
             
-            logger.info(f"Found {len(security_tools)} security tools in starred repositories")
+            logging.info(f"Found {len(security_tools)} security tools in starred repositories")
             
             # Display available security tools
             return {
@@ -1380,7 +1370,7 @@ class CybersecurityMLAnalyzer:
             }
             
         except Exception as e:
-            logger.error(f"Error loading security tools: {e}")
+            logging.error(f"Error loading security tools: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -1547,12 +1537,12 @@ class CybersecurityMLAnalyzer:
             
             return None
         except Exception as e:
-            logger.error(f"Error extracting installation command: {e}")
+            logging.error(f"Error extracting installation command: {e}")
             return None
 
     def use_security_tool(self, target, tool_name):
         """Use a specific security tool from starred repositories to analyze a target"""
-        logger.info(f"Using {tool_name} to analyze {target}")
+        logging.info(f"Using {tool_name} to analyze {target}")
         
         # First, check if we have information about the tool
         repos = None
@@ -1707,7 +1697,7 @@ class CybersecurityMLAnalyzer:
             return None
             
         except Exception as e:
-            logger.error(f"Error generating LLM recommendations: {e}")
+            logging.error(f"Error generating LLM recommendations: {e}")
             return None
 
     def get_security_tools_by_category(self):
@@ -1890,7 +1880,7 @@ class CybersecurityMLAnalyzer:
             return suggested_tools
             
         except Exception as e:
-            logger.error(f"Error suggesting tools with LLM: {e}")
+            logging.error(f"Error suggesting tools with LLM: {e}")
             return None
 
 def main():
@@ -2107,7 +2097,7 @@ def main():
         print("\nOperation cancelled by user")
         return 1
     except Exception as e:
-        logger.error(f"Error during operation: {e}")
+        logging.error(f"Error during operation: {e}")
         return 1
     
     return 0

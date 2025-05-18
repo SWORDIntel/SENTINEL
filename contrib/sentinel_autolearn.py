@@ -1,22 +1,37 @@
 #!/usr/bin/env python3
-# sentinel_autolearn.py: Automatic command learning and suggestion with OpenVINO support
-# Requires: pip install markovify openvino numpy
+# sentinel_autolearn.py: ML auto-learning and suggestion system for SENTINEL
 
+# Standard library imports
 import os
 import sys
 import time
 import json
 import subprocess
-import markovify
-import numpy as np
 from pathlib import Path
 import atexit
 
-# Paths for data storage
-HISTORY_FILE = os.path.expanduser("~/.sentinel_history")
-MODEL_FILE = os.path.expanduser("~/.sentinel_model.json")
-STATS_FILE = os.path.expanduser("~/.sentinel_stats.json")
-OPENVINO_CACHE = os.path.expanduser("~/.sentinel_openvino_cache")
+# Third-party imports (with robust error handling)
+has_openvino = False
+try:
+    import markovify
+    import numpy as np
+    has_openvino = False
+    try:
+        import openvino as ov
+        has_openvino = True
+        print("OpenVINO detected and enabled for accelerated suggestions")
+    except ImportError:
+        pass
+except ImportError as e:
+    print(f"Missing dependency: {e}")
+    print("Install with: pip install markovify numpy openvino")
+    sys.exit(1)
+
+# Constants
+HISTORY_FILE = os.path.expanduser("~/logs/command_history")
+MODEL_FILE = os.path.expanduser("~/models/command_model.json")
+STATS_FILE = os.path.expanduser("~/models/command_stats.json")
+OPENVINO_CACHE = os.path.expanduser("~/cache/openvino_cache")
 
 # Ensure directories exist
 Path(os.path.dirname(HISTORY_FILE)).mkdir(parents=True, exist_ok=True)
@@ -37,15 +52,6 @@ def save_stats():
         json.dump(command_stats, f)
 
 atexit.register(save_stats)
-
-# Check for OpenVINO availability
-has_openvino = False
-try:
-    import openvino as ov
-    has_openvino = True
-    print("OpenVINO detected and enabled for accelerated suggestions")
-except ImportError:
-    pass
 
 class SentinelModel:
     def __init__(self):

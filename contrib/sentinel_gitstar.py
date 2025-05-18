@@ -2,6 +2,7 @@
 # sentinel_gitstar.py: GitHub starred repositories analyzer for SENTINEL
 # Downloads READMEs from starred GitHub repos and analyzes them with ML
 
+# Standard library imports
 import os
 import sys
 import json
@@ -16,7 +17,7 @@ import importlib.util
 from collections import defaultdict, Counter
 from datetime import datetime
 
-# Try to load required libraries
+# Third-party imports (with robust error handling)
 try:
     import requests
     from bs4 import BeautifulSoup
@@ -28,7 +29,6 @@ except ImportError as e:
     print("Install requirements with: pip install requests beautifulsoup4 tqdm numpy scipy scikit-learn")
     DEPENDENCIES_MET = False
 
-# Check for machine learning libraries
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.cluster import KMeans
@@ -38,13 +38,12 @@ except ImportError:
     print("Machine learning libraries not available. Basic features only.")
     ML_AVAILABLE = False
 
-# Check for LLM support
-LLM_AVAILABLE = False
 try:
     from llama_cpp import Llama
     LLM_AVAILABLE = True
 except ImportError:
     print("llama-cpp-python not available, advanced analysis will be limited")
+    LLM_AVAILABLE = False
 
 # Try to import the context module for integration
 CONTEXT_AVAILABLE = False

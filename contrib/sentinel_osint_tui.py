@@ -2,15 +2,23 @@
 # SENTINEL OSINT TUI - Terminal User Interface for OSINT Tool Management
 # Provides a user-friendly interface for managing OSINT tools and workflows
 
+# Standard library imports
 import os
 import sys
 import json
 import time
 import threading
-import npyscreen
-import curses
-from tqdm import tqdm
 from datetime import datetime
+import curses
+
+# Third-party imports (with robust error handling)
+try:
+    import npyscreen
+    from tqdm import tqdm
+except ImportError as e:
+    print(f"Missing dependency: {e}")
+    print("Install with: pip install npyscreen tqdm")
+    sys.exit(1)
 
 # Ensure access to sentinel_osint functions
 script_dir = os.path.dirname(os.path.abspath(__file__))
