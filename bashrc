@@ -87,7 +87,7 @@ if [[ "${CONFIG[SECURE_PERMISSIONS]}" == "1" ]]; then
 fi
 
 # Setup SENTINEL_CACHE_DIR for configuration caching
-export SENTINEL_CACHE_DIR="${HOME}/.sentinel/cache"
+export SENTINEL_CACHE_DIR="${HOME}/cache"
 mkdir -p "${SENTINEL_CACHE_DIR}/config" "${SENTINEL_CACHE_DIR}/modules"
 
 # Load precustom configuration if enabled

@@ -157,32 +157,46 @@ load_module_config() {
         fi
     fi
     
-    # Create tracker directory if it doesn't exist
-    local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/.sentinel/cache}/modules"
-    mkdir -p "$cache_dir"
-    
-    # Extract module dependencies before loading
-    if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$module_file"; then
-        local deps=$(grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | sed 's/.*="\(.*\)".*/\1/')
+    # Check if module cache is enabled and exists
+    if [[ "${CONFIG[MODULE_CACHE]}" == "1" ]]; then
+        local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/cache}/modules"
+        local cache_file="$cache_dir/${module_file//\//_}.cache"
+        mkdir -p "$cache_dir"
         
-        # Store deps in dependency tracking file
-        echo "$deps" > "${cache_dir}/${module_name}.deps"
-        [[ $debug -eq 1 ]] && echo "[load_module_config] Cached dependencies for $module_name: $deps" >&2
-    else
-        # No dependencies
-        echo "" > "${cache_dir}/${module_name}.deps"
+        # Check for cache file and if it's not too old
+        if [[ -f "$cache_file" ]] && (( $(date +%s) - $(stat -c %Y "$cache_file") < 86400 )); then
+            source "$cache_file"
+            return 0
+        fi
+    fi
+
+    # Continue with normal loading if cache doesn't exist or is disabled
+    if ! [[ -f "$module_file" ]]; then
+        [[ "${CONFIG[VERBOSE]}" == "1" ]] && echo "Error: Module file not found: $module_file" >&2
+        return 1
     fi
     
-    # Now load the module with config caching
-    load_cached_config "$module_file" ${debug:+--debug}
-    return $?
+    # Load the module
+    source "$module_file"
+    
+    # Cache the module if enabled
+    if [[ "${CONFIG[MODULE_CACHE]}" == "1" ]]; then
+        local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/cache}/modules"
+        local cache_file="$cache_dir/${module_file//\//_}.cache"
+        
+        # Extract all function declarations from the module
+        declare -f | grep -A 1 "^[a-zA-Z_][a-zA-Z0-9_]* ()" | grep -v "^--$" > "$cache_file"
+        
+        # Extract all exports from the module (only variables)
+        set | grep -E "^[a-zA-Z_][a-zA-Z0-9_]*=" | grep -v "^BASH_" >> "$cache_file"
+    fi
 }
 
 # Get cached module dependencies
 # Usage: get_module_dependencies <module_name>
 get_module_dependencies() {
     local module_name="$1"
-    local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/.sentinel/cache}/modules"
+    local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/cache}/modules"
     local deps_file="${cache_dir}/${module_name}.deps"
     
     if [[ -f "$deps_file" ]]; then

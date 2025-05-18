@@ -65,13 +65,12 @@ _check_command() {
 # Get script directory and set up paths
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
-SENTINEL_HOME="${HOME}/.sentinel"
 ALIASES_DIR="${HOME}/bash_aliases.d"
 
-# Determine the modules directory (support both enviornment variable and default)
+# Determine the modules directory (support both environment variable and default)
 if [[ -z "${MODULES_DIR:-}" ]]; then
-    # If MODULES_DIR not set, default to ~/.sentinel/bash_modules.d
-    MODULES_DIR="${SENTINEL_HOME}/bash_modules.d"
+    # Use HOME directory
+    MODULES_DIR="${HOME}/bash_modules.d"
     _info "MODULES_DIR not set, using default: ${MODULES_DIR}"
 else
     _info "Using MODULES_DIR from environment: ${MODULES_DIR}"
@@ -115,8 +114,8 @@ if [[ ! -f "$REPO_ROOT/bash_aliases.d/autocomplete.new" && -f "$SCRIPT_DIR/autoc
 
 # Function to handle the @autocomplete command
 _sentinel_autocomplete() {
-    if [[ -f "${HOME}/.sentinel/bash_modules.d/autocomplete.module" ]]; then
-        source "${HOME}/.sentinel/bash_modules.d/autocomplete.module"
+    if [[ -f "${HOME}/bash_modules.d/autocomplete.module" ]]; then
+        source "${HOME}/bash_modules.d/autocomplete.module"
         @autocomplete "$@"
     else
         echo "Error: Autocomplete module not found."
@@ -183,21 +182,21 @@ if [[ -f "$ALIASES_DIR/autocomplete" ]]; then
     _info "Existing autocomplete file found"
     
     # Create backup directory if it doesn't exist
-    mkdir -p "${SENTINEL_HOME}/backup"
+    mkdir -p "${HOME}/backup"
     
     # Check if backup already exists
-    if [[ -f "${SENTINEL_HOME}/backup/autocomplete" ]]; then
+    if [[ -f "${HOME}/backup/autocomplete" ]]; then
         backup_timestamp=$(date +%Y%m%d%H%M%S)
         _info "Previous backup found, creating timestamped backup: autocomplete.$backup_timestamp"
-        cp "$ALIASES_DIR/autocomplete" "${SENTINEL_HOME}/backup/autocomplete.$backup_timestamp"
+        cp "$ALIASES_DIR/autocomplete" "${HOME}/backup/autocomplete.$backup_timestamp"
     else
-        _info "Creating backup at ${SENTINEL_HOME}/backup/autocomplete"
-        cp "$ALIASES_DIR/autocomplete" "${SENTINEL_HOME}/backup/autocomplete"
+        _info "Creating backup at ${HOME}/backup/autocomplete"
+        cp "$ALIASES_DIR/autocomplete" "${HOME}/backup/autocomplete"
     fi
     
     # Create legacy directory for backward compatibility
-    mkdir -p "${SENTINEL_HOME}/legacy"
-    cp "$ALIASES_DIR/autocomplete" "${SENTINEL_HOME}/legacy/autocomplete"
+    mkdir -p "${HOME}/legacy"
+    cp "$ALIASES_DIR/autocomplete" "${HOME}/legacy/autocomplete"
     
     # Confirm replacement
     if _confirm "Replace existing autocomplete with the new modular version?"; then
@@ -208,7 +207,7 @@ if [[ -f "$ALIASES_DIR/autocomplete" ]]; then
         chmod +x "$ALIASES_DIR/autocomplete"
         
         _success "Modular autocomplete system installed!"
-        _info "The previous version is available in legacy mode: source ${SENTINEL_HOME}/legacy/autocomplete"
+        _info "The previous version is available in legacy mode: source ${HOME}/legacy/autocomplete"
         _info "or by using: @autocomplete --legacy-mode"
     else
         _warning "Installation cancelled by user"

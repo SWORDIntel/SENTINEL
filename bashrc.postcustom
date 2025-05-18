@@ -170,8 +170,8 @@ export U_LAZY_LOAD=1
 # =============================
 
 # Load BLE.sh if available
-if [[ -f "${HOME}/.sentinel/blesh_loader.sh" ]]; then
-    source "${HOME}/.sentinel/blesh_loader.sh"
+if [[ -f "${HOME}/blesh_loader.sh" ]]; then
+    source "${HOME}/blesh_loader.sh"
 fi
 
 # =============================

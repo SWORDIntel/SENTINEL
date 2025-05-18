@@ -17,7 +17,7 @@ set -o pipefail
 
 # Register all available snippets
 _sentinel_register_snippets() {
-    local snippets_dir=~/.sentinel/autocomplete/snippets
+    local snippets_dir="${HOME}/autocomplete/snippets"
     
     # Create snippets directory if it doesn't exist
     mkdir -p "$snippets_dir"
@@ -85,7 +85,7 @@ fi"
 # Verify snippet hasn't been tampered with
 _sentinel_verify_snippet() {
     local snippet_name="$1"
-    local snippet_file=~/.sentinel/autocomplete/snippets/$snippet_name.snippet
+    local snippet_file="${HOME}/autocomplete/snippets/$snippet_name.snippet"
     
     if [[ ! -f "$snippet_file" ]]; then
         return 1
@@ -93,7 +93,7 @@ _sentinel_verify_snippet() {
     
     # Get content and verify using the HMAC module
     local content=$(<"$snippet_file")
-    local hash_file=~/.sentinel/autocomplete/snippets/$snippet_name.hash
+    local hash_file="${HOME}/autocomplete/snippets/$snippet_name.hash"
     
     if [[ -f "$hash_file" ]]; then
         local stored_hash=$(<"$hash_file")
@@ -134,7 +134,7 @@ _sentinel_snippet_add() {
     }
     
     # Create snippets directory if needed
-    local snippets_dir=~/.sentinel/autocomplete/snippets
+    local snippets_dir="${HOME}/autocomplete/snippets"
     mkdir -p "$snippets_dir"
     
     # Save snippet
@@ -167,7 +167,7 @@ _sentinel_snippet_delete() {
         return 1
     }
     
-    local snippets_dir=~/.sentinel/autocomplete/snippets
+    local snippets_dir="${HOME}/autocomplete/snippets"
     local snippet_file="$snippets_dir/$name.snippet"
     local hash_file="$snippets_dir/$name.hash"
     
@@ -190,7 +190,7 @@ _sentinel_snippet_delete() {
 
 # List available snippets
 _sentinel_snippet_list() {
-    local snippets_dir=~/.sentinel/autocomplete/snippets
+    local snippets_dir="${HOME}/autocomplete/snippets"
     
     if [[ ! -d "$snippets_dir" ]]; then
         echo "No snippets found."
@@ -248,7 +248,7 @@ _sentinel_snippet_show() {
         return 1
     }
     
-    local snippets_dir=~/.sentinel/autocomplete/snippets
+    local snippets_dir="${HOME}/autocomplete/snippets"
     local snippet_file="$snippets_dir/$name.snippet"
     
     # Check if snippet exists
@@ -277,14 +277,14 @@ _sentinel_snippet_show() {
 # Logging functions
 _snippets_log_error() {
     local msg="$1"
-    mkdir -p ~/.sentinel/logs
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $msg" >> ~/.sentinel/logs/errors-$(date +%Y%m%d).log
+    mkdir -p "${HOME}/logs"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $msg" >> "${HOME}/logs/errors-$(date +%Y%m%d).log"
 }
 
 _snippets_log_warning() {
     local msg="$1"
-    mkdir -p ~/.sentinel/logs
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: $msg" >> ~/.sentinel/logs/warnings-$(date +%Y%m%d).log
+    mkdir -p "${HOME}/logs"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: $msg" >> "${HOME}/logs/warnings-$(date +%Y%m%d).log"
 }
 
 # Initialize the snippet management system
@@ -296,7 +296,7 @@ sentinel_init_snippets() {
     set -o pipefail
     
     # Create required directories
-    mkdir -p ~/.sentinel/autocomplete/snippets
+    mkdir -p "${HOME}/autocomplete/snippets"
     
     # Register available snippets
     _sentinel_register_snippets
