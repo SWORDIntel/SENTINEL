@@ -10,20 +10,24 @@
 
 - [1. Overview](#1-overview)
 - [2. Key Features](#2-key-features)
-- [3. Installation & Quick Start](#3-installation--quick-start)
+- [3. Performance Optimizations](#3-performance-optimizations)
+    - [Configuration Caching](#configuration-caching)
+    - [Dependency-Based Module Loading](#dependency-based-module-loading)
+    - [Lazy Loading](#lazy-loading)
+- [4. Installation & Quick Start](#4-installation--quick-start)
     - [Prerequisites](#prerequisites)
     - [Setup](#setup)
     - [FZF & BLE.sh](#fzf--blesh)
-- [4. Configuration](#4-configuration)
+- [5. Configuration](#5-configuration)
     - [Configuration Migration](#configuration-migration)
-- [5. Usage](#5-usage)
+- [6. Usage](#6-usage)
     - [Chat Assistant](#chat-assistant)
     - [Autocomplete](#autocomplete)
     - [FZF](#fzf)
     - [Context](#context)
     - [Distributed Compilation](#distributed-compilation)
     - [Secure File Operations](#secure-file-operations)
-- [6. Machine Learning Capabilities](#6-machine-learning-capabilities)
+- [7. Machine Learning Capabilities](#7-machine-learning-capabilities)
     - [Command Learning & Suggestions](#command-learning--suggestions)
     - [Interactive Chat Assistant](#interactive-chat-assistant)
     - [OpenVINO Acceleration](#openvino-acceleration)
@@ -31,11 +35,11 @@
     - [Cybersecurity ML Analyzer](#cybersecurity-ml-analyzer)
     - [Technical Implementation](#technical-implementation)
     - [Customization](#customization)
-- [7. Security Considerations](#7-security-considerations)
-- [8. Troubleshooting](#8-troubleshooting)
-- [9. Extending & Contributing](#9-extending--contributing)
-- [10. References](#10-references)
-- [11. Changelog](#11-changelog)
+- [8. Security Considerations](#8-security-considerations)
+- [9. Troubleshooting](#9-troubleshooting)
+- [10. Extending & Contributing](#10-extending--contributing)
+- [11. References](#11-references)
+- [12. Changelog](#12-changelog)
 
 ---
 
@@ -49,6 +53,7 @@ SENTINEL (Secure ENhanced Terminal INtelligent Layer) is a comprehensive, modula
 - Fuzzy finding and BLE.sh integration
 - Centralized configuration and logging
 - Distributed compilation and advanced security tools
+- Optimized performance with configuration caching and dependency-based module loading
 
 All modules are designed for robust error handling, security, and privacy, with a focus on terminal-based workflows and Linux-first compatibility.
 
@@ -68,7 +73,57 @@ All modules are designed for robust error handling, security, and privacy, with 
 
 ---
 
-## 3. Installation & Quick Start
+## 3. Performance Optimizations
+
+SENTINEL implements several key performance optimizations to ensure a fast, responsive shell experience even with advanced features enabled.
+
+### Configuration Caching
+
+The configuration caching system significantly reduces startup time by caching parsed configuration files:
+
+- **Centralized Cache Management**: All configuration files are cached in `~/.sentinel/cache/`
+- **MD5 Hash Verification**: Integrity checks ensure cached configs match source files
+- **Smart Variable Extraction**: Only modified variables are stored in cache files
+- **Automatic Cache Invalidation**: Updates source files only when needed
+- **Toggle via `SENTINEL_CONFIG_CACHE_ENABLED=1`**
+
+```bash
+# View cache statistics
+config_cache_stats
+
+# Force refresh all caches
+SENTINEL_CONFIG_FORCE_REFRESH=1 source ~/.bashrc
+```
+
+### Dependency-Based Module Loading
+
+SENTINEL uses a sophisticated module loading system that resolves dependencies automatically:
+
+- **Automatic Dependency Resolution**: Modules specify dependencies that are loaded first
+- **Circular Dependency Detection**: Prevents infinite loading loops
+- **Cached Module Paths**: Faster module lookups on subsequent loads
+- **Configurable via `SENTINEL_MODULE_CACHE_ENABLED=1`**
+
+For module authors, simply specify dependencies in your module header:
+
+```bash
+# Module metadata for dependency resolution
+SENTINEL_MODULE_DESCRIPTION="My awesome module"
+SENTINEL_MODULE_VERSION="1.0.0"
+SENTINEL_MODULE_DEPENDENCIES="logging config_cache"
+```
+
+### Lazy Loading
+
+Heavy components are only loaded when first used, not during shell startup:
+
+- Development environments (Pyenv, NVM, RVM, Cargo)
+- Bash completion
+- Custom tools via the `lazy_load` function
+
+---
+
+## 4. Installation & Quick Start
 
 ### Prerequisites
 
@@ -114,7 +169,7 @@ source ~/.local/share/blesh/ble.sh
 
 ---
 
-## 4. Configuration
+## 5. Configuration
 
 All settings are managed in `~/.sentinel/sentinel_config.sh`.
 
@@ -131,6 +186,22 @@ sentinel_config_reload
 - Enable/disable modules (e.g., `SENTINEL_FZF_ENABLED=1`)
 - Logging level, retention, and color
 - Autocomplete, fuzzy, chain, snippet, and project suggestion toggles
+- Configuration caching settings:
+  - `SENTINEL_CONFIG_CACHE_ENABLED=1` - Master toggle for config caching
+  - `SENTINEL_CONFIG_FORCE_REFRESH=0` - Force rebuild all caches
+  - `SENTINEL_CONFIG_VERIFY_HASH=1` - Verify cache integrity with MD5
+  - `SENTINEL_CONFIG_CACHE_RETENTION_DAYS=30` - Auto-cleanup old caches
+
+**Module system settings:**
+  - `SENTINEL_MODULE_DEBUG=0` - Show detailed module loading info
+  - `SENTINEL_MODULE_AUTOLOAD=1` - Auto-load required dependencies
+  - `SENTINEL_MODULE_CACHE_ENABLED=1` - Enable module path caching
+  - `SENTINEL_MODULE_VERIFY=1` - Security verification for modules
+
+You can also use the built-in Toggle TUI to configure these options:
+```bash
+./sentinel_toggles_tui.py
+```
 
 ### Configuration Migration
 
@@ -141,7 +212,7 @@ bash ~/Documents/GitHub/SENTINEL/bash_modules.d/migrate_config.sh
 
 ---
 
-## 5. Usage
+## 6. Usage
 
 ### Chat Assistant
 
@@ -192,7 +263,7 @@ secure_cp source.txt dest.txt     # Secure copy
 
 ---
 
-## 6. Machine Learning Capabilities
+## 7. Machine Learning Capabilities
 
 ### Command Learning & Suggestions
 - Markov chain models analyze your command history for contextual suggestions.
@@ -225,7 +296,7 @@ secure_cp source.txt dest.txt     # Secure copy
 
 ---
 
-## 7. Security Considerations
+## 8. Security Considerations
 
 - **HMAC Verification**: All critical data (snippets, tokens) are HMAC-signed.
 - **Permissions**: All scripts and config files should be `chmod 600` or stricter.
@@ -236,7 +307,7 @@ secure_cp source.txt dest.txt     # Secure copy
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 - `@autocomplete status` or `sentinel_config_reload` for diagnostics
 - Check logs: `sentinel_show_logs "component" 50`
@@ -244,18 +315,46 @@ secure_cp source.txt dest.txt     # Secure copy
 - Reset context: `rm -rf ~/.sentinel/context/*.json`
 - Run `./fix_autocomplete.sh` and `./test_autocomplete.sh` for autocomplete issues
 - For Windows, use PowerShell scripts in `Windows Code Fixes` directory
+- Clear configuration cache: `rm -rf ~/.sentinel/cache/config/*.cache`
+- Rebuild module cache: `module_manager_init --rebuild-cache`
 
 ---
 
-## 9. Extending & Contributing
+## 10. Extending & Contributing
 
 - Add new modules in `bash_modules.d/suggestions/`
 - Follow module template and security guidelines
 - Submit improvements via Pull Request
 
+**Creating a new module with dependencies:**
+
+```bash
+#!/usr/bin/env bash
+# SENTINEL - My Module
+# Version: 1.0.0
+# Description: Description of what this module does
+# Dependencies: logging config_cache  # List modules this depends on
+
+# Module metadata for dependency resolution
+SENTINEL_MODULE_DESCRIPTION="My awesome module"
+SENTINEL_MODULE_VERSION="1.0.0"
+SENTINEL_MODULE_DEPENDENCIES="logging config_cache"
+
+# Prevent double loading
+[[ -n "${_MY_MODULE_LOADED}" ]] && return 0
+export _MY_MODULE_LOADED=1
+
+# Module code here...
+```
+
+To test your module:
+```bash
+module_enable my_module
+```
+
 ---
 
-## 10. References
+## 11. References
 
 - [fzf](https://github.com/junegunn/fzf)
 - [ble.sh](https://github.com/akinomyoga/ble.sh)
@@ -265,9 +364,15 @@ secure_cp source.txt dest.txt     # Secure copy
 
 ---
 
-## 11. Changelog
+## 12. Changelog
 
-*(Add versioned changes here)*
+**v2.1.0** - Performance Optimizations
+- Added configuration caching for faster startup
+- Implemented dependency-based module loading
+- Added module path caching
+- Added Toggle TUI support for caching options
+
+*(Add older versioned changes here)*
 
 ---
 

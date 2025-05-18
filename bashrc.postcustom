@@ -202,3 +202,21 @@ else
         sed -i "/^$BLSH_MODULE_NAME\$/d" "$BLSH_MODULES_FILE"
     fi
 fi
+
+# Configuration Caching System
+# ------------------------
+# Controls how configuration files are cached for faster shell startup
+export SENTINEL_CONFIG_CACHE_ENABLED=1
+export SENTINEL_CONFIG_FORCE_REFRESH=0
+export SENTINEL_CONFIG_CACHE_RETENTION_DAYS=30
+export SENTINEL_CONFIG_VERIFY_HASH=1
+
+# Module System Optimization
+# -------------------------
+# Controls module dependency resolution and loading behavior
+export SENTINEL_MODULE_DEBUG=0
+export SENTINEL_MODULE_AUTOLOAD=1
+export SENTINEL_MODULE_CACHE_ENABLED=1
+export SENTINEL_MODULE_VERIFY=1
+
+# Add your customizations below this line

@@ -3,6 +3,217 @@
 # Enhanced shell functions for improved productivity and security
 # Last Update: 2023-08-14
 
+# Centralized configuration caching
+# Usage: load_cached_config <config_file> [options]
+# Loads a config file, using a cache if available and up-to-date
+# Options:
+#   --debug         - Show debug messages
+#   --force-refresh - Force refresh of cache
+#   --verify        - Verify cache integrity
+#   --selective="VAR1 VAR2" - Only cache specified variables
+load_cached_config() {
+    local config_file="$1"
+    shift
+    local cache_file="${config_file}.cache"
+    local debug=0
+    local force_refresh=0
+    local verify=0
+    local selective_vars=""
+    local hash_file="${cache_file}.hash"
+    
+    # Process options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --debug)
+                debug=1
+                ;;
+            --force-refresh)
+                force_refresh=1
+                ;;
+            --verify)
+                verify=1
+                ;;
+            --selective=*)
+                selective_vars="${1#*=}"
+                ;;
+            *)
+                echo "[load_cached_config] Unknown option: $1" >&2
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "[load_cached_config] Config file not found: $config_file" >&2
+        return 1
+    fi
+
+    # Force refresh or verify hash if requested
+    if [[ $force_refresh -eq 1 || $verify -eq 1 ]]; then
+        if [[ -f "$hash_file" && -f "$cache_file" && $verify -eq 1 ]]; then
+            local stored_hash=$(cat "$hash_file")
+            local current_hash=$(md5sum "$config_file" | cut -d' ' -f1)
+            if [[ "$stored_hash" != "$current_hash" ]]; then
+                [[ $debug -eq 1 ]] && echo "[load_cached_config] Hash mismatch, forcing refresh" >&2
+                force_refresh=1
+            fi
+        else
+            [[ $debug -eq 1 ]] && echo "[load_cached_config] No hash file, forcing refresh" >&2
+            force_refresh=1
+        fi
+    fi
+
+    # Use cache if it exists, is newer than config file, and no force refresh
+    if [[ -f "$cache_file" && "$cache_file" -nt "$config_file" && $force_refresh -eq 0 ]]; then
+        [[ $debug -eq 1 ]] && echo "[load_cached_config] Using cached config: $cache_file" >&2
+        source "$cache_file"
+        return 0
+    fi
+
+    # Source the config file
+    [[ $debug -eq 1 ]] && echo "[load_cached_config] Sourcing config: $config_file" >&2
+    source "$config_file"
+    
+    # Capture pre-existing variables to avoid caching them
+    local tmp_env_before=$(mktemp)
+    local tmp_env_after=$(mktemp)
+    local tmp_env_diff=$(mktemp)
+    
+    # Create cache file with header
+    echo "# SENTINEL Configuration Cache" > "$cache_file"
+    echo "# Original: $config_file" >> "$cache_file"
+    echo "# Generated: $(date)" >> "$cache_file"
+    echo "" >> "$cache_file"
+    
+    if [[ -n "$selective_vars" ]]; then
+        # Only cache specified variables
+        [[ $debug -eq 1 ]] && echo "[load_cached_config] Selective caching: $selective_vars" >&2
+        for var in $selective_vars; do
+            if [[ -v "$var" ]]; then
+                declare -p "$var" >> "$cache_file" 2>/dev/null
+            fi
+        done
+    else
+        # Get environment before and after to detect new variables
+        set -o posix
+        set > "$tmp_env_before"
+        source "$config_file"
+        set > "$tmp_env_after"
+        set +o posix
+        
+        # Get the difference (new or changed variables)
+        grep -vFxf "$tmp_env_before" "$tmp_env_after" > "$tmp_env_diff"
+        
+        # Save the changed variables to cache
+        while IFS= read -r line; do
+            # Extract variable name and check if it's a variable declaration
+            local var_name=$(echo "$line" | cut -d= -f1)
+            if [[ -n "$var_name" && "$var_name" != "BASH_LINENO" && "$var_name" != "BASH_SOURCE" && 
+                  "$var_name" != "FUNCNAME" && "$var_name" != "BASH_COMMAND" && 
+                  "$var_name" != "BASH_EXECUTION_STRING" && "$var_name" != "BASH_REMATCH" && 
+                  ! "$var_name" =~ ^[0-9]+$ ]]; then
+                # Declaration with declare -p to preserve variable type
+                declare -p "$var_name" >> "$cache_file" 2>/dev/null
+            fi
+        done < "$tmp_env_diff"
+    fi
+    
+    # Clean up temp files
+    rm -f "$tmp_env_before" "$tmp_env_after" "$tmp_env_diff"
+    
+    # Create hash for future verification
+    md5sum "$config_file" | cut -d' ' -f1 > "$hash_file"
+    
+    # Secure the files
+    chmod 600 "$cache_file" "$hash_file"
+    
+    [[ $debug -eq 1 ]] && echo "[load_cached_config] Cache updated: $cache_file" >&2
+    return 0
+}
+
+# Module configuration caching
+# Specialized version of load_cached_config for modules
+# Usage: load_module_config <module_name>
+load_module_config() {
+    local module_name="$1"
+    local module_dir="${SENTINEL_MODULES_PATH:-$HOME/.bash_modules.d}"
+    local module_file=""
+    local debug=0
+    [[ "$2" == "--debug" ]] && debug=1
+    
+    # Find the module file
+    if [[ -f "${module_dir}/${module_name}.sh" ]]; then
+        module_file="${module_dir}/${module_name}.sh"
+    elif [[ -f "${module_dir}/${module_name}.module" ]]; then
+        module_file="${module_dir}/${module_name}.module"
+    else
+        # Try to find in subdirs
+        local found_file=$(find "${module_dir}" -name "${module_name}.sh" -o -name "${module_name}.module" | head -n1)
+        if [[ -n "$found_file" ]]; then
+            module_file="$found_file"
+        else
+            echo "[load_module_config] Module not found: $module_name" >&2
+            return 1
+        fi
+    fi
+    
+    # Create tracker directory if it doesn't exist
+    local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/.sentinel/cache}/modules"
+    mkdir -p "$cache_dir"
+    
+    # Extract module dependencies before loading
+    if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$module_file"; then
+        local deps=$(grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | sed 's/.*="\(.*\)".*/\1/')
+        
+        # Store deps in dependency tracking file
+        echo "$deps" > "${cache_dir}/${module_name}.deps"
+        [[ $debug -eq 1 ]] && echo "[load_module_config] Cached dependencies for $module_name: $deps" >&2
+    else
+        # No dependencies
+        echo "" > "${cache_dir}/${module_name}.deps"
+    fi
+    
+    # Now load the module with config caching
+    load_cached_config "$module_file" ${debug:+--debug}
+    return $?
+}
+
+# Get cached module dependencies
+# Usage: get_module_dependencies <module_name>
+get_module_dependencies() {
+    local module_name="$1"
+    local cache_dir="${SENTINEL_CACHE_DIR:-$HOME/.sentinel/cache}/modules"
+    local deps_file="${cache_dir}/${module_name}.deps"
+    
+    if [[ -f "$deps_file" ]]; then
+        cat "$deps_file"
+    else
+        # Try to extract without loading the module
+        local module_dir="${SENTINEL_MODULES_PATH:-$HOME/.bash_modules.d}"
+        local module_file=""
+        
+        # Find the module file
+        if [[ -f "${module_dir}/${module_name}.sh" ]]; then
+            module_file="${module_dir}/${module_name}.sh"
+        elif [[ -f "${module_dir}/${module_name}.module" ]]; then
+            module_file="${module_dir}/${module_name}.module"
+        else
+            # Try to find in subdirs
+            local found_file=$(find "${module_dir}" -name "${module_name}.sh" -o -name "${module_name}.module" | head -n1)
+            if [[ -n "$found_file" ]]; then
+                module_file="$found_file"
+            else
+                return 1
+            fi
+        fi
+        
+        # Extract dependencies
+        if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$module_file"; then
+            grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | sed 's/.*="\(.*\)".*/\1/'
+        fi
+    fi
+}
+
 # Visual spinner for progress indication
 spin() {
     echo -ne "${RED}-"

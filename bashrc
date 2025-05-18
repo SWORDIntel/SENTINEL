@@ -85,10 +85,24 @@ if [[ "${CONFIG[SECURE_PERMISSIONS]}" == "1" ]]; then
     echo -e "\033[1;31mWarning: ~/.bashrc has insecure permissions. Recommended: chmod 600 ~/.bashrc\033[0m" >&2
   fi
 fi
+
+# Setup SENTINEL_CACHE_DIR for configuration caching
+export SENTINEL_CACHE_DIR="${HOME}/.sentinel/cache"
+mkdir -p "${SENTINEL_CACHE_DIR}/config" "${SENTINEL_CACHE_DIR}/modules"
+
 # Load precustom configuration if enabled
 if [[ "${CONFIG[PRECUSTOM]}" == "1" && -f ~/.bashrc.precustom ]]; then
-  # shellcheck source=~/.bashrc.precustom
-  . ~/.bashrc.precustom
+  # Use centralized config caching with verification if available
+  if type load_cached_config &>/dev/null; then
+    if ! load_cached_config ~/.bashrc.precustom --verify; then
+      echo "[bashrc] Failed to load ~/.bashrc.precustom via cache" >&2
+      # Fallback to direct loading if cache fails
+      source ~/.bashrc.precustom
+    fi
+  else
+    # Direct loading if caching function not available
+    source ~/.bashrc.precustom
+  fi
 fi
 
 # Debug handling
@@ -743,111 +757,30 @@ function j() {
   fi
 }
 
-# Modular bashrc extensions
+# Dependency-based module loading (see bash_modules for logic)
 if [[ "${CONFIG[MODULES]}" == "1" ]]; then
-  # Module registry
-  
-  # Path for modules
-  MODULES_PATH="${HOME}/.bash_modules.d"
-  
-  # Create modules directory if it doesn't exist
-  [[ ! -d "$MODULES_PATH" ]] && mkdir -p "$MODULES_PATH"
-  
-  # Module management functions
-  function module_enable() {
-    local module="$1"
-    local module_file=""
-    if [[ -f "${MODULES_PATH}/${module}.sh" ]]; then
-        module_file="${MODULES_PATH}/${module}.sh"
-    elif [[ -f "${MODULES_PATH}/${module}.module" ]]; then
-        module_file="${MODULES_PATH}/${module}.module"
-    fi
-    if [[ -z "$module_file" || ! -f "$module_file" ]]; then
-        eerror "Module '$module' not found"
-        return 1
-    fi
-    # Only source if not already loaded
-    local guard_var="_MODULE_${module^^}_LOADED"
-    if [[ -z "${!guard_var}" ]]; then
-        source "$module_file"
-        declare -g "$guard_var=1"
-        emsg "Module '$module' loaded"
-    fi
-    # Register as enabled
-    touch "${HOME}/.bash_modules"
-    if ! grep -q "^${module}\$" "${HOME}/.bash_modules"; then
-        echo "$module" >> "${HOME}/.bash_modules"
-    fi
-  }
-  
-  function module_disable() {
-    local module="$1"
-    
-    # Remove from inventory
-    if [[ -f "${HOME}/.bash_modules" ]]; then
-      sed -i "/^${module}\$/d" "${HOME}/.bash_modules"
-      emsg "Module '$module' disabled"
-    fi
-  }
-  
-  function module_list() {
-    echo "Available modules:"
-    echo "----------------"
-    local modules_found=0
-    
-    # List .sh modules
-    for module in "$MODULES_PATH"/*.sh; do
-      [[ -f "$module" ]] || continue
-      modules_found=1
-      module_name=$(basename "$module" .sh)
-      if [[ -f "${HOME}/.bash_modules" ]] && grep -q "^$module_name$" "${HOME}/.bash_modules"; then
-        echo -e "${GREEN}*${NC} $module_name (enabled)"
-      else
-        echo "  $module_name"
-      fi
-    done
-    
-    # List .module modules
-    for module in "$MODULES_PATH"/*.module; do
-      [[ -f "$module" ]] || continue
-      modules_found=1
-      module_name=$(basename "$module" .module)
-      # Skip if already listed from .sh
-      if [[ -f "$MODULES_PATH/${module_name}.sh" ]]; then
-        continue
-      fi
-      if [[ -f "${HOME}/.bash_modules" ]] && grep -q "^$module_name$" "${HOME}/.bash_modules"; then
-        echo -e "${GREEN}*${NC} $module_name (enabled)"
-      else
-        echo "  $module_name"
-      fi
-    done
-    
-    if [[ $modules_found -eq 0 ]]; then
-      echo "  No modules found"
-    fi
-  }
-  
-  # --- PATCH: Ensure blesh_installer is loaded first ---
-  # Read enabled modules, but always load blesh_installer first if present
-  if [[ -f "${HOME}/.bash_modules" ]]; then
-    # Remove duplicates and ensure blesh_installer is first
-    awk '!x[$0]++' "${HOME}/.bash_modules" > "${HOME}/.bash_modules.tmp"
-    if grep -q '^blesh_installer$' "${HOME}/.bash_modules.tmp"; then
-      # Remove blesh_installer from its current position
-      grep -v '^blesh_installer$' "${HOME}/.bash_modules.tmp" > "${HOME}/.bash_modules.tmp2"
-      echo "blesh_installer" > "${HOME}/.bash_modules.ordered"
-      cat "${HOME}/.bash_modules.tmp2" >> "${HOME}/.bash_modules.ordered"
-      mv "${HOME}/.bash_modules.ordered" "${HOME}/.bash_modules.tmp"
-    fi
-    # Now source modules in order
+  # Check if the module loading function exists before calling
+  if type _load_enabled_modules &>/dev/null; then
+    _load_enabled_modules
+  elif [[ -f "${HOME}/.bash_modules" ]]; then
+    # Fallback to the older direct loading method if the new function isn't available
+    echo "[bashrc] Warning: Enhanced module loader not found, using legacy loader" >&2
     while IFS= read -r module; do
       [[ -z "$module" || "$module" =~ ^# ]] && continue
-      module_enable "$module" >/dev/null
-    done < "${HOME}/.bash_modules.tmp"
-    rm -f "${HOME}/.bash_modules.tmp" "${HOME}/.bash_modules.tmp2" 2>/dev/null
+      # Use standard module_enable function or direct sourcing
+      if type module_enable &>/dev/null; then
+        module_enable "$module"
+      elif [[ -f "${HOME}/.bash_modules.d/${module}.module" ]]; then
+        source "${HOME}/.bash_modules.d/${module}.module"
+      elif [[ -f "${HOME}/.bash_modules.d/${module}.sh" ]]; then
+        source "${HOME}/.bash_modules.d/${module}.sh"
+      else
+        echo "[bashrc] Warning: Module '$module' not found" >&2
+      fi
+    done < "${HOME}/.bash_modules"
   fi
 fi
+
 # Core aliases
 if [[ "${CONFIG[USER_ALIASES]}" == "1" ]]; then
   # Load user aliases if present
@@ -1017,8 +950,17 @@ function netcheck() {
 }
 # Load postcustom configuration if enabled
 if [[ "${CONFIG[POSTCUSTOM]}" == "1" && -f ~/.bashrc.postcustom ]]; then
-  # shellcheck source=~/.bashrc.postcustom
-  . ~/.bashrc.postcustom
+  # Use centralized config caching with verification if available
+  if type load_cached_config &>/dev/null; then
+    if ! load_cached_config ~/.bashrc.postcustom --verify; then
+      echo "[bashrc] Failed to load ~/.bashrc.postcustom via cache" >&2
+      # Fallback to direct loading if cache fails
+      source ~/.bashrc.postcustom
+    fi
+  else
+    # Direct loading if caching function not available
+    source ~/.bashrc.postcustom
+  fi
 fi
 
 # Finalize

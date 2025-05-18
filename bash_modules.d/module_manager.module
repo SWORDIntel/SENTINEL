@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+# SENTINEL - Module Manager
+# Version: 1.0.0
+# Description: Enhanced module system with dependency resolution and cache integration
+# Dependencies: config_cache
+# Maintainer: SENTINEL Team
+
+# Module metadata for dependency resolution
+SENTINEL_MODULE_DESCRIPTION="Enhanced module management system"
+SENTINEL_MODULE_VERSION="1.0.0"
+SENTINEL_MODULE_DEPENDENCIES="config_cache"
+
+# Prevent double loading
+[[ -n "${_SENTINEL_MODULE_MANAGER_LOADED}" ]] && return 0
+export _SENTINEL_MODULE_MANAGER_LOADED=1
+
+# Ensure module cache directory exists
+SENTINEL_MODULE_CACHE_DIR="${SENTINEL_CACHE_DIR:-$HOME/.sentinel/cache}/modules"
+mkdir -p "$SENTINEL_MODULE_CACHE_DIR"
+
+# Set default configuration
+: "${SENTINEL_MODULE_DEBUG:=0}"           # Debug mode
+: "${SENTINEL_MODULE_AUTOLOAD:=1}"        # Automatically load required modules
+: "${SENTINEL_MODULE_CACHE_ENABLED:=1}"   # Enable module caching
+: "${SENTINEL_MODULE_VERIFY:=1}"          # Enable security verification
+
+# Log initialization if available
+if type sentinel_log_info &>/dev/null; then
+    sentinel_log_info "module_manager" "Module manager initialized"
+else
+    [[ $SENTINEL_MODULE_DEBUG -eq 1 ]] && echo "Module manager initialized" >&2
+fi
+
+# Function to find a module file
+# Usage: find_module_file <module_name>
+find_module_file() {
+    local module_name="$1"
+    local module_dir="${SENTINEL_MODULES_PATH:-$HOME/.bash_modules.d}"
+    
+    # Check module cache first
+    local cache_file="${SENTINEL_MODULE_CACHE_DIR}/${module_name}.path"
+    if [[ -f "$cache_file" && "$SENTINEL_MODULE_CACHE_ENABLED" == "1" ]]; then
+        local cached_path=$(cat "$cache_file")
+        if [[ -f "$cached_path" ]]; then
+            echo "$cached_path"
+            return 0
+        fi
+    fi
+    
+    # Find the module file - standard locations first for speed
+    if [[ -f "${module_dir}/${module_name}.sh" ]]; then
+        echo "${module_dir}/${module_name}.sh"
+    elif [[ -f "${module_dir}/${module_name}.module" ]]; then
+        echo "${module_dir}/${module_name}.module"
+    else
+        # Search in subdirectories
+        local found_file=$(find "${module_dir}" -name "${module_name}.sh" -o -name "${module_name}.module" -print 2>/dev/null | head -n 1)
+        if [[ -n "$found_file" ]]; then
+            echo "$found_file"
+            # Cache the path for future lookups
+            if [[ "$SENTINEL_MODULE_CACHE_ENABLED" == "1" ]]; then
+                echo "$found_file" > "$cache_file"
+            fi
+        fi
+    fi
+}
+
+# Function to extract module dependencies
+# Usage: get_module_dependencies <module_name> [file_path]
+get_module_dependencies() {
+    local module_name="$1"
+    local module_file="${2:-$(find_module_file "$module_name")}"
+    
+    if [[ -z "$module_file" || ! -f "$module_file" ]]; then
+        return 1
+    fi
+    
+    # Check dependency cache first
+    local cache_file="${SENTINEL_MODULE_CACHE_DIR}/${module_name}.deps"
+    if [[ -f "$cache_file" && "$SENTINEL_MODULE_CACHE_ENABLED" == "1" ]]; then
+        cat "$cache_file"
+        return 0
+    fi
+    
+    # Extract dependencies without loading the module
+    if grep -q "SENTINEL_MODULE_DEPENDENCIES=" "$module_file"; then
+        local deps=$(grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" | head -n1 | sed 's/.*="\(.*\)".*/\1/')
+        
+        # Cache dependencies for future use
+        if [[ "$SENTINEL_MODULE_CACHE_ENABLED" == "1" ]]; then
+            echo "$deps" > "$cache_file"
+        fi
+        
+        echo "$deps"
+    fi
+}
+
+# Function to check if a module is loaded
+# Usage: is_module_loaded <module_name>
+is_module_loaded() {
+    local module_name="$1"
+    local guard_var="_MODULE_${module_name^^}_LOADED"
+    
+    [[ -n "${!guard_var}" ]] && return 0 || return 1
+}
+
+# Enhanced module loading with dependency resolution
+# Usage: smart_module_load <module_name> [force] [path]
+smart_module_load() {
+    local module_name="$1"
+    local force="${2:-0}"
+    local module_file="${3:-$(find_module_file "$module_name")}"
+    local loading_chain="${4:-$module_name}"
+    
+    # Skip if already loaded and not forced
+    if is_module_loaded "$module_name" && [[ "$force" != "1" ]]; then
+        [[ $SENTINEL_MODULE_DEBUG -eq 1 ]] && echo "Module '$module_name' already loaded" >&2
+        return 0
+    fi
+    
+    # Check if module file exists
+    if [[ -z "$module_file" || ! -f "$module_file" ]]; then
+        if type sentinel_log_error &>/dev/null; then
+            sentinel_log_error "module_manager" "Module '$module_name' not found"
+        else
+            echo "Error: Module '$module_name' not found" >&2
+        fi
+        return 1
+    fi
+    
+    # Resolve dependencies first
+    local deps=$(get_module_dependencies "$module_name" "$module_file")
+    if [[ -n "$deps" ]]; then
+        for dep in $deps; do
+            # Check for circular dependencies
+            if [[ "$loading_chain" == *"$dep"* ]]; then
+                if type sentinel_log_error &>/dev/null; then
+                    sentinel_log_error "module_manager" "Circular dependency detected: $loading_chain -> $dep"
+                else
+                    echo "Error: Circular dependency detected: $loading_chain -> $dep" >&2
+                fi
+                return 1
+            fi
+            
+            # Load dependency
+            if ! is_module_loaded "$dep"; then
+                if type sentinel_log_info &>/dev/null; then
+                    sentinel_log_info "module_manager" "Loading dependency: $dep for $module_name"
+                else
+                    [[ $SENTINEL_MODULE_DEBUG -eq 1 ]] && echo "Loading dependency: $dep for $module_name" >&2
+                fi
+                
+                smart_module_load "$dep" "$force" "" "${loading_chain} -> $dep"
+                
+                # If dependency failed to load, abort
+                if ! is_module_loaded "$dep"; then
+                    if type sentinel_log_error &>/dev/null; then
+                        sentinel_log_error "module_manager" "Failed to load dependency '$dep' for '$module_name'"
+                    else
+                        echo "Error: Failed to load dependency '$dep' for '$module_name'" >&2
+                    fi
+                    return 1
+                fi
+            fi
+        done
+    fi
+    
+    # Load the module
+    if [[ "$SENTINEL_MODULE_CACHE_ENABLED" == "1" && -n "$(which config_cache_load 2>/dev/null)" ]]; then
+        # Load through config cache if available
+        config_cache_load "$module_file" ${SENTINEL_MODULE_DEBUG:+--debug}
+    else
+        # Direct load
+        source "$module_file"
+    fi
+    
+    # Check if loading was successful
+    local guard_var="_MODULE_${module_name^^}_LOADED"
+    if [[ -z "${!guard_var}" ]]; then
+        # Set the guard variable
+        declare -g "$guard_var=1"
+    fi
+    
+    # Log success
+    if type sentinel_log_info &>/dev/null; then
+        sentinel_log_info "module_manager" "Module '$module_name' loaded successfully"
+    else
+        [[ $SENTINEL_MODULE_DEBUG -eq 1 ]] && echo "Module '$module_name' loaded successfully" >&2
+    fi
+    
+    return 0
+}
+
+# Sort modules by dependency order
+# Usage: sort_modules_by_dependency <module_list>
+sort_modules_by_dependency() {
+    local input_modules="$1"
+    local ordered_modules=""
+    local remaining_modules="$input_modules"
+    local temp_modules=""
+    local progress=1
+    
+    # Process modules until none left or no progress can be made
+    while [[ -n "$remaining_modules" && $progress -eq 1 ]]; do
+        progress=0
+        temp_modules=""
+        
+        for module in $remaining_modules; do
+            local deps=$(get_module_dependencies "$module")
+            local deps_resolved=1
+            
+            # Check if all dependencies are satisfied
+            for dep in $deps; do
+                # If dependency is not in ordered_modules, it's not satisfied
+                if [[ ! " $ordered_modules " =~ " $dep " ]]; then
+                    deps_resolved=0
+                    break
+                fi
+            done
+            
+            if [[ $deps_resolved -eq 1 ]]; then
+                # Add to ordered list
+                ordered_modules="$ordered_modules $module"
+                progress=1
+            else
+                # Keep for next iteration
+                temp_modules="$temp_modules $module"
+            fi
+        done
+        
+        remaining_modules="$temp_modules"
+    done
+    
+    # Add any remaining modules (possible circular dependencies)
+    if [[ -n "$remaining_modules" ]]; then
+        if type sentinel_log_warning &>/dev/null; then
+            sentinel_log_warning "module_manager" "Possible circular dependencies in: $remaining_modules"
+        fi
+        ordered_modules="$ordered_modules $remaining_modules"
+    fi
+    
+    # Return the ordered list
+    echo "$ordered_modules" | xargs
+}
+
+# Load multiple modules in the right order
+# Usage: load_modules <module_list>
+load_modules() {
+    local modules="$1"
+    local sorted_modules=$(sort_modules_by_dependency "$modules")
+    
+    for module in $sorted_modules; do
+        smart_module_load "$module"
+    done
+}
+
+# Load all enabled modules with dependency resolution
+load_all_enabled_modules() {
+    local modules_file="${HOME}/.bash_modules"
+    
+    if [[ ! -f "$modules_file" ]]; then
+        return 0
+    fi
+    
+    # Extract all enabled modules
+    local enabled_modules=$(grep -v '^#' "$modules_file" | grep -v '^$' | xargs)
+    
+    # Log the operation
+    if type sentinel_log_info &>/dev/null; then
+        sentinel_log_info "module_manager" "Loading enabled modules: $enabled_modules"
+    else
+        [[ $SENTINEL_MODULE_DEBUG -eq 1 ]] && echo "Loading enabled modules: $enabled_modules" >&2
+    fi
+    
+    # Sort and load modules
+    load_modules "$enabled_modules"
+}
+
+# Enhanced module listing with dependency information
+module_list_with_deps() {
+    local module_dir="${SENTINEL_MODULES_PATH:-$HOME/.bash_modules.d}"
+    local modules_file="${HOME}/.bash_modules"
+    local show_deps="${1:-1}"
+    
+    echo "Available Modules:"
+    echo "-----------------"
+    
+    # Find all module files
+    find "$module_dir" -type f \( -name "*.module" -o -name "*.sh" \) -print | sort | while read module_file; do
+        local module_name=$(basename "$module_file" .module)
+        module_name=$(basename "$module_name" .sh)
+        
+        # Check if module is enabled
+        local status=" "
+        if [[ -f "$modules_file" ]] && grep -q "^$module_name$" "$modules_file"; then
+            status="*"
+        fi
+        
+        # Extract description
+        local description=""
+        if grep -q "SENTINEL_MODULE_DESCRIPTION=" "$module_file"; then
+            description=$(grep "SENTINEL_MODULE_DESCRIPTION=" "$module_file" | head -n1 | sed 's/.*="\(.*\)".*/\1/')
+        fi
+        
+        # Extract version
+        local version=""
+        if grep -q "SENTINEL_MODULE_VERSION=" "$module_file"; then
+            version=$(grep "SENTINEL_MODULE_VERSION=" "$module_file" | head -n1 | sed 's/.*="\(.*\)".*/\1/')
+        fi
+        
+        # Output module info
+        printf "[$status] %-20s %s\n" "$module_name" "${description}${version:+ (v$version)}"
+        
+        # Show dependencies if requested
+        if [[ "$show_deps" == "1" ]]; then
+            local deps=$(get_module_dependencies "$module_name" "$module_file")
+            if [[ -n "$deps" ]]; then
+                echo "    Dependencies: $deps"
+            fi
+        fi
+    done
+}
+
+# Initialize the module manager
+module_manager_init() {
+    # Verify module cache directory
+    if [[ ! -d "$SENTINEL_MODULE_CACHE_DIR" ]]; then
+        mkdir -p "$SENTINEL_MODULE_CACHE_DIR"
+    fi
+    
+    # Rebuild module cache if requested
+    if [[ "$1" == "--rebuild-cache" ]]; then
+        rm -f "${SENTINEL_MODULE_CACHE_DIR}"/*.path "${SENTINEL_MODULE_CACHE_DIR}"/*.deps
+        if type sentinel_log_info &>/dev/null; then
+            sentinel_log_info "module_manager" "Module cache rebuilt"
+        else
+            echo "Module cache rebuilt" >&2
+        fi
+    fi
+    
+    return 0
+}
+
+# Override the standard module functions for backwards compatibility
+module_enable() {
+    smart_module_load "$1" "${2:-0}"
+}
+
+_load_enabled_modules() {
+    load_all_enabled_modules
+}
+
+# Export functions
+export -f find_module_file
+export -f get_module_dependencies
+export -f is_module_loaded
+export -f smart_module_load
+export -f sort_modules_by_dependency
+export -f load_modules
+export -f load_all_enabled_modules
+export -f module_list_with_deps
+export -f module_manager_init
+export -f module_enable
+export -f _load_enabled_modules
+
+# Initialize on load (don't rebuild cache by default)
+module_manager_init 

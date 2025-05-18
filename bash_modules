@@ -197,8 +197,31 @@ module_enable() {
         # Mark as loading to detect circular dependencies
         SENTINEL_LOADED_MODULES["$module_name"]="loading"
         
-        # Source the module
-        if source "$module_file"; then
+        # Flag to track loading success
+        local module_loaded=0
+        
+        # Using cached config loading if available
+        if type load_cached_config &>/dev/null && [[ "${SENTINEL_CONFIG_CACHE_ENABLED:-1}" == "1" ]]; then
+            [[ "$debug_mode" == "1" ]] && echo "DEBUG: Loading module '$module_name' with caching" >&2
+            if load_cached_config "$module_file" ${debug_mode:+--debug}; then
+                module_loaded=1
+            else
+                # If caching fails, fall back to direct loading
+                [[ "$debug_mode" == "1" ]] && echo "DEBUG: Caching failed, falling back to direct loading" >&2
+                if source "$module_file"; then
+                    module_loaded=1
+                fi
+            fi
+        else
+            # Traditional direct loading
+            [[ "$debug_mode" == "1" ]] && echo "DEBUG: Loading module '$module_name' directly" >&2
+            if source "$module_file"; then
+                module_loaded=1
+            fi
+        fi
+        
+        # Process the loading result
+        if [[ $module_loaded -eq 1 ]]; then
             SENTINEL_LOADED_MODULES["$module_name"]="1"
             
             # Add to enabled modules list if it's not already there

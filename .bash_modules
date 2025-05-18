@@ -10,6 +10,10 @@ fuzzy_correction
 logging
 shell_security
 
+# Configuration caching and module management (load early for optimization)
+config_cache
+module_manager
+
 # Session/logout
 bash_logout
 
@@ -32,4 +36,6 @@ sentinel_chat
 sentinel_cybersec_ml
 sentinel_ml
 sentinel_ml_enhanced
-sentinel_osint 
+sentinel_osint
+
+# Add other modules below this line 

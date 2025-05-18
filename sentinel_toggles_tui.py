@@ -65,6 +65,18 @@ FEATURE_TOGGLES = [
     'SENTINEL_GITSTAR_ENABLED',
     'SENTINEL_CHAT_ENABLED',
 ]
+
+# Configuration cache and module system optimization toggles
+CONFIG_CACHE_TOGGLES = [
+    'SENTINEL_CONFIG_CACHE_ENABLED',
+    'SENTINEL_CONFIG_FORCE_REFRESH',
+    'SENTINEL_CONFIG_VERIFY_HASH',
+    'SENTINEL_MODULE_DEBUG',
+    'SENTINEL_MODULE_AUTOLOAD',
+    'SENTINEL_MODULE_CACHE_ENABLED',
+    'SENTINEL_MODULE_VERIFY'
+]
+
 CORE_TOGGLES = [
     'U_BINS', 'U_FUNCS', 'U_ALIASES', 'U_AGENTS', 'ENABLE_LESSPIPE', 'U_MODULES_ENABLE',
     'VENV_AUTO', 'SENTINEL_SECURE_RM', 'SENTINEL_QUIET_MODULES', 'SENTINEL_SECURE_BASH_HISTORY',
@@ -78,12 +90,19 @@ class ToggleForm(npyscreen.ActionForm):
         self.add(npyscreen.FixedText, value="SENTINEL Toggle TUI", editable=False, color='STANDOUT')
         self.add(npyscreen.FixedText, value="(Use arrows/space to toggle, ^S to save, ^Q to quit)", editable=False)
         self.add(npyscreen.FixedText, value="\n[Security Warning] Only trusted users should edit these files!", editable=False, color='DANGER')
+        
         self.add(npyscreen.FixedText, value="\nFeature Module Toggles:", editable=False, color='LABEL')
         self.feature_toggles = self.add(npyscreen.TitleMultiSelect, max_height=8, name="Feature Modules",
                                         values=FEATURE_TOGGLES, scroll_exit=True)
+        
+        self.add(npyscreen.FixedText, value="\nConfiguration Caching and Module System:", editable=False, color='LABEL')
+        self.cache_toggles = self.add(npyscreen.TitleMultiSelect, max_height=8, name="Config Cache/Modules",
+                                     values=CONFIG_CACHE_TOGGLES, scroll_exit=True)
+        
         self.add(npyscreen.FixedText, value="\nCore/Security Toggles:", editable=False, color='LABEL')
         self.core_toggles = self.add(npyscreen.TitleMultiSelect, max_height=12, name="Core/Security", 
                                      values=CORE_TOGGLES, scroll_exit=True)
+        
         self.status = self.add(npyscreen.FixedText, value="", editable=False, color='CAUTION')
         self.help_btn = self.add(npyscreen.ButtonPress, name="Help", when_pressed_function=self.show_help)
         self.reload_btn = self.add(npyscreen.ButtonPress, name="Reload", when_pressed_function=self.reload)
@@ -91,17 +110,26 @@ class ToggleForm(npyscreen.ActionForm):
 
     def reload(self):
         self.feature_vals = parse_exports(BASHRC_POSTCUSTOM, FEATURE_TOGGLES)
+        self.cache_vals = parse_exports(BASHRC_POSTCUSTOM, CONFIG_CACHE_TOGGLES)
         self.core_vals = parse_exports(BASHRC_PRECUSTOM, CORE_TOGGLES)
+        
         self.feature_toggles.value = [i for i, k in enumerate(FEATURE_TOGGLES) if self.feature_vals.get(k, ('0',))[0] == '1']
+        self.cache_toggles.value = [i for i, k in enumerate(CONFIG_CACHE_TOGGLES) if self.cache_vals.get(k, ('0',))[0] == '1']
         self.core_toggles.value = [i for i, k in enumerate(CORE_TOGGLES) if self.core_vals.get(k, ('0',))[0] == '1']
+        
         self.status.value = ""
         self.display()
 
     def on_ok(self):
         feature_updates = {k: '1' if i in self.feature_toggles.value else '0' for i, k in enumerate(FEATURE_TOGGLES)}
+        cache_updates = {k: '1' if i in self.cache_toggles.value else '0' for i, k in enumerate(CONFIG_CACHE_TOGGLES)}
         core_updates = {k: '1' if i in self.core_toggles.value else '0' for i, k in enumerate(CORE_TOGGLES)}
+        
+        # Merge feature and cache updates for postcustom
+        postcustom_updates = {**feature_updates, **cache_updates}
+        
         if npyscreen.notify_yes_no("Save changes to toggles? (Backups will be made)", title="Confirm Save"):
-            ok1 = update_exports(BASHRC_POSTCUSTOM, feature_updates)
+            ok1 = update_exports(BASHRC_POSTCUSTOM, postcustom_updates)
             ok2 = update_exports(BASHRC_PRECUSTOM, core_updates)
             if ok1 and ok2:
                 self.status.value = "Toggles updated successfully."
@@ -119,7 +147,12 @@ class ToggleForm(npyscreen.ActionForm):
             "Checked = enabled (1), unchecked = disabled (0).\n"
             "^S to save, ^Q to quit.\n"
             "Backups are made before writing.\n"
-            "Security: Only trusted users should edit these files!\n",
+            "Security: Only trusted users should edit these files!\n\n"
+            "Configuration Caching:\n"
+            " - SENTINEL_CONFIG_CACHE_ENABLED: Master toggle for config caching\n"
+            " - SENTINEL_MODULE_CACHE_ENABLED: Toggle for module caching\n"
+            " - SENTINEL_CONFIG_VERIFY_HASH: Validate config files with MD5\n"
+            " - SENTINEL_MODULE_VERIFY: Security verification for modules\n",
             title="Help / Security Notice")
 
 class SentinelToggleApp(npyscreen.NPSAppManaged):
