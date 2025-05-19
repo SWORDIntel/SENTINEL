@@ -2003,7 +2003,7 @@ def main():
                     print(f"Tool list saved to {output_path}")
                 else:
                     print(f"\nSecurity Tools from GitHub Stars")
-                    print(f"Total security tools found: {results['tools_count']}")
+                    print("Total security tools found: {}".format(results['tools_count']))
                     print(f"Categories: {results['categories_count']}")
 
                     for category, tools in results['tools_by_category'].items():

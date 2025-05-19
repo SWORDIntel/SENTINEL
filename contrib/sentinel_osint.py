@@ -761,7 +761,7 @@ def display_stats():
 
     print(f"\n=== OSINT Tool Usage Statistics ===")
     print("Total uses: {}".format(stats['total_uses']))
-    print(f"Unique tools: {stats['unique_tools']}")
+    print("Unique tools: {}".format(stats['unique_tools']))
 
     print("\nMost used tools:")
     for tool, count in stats['most_used']:

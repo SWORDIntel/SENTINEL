@@ -28,6 +28,27 @@ MODULES_DIR="${HOME}/bash_modules.d"
 # Colour helpers
 c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m'; c_blue=$'\033[1;34m'; c_reset=$'\033[0m'
 
+# Safe operation wrappers
+safe_rsync() {
+    if ! rsync "$@"; then
+        fail "rsync operation failed: $*"
+    fi
+}
+
+safe_cp() {
+    if ! cp "$@"; then
+        fail "cp operation failed: $*"
+    fi
+}
+
+safe_mkdir() {
+    local dir="$1"
+    if ! mkdir -p "$dir"; then
+        fail "Failed to create directory: $dir"
+    fi
+    ok "Created directory: $dir"
+}
+
 # Robust error handler for fatal errors (security: prevents silent failures)
 fail() {
     echo "${c_red}✖${c_reset}  $*" | tee -a "${LOG_DIR}/install.log" >&2
@@ -49,15 +70,79 @@ warn() {
     echo "${c_yellow}!${c_reset}  $*" | tee -a "${LOG_DIR}/install.log" >&2
 }
 
-# Ensure log directory exists
-mkdir -p "${LOG_DIR}"
-chmod 700 "${LOG_DIR}"
-
 # Enhanced logging with timestamp
 log() {
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local log_file="${LOG_DIR}/install.log"
     echo "[$timestamp] $*" | tee -a "$log_file"
+}
+
+# Secure git clone function with safety checks
+safe_git_clone() {
+    local depth_arg=""
+    local url=""
+    local target_dir=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --depth=*)
+                depth_arg="--depth=${1#*=}"
+                shift
+                ;;
+            --depth)
+                depth_arg="--depth=$2"
+                shift 2
+                ;;
+            *)
+                if [[ -z "$url" ]]; then
+                    url="$1"
+                elif [[ -z "$target_dir" ]]; then
+                    target_dir="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # Validate inputs
+    if [[ -z "$url" || -z "$target_dir" ]]; then
+        fail "safe_git_clone: URL and target directory are required"
+    fi
+    
+    # Validate URL (basic security check)
+    if ! [[ "$url" =~ ^https:// ]]; then
+        fail "safe_git_clone: Only HTTPS URLs are allowed for security"
+    fi
+    
+    # Validate target directory
+    if [[ "$target_dir" =~ [[:space:]] ]]; then
+        fail "safe_git_clone: Target directory cannot contain spaces"
+    fi
+    
+    # If target exists and is a git repo, try to update it
+    if [[ -d "$target_dir/.git" ]]; then
+        step "Updating existing repository in $target_dir"
+        git -C "$target_dir" fetch origin || fail "Failed to fetch updates"
+        git -C "$target_dir" reset --hard origin/HEAD || fail "Failed to reset to origin"
+        return 0
+    fi
+    
+    # Clone the repository
+    step "Cloning $url to $target_dir"
+    if [[ -n "$depth_arg" ]]; then
+        git clone "$depth_arg" "$url" "$target_dir" || fail "Clone failed"
+    else
+        git clone "$url" "$target_dir" || fail "Clone failed"
+    fi
+    
+    # Verify the clone
+    if [[ ! -d "$target_dir/.git" ]]; then
+        fail "Repository was not cloned correctly"
+    fi
+    
+    ok "Repository cloned successfully"
 }
 
 # Error handler
@@ -77,13 +162,10 @@ for arg in "$@"; do
   esac
  done
 
-# OS detection for permissions (placeholder for future logic)
-OS_TYPE="$(uname)"
-
 # Python version check before venv setup
 PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-if [[ ! "$PYTHON_VERSION" =~ ^3\.[6-9] ]] && [[ ! "$PYTHON_VERSION" =~ ^3\.[1-9][0-9] ]]; then
-  fail "Python 3.6+ is required (found $PYTHON_VERSION)"
+if [[ ! "${PYTHON_VERSION}" =~ ^3\.[6-9] ]] && [[ ! "${PYTHON_VERSION}" =~ ^3\.[1-9][0-9] ]]; then
+    fail "Python 3.6+ is required (found ${PYTHON_VERSION})"
 fi
 
 ###############################################################################
@@ -103,65 +185,91 @@ ok "All required CLI tools present"
 # 2. Create directory structure
 ###############################################################################
 setup_directories() {
-  if is_done "DIRS_CREATED"; then
-    if [[ -d "${HOME}/logs" && -d "${HOME}/bash_modules.d" ]]; then
-      ok "Directory tree already exists"
-      return
-    else
-      warn "State file marked DIRS_CREATED but directories missing, re-creating"
+    if is_done "DIRS_CREATED"; then
+        if [[ -d "${HOME}/logs" && -d "${HOME}/bash_modules.d" ]]; then
+            ok "Directory tree already exists"
+            return
+        else
+            warn "State file marked DIRS_CREATED but directories missing, re-creating"
+        fi
     fi
-  fi
-  step "Creating directory tree under ${HOME}"
-  mkdir -p \
-    "${HOME}"/{autocomplete/{snippets,context,projects,params},logs,bash_modules.d} \
-    "${HOME}/.cache/blesh" \
-    "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib}
-  chmod 700 "${LOG_DIR}" \
-    "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib}
-  mark_done "DIRS_CREATED"
-  ok "Directory tree ready"
+    step "Creating directory tree under ${HOME}"
+    
+    # Create directories with error checking
+    local dirs=(
+        "${HOME}/autocomplete/snippets"
+        "${HOME}/autocomplete/context"
+        "${HOME}/autocomplete/projects"
+        "${HOME}/autocomplete/params"
+        "${HOME}/logs"
+        "${HOME}/bash_modules.d"
+        "${HOME}/.cache/blesh"
+        "${HOME}/bash_aliases.d"
+        "${HOME}/bash_completion.d"
+        "${HOME}/bash_functions.d"
+        "${HOME}/contrib"
+    )
+    
+    for dir in "${dirs[@]}"; do
+        safe_mkdir "$dir"
+    done
+    
+    # Set secure permissions
+    chmod 700 "${LOG_DIR}" \
+        "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib} || \
+        fail "Failed to set directory permissions"
+    
+    mark_done "DIRS_CREATED"
+    ok "Directory tree ready"
 }
 
 ###############################################################################
 # 3. Python venv and dependencies
 ###############################################################################
 setup_python_venv() {
-  if is_done "PYTHON_VENV_READY"; then
-    if [[ -f "${HOME}/venv/bin/activate" ]]; then
-      ok "Python venv already exists"
-      return
+    if is_done "PYTHON_VENV_READY"; then
+        if [[ -f "${HOME}/venv/bin/activate" ]]; then
+            ok "Python venv already exists"
+            return
+        else
+            warn "State file marked PYTHON_VENV_READY but venv missing, re-creating"
+        fi
+    fi
+    step "Setting up Python virtual environment and dependencies"
+    VENV_DIR="${HOME}/venv"
+    
+    # Ensure parent directory exists
+    safe_mkdir "$(dirname "$VENV_DIR")"
+    
+    if [[ ! -d "$VENV_DIR" ]]; then
+        if ! python3 -m venv "$VENV_DIR"; then
+            fail "Failed to create Python virtual environment"
+        fi
+        if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
+            fail "Virtual environment creation failed - activate script not found"
+        fi
+        ok "Virtual environment created at $VENV_DIR"
     else
-      warn "State file marked PYTHON_VENV_READY but venv missing, re-creating"
+        ok "Virtual environment already exists at $VENV_DIR"
     fi
-  fi
-  step "Setting up Python virtual environment and dependencies"
-  VENV_DIR="${HOME}/venv"
-  if [[ ! -d "$VENV_DIR" ]]; then
-    python3 -m venv "$VENV_DIR" || fail "Failed to create Python virtual environment"
-    if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
-      fail "Virtual environment creation failed - activate script not found"
+    # shellcheck source=/dev/null
+    source "$VENV_DIR/bin/activate"
+    step "Installing required Python packages in venv"
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    # Install dependencies from requirements.txt if available
+    if [[ -f "${PROJECT_ROOT}/requirements.txt" ]]; then
+        log "Installing Python dependencies from requirements.txt for reproducibility and security."
+        "$VENV_DIR/bin/pip" install -r "${PROJECT_ROOT}/requirements.txt" || fail "Failed to install requirements.txt dependencies"
+    else
+        log "requirements.txt not found, falling back to hardcoded package list."
+        "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
     fi
-    ok "Virtual environment created at $VENV_DIR"
-  else
-    ok "Virtual environment already exists at $VENV_DIR"
-  fi
-  source "$VENV_DIR/bin/activate"
-  step "Installing required Python packages in venv"
-  "$VENV_DIR/bin/pip" install --upgrade pip
-  # Install dependencies from requirements.txt if available
-  if [[ -f "${PROJECT_ROOT}/requirements.txt" ]]; then
-    log "Installing Python dependencies from requirements.txt for reproducibility and security."
-    "$VENV_DIR/bin/pip" install -r "${PROJECT_ROOT}/requirements.txt" || fail "Failed to install requirements.txt dependencies"
-  else
-    log "requirements.txt not found, falling back to hardcoded package list."
-  "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
-  fi
-  if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
-    "$VENV_DIR/bin/pip" install tensorflow
-    ok "Tensorflow installed (advanced ML features enabled)"
-  fi
-  mark_done "PYTHON_VENV_READY"
-  ok "Python dependencies installed in venv"
+    if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
+        "$VENV_DIR/bin/pip" install tensorflow
+        ok "Tensorflow installed (advanced ML features enabled)"
+    fi
+    mark_done "PYTHON_VENV_READY"
+    ok "Python dependencies installed in venv"
 }
 
 ###############################################################################
@@ -220,7 +328,7 @@ patch_bashrc() {
   fi
   step "Prompting for full replacement of $rc with SENTINEL bashrc"
   if [[ $INTERACTIVE -eq 1 ]]; then
-    read -t 30 -p "Replace your $rc with SENTINEL's secure version? [y/N]: " confirm || confirm="n"
+    read -r -t 30 -p "Replace your $rc with SENTINEL's secure version? [y/N]: " confirm || confirm="n"
   else
     confirm="n"
     log "Non-interactive mode: using default answer '$confirm'"
@@ -237,11 +345,13 @@ patch_bashrc() {
   else
     step "Patching existing bashrc to load SENTINEL"
     if ! grep -q "source.*bashrc.postcustom" "$rc"; then
-      echo '' >> "$rc"
-      echo '# SENTINEL Framework Integration' >> "$rc"
-      echo 'if [[ -f "${HOME}/bashrc.postcustom" ]]; then' >> "$rc"
-      echo '    source "${HOME}/bashrc.postcustom"' >> "$rc"
-      echo 'fi' >> "$rc"
+      {
+        echo ''
+        echo '# SENTINEL Framework Integration'
+        echo "if [[ -f \"\${HOME}/bashrc.postcustom\" ]]; then"
+        echo "    source \"\${HOME}/bashrc.postcustom\""
+        echo 'fi'
+      } >> "$rc"
       ok "Patched $rc to load SENTINEL"
     else
       ok "SENTINEL already integrated in $rc"
@@ -469,21 +579,4 @@ if [[ -f "$POSTINSTALL_CHECK_SCRIPT" ]]; then
   ok "Post-installation verification complete. See summary above."
 else
   warn "Post-installation verification script not found at $POSTINSTALL_CHECK_SCRIPT. Skipping."
-fi
-
-# Safe wrapper for rsync, cp, git clone
-safe_rsync() {
-  if ! rsync "$@"; then
-    fail "rsync operation failed: $*"
-  fi
-}
-safe_cp() {
-  if ! cp "$@"; then
-    fail "cp operation failed: $*"
-  fi
-}
-safe_git_clone() {
-  if ! git clone "$@"; then
-    fail "git clone operation failed: $*"
-  fi
-} 
+fi 
