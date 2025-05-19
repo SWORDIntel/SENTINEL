@@ -62,18 +62,21 @@ if os.path.exists(CONTEXT_MODULE_PATH):
 
 # Constants
 HOME_DIR = os.path.expanduser("~")
-GITSTAR_DIR = os.path.join(HOME_DIR, ".sentinel", "gitstar")
+# Use gitstar/ in the project root for all GitStar data
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GITSTAR_DIR = os.path.join(PROJECT_ROOT, "gitstar")
 READMES_DIR = os.path.join(GITSTAR_DIR, "readmes")
 CACHE_DIR = os.path.join(GITSTAR_DIR, "cache")
 MODEL_DIR = os.path.join(GITSTAR_DIR, "models")
 DATA_FILE = os.path.join(GITSTAR_DIR, "repo_data.json")
 CATEGORIES_FILE = os.path.join(GITSTAR_DIR, "categories.json")
 VECTORS_FILE = os.path.join(GITSTAR_DIR, "readme_vectors.npz")
-DEFAULT_MODEL_PATH = os.path.join(HOME_DIR, ".sentinel", "models", "mistral-7b-instruct-v0.2.Q4_K_M.gguf")
+# Always use gitstar/models/ for LLM models
+DEFAULT_MODEL_PATH = os.path.join(MODEL_DIR, "mistral-7b-instruct-v0.2.Q4_K_M.gguf")
 GITHUB_API_URL = "https://api.github.com"
 USER_AGENT = "SENTINEL-GitStar/1.0"
 
-# Ensure directories exist
+# Ensure directories exist in the new location
 Path(READMES_DIR).mkdir(parents=True, exist_ok=True)
 Path(CACHE_DIR).mkdir(parents=True, exist_ok=True)
 Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
@@ -395,8 +398,8 @@ class GitHubStarAnalyzer:
                 # Get feature names
                 feature_names = self.vectorizer.get_feature_names_out()
 
-                # Get top terms
-                centroid_arr = centroid.toarray().flatten()
+                # Robust conversion for both sparse and dense matrices
+                centroid_arr = np.asarray(centroid).flatten()
                 top_indices = centroid_arr.argsort()[-20:][::-1]
                 top_terms = [feature_names[idx] for idx in top_indices]
 

@@ -1,0 +1,239 @@
+# Paperkey - an OpenPGP key archiver
+
+### David Shaw <dshaw@jabberwocky.com>
+
+
+A reasonable way to achieve a long term backup of OpenPGP (GnuPG, PGP,
+etc) keys is to print them out on paper.  Paper and ink have amazingly
+long retention qualities - far longer than the magnetic or optical
+means that are generally used to back up computer data.
+
+
+Paper?  Seriously?
+------------------
+
+The goal with paper is not secure storage.  There are countless ways
+to store something securely.  A paper backup also isn't a replacement
+for the usual machine readable (tape, CD-R, DVD-R, etc) backups, but
+rather as an if-all-else-fails method of restoring a key.  Most of the
+storage media in use today do not have particularly good long-term
+(measured in years to decades) retention of data.  If and when the
+CD-R and/or tape cassette and/or USB key and/or hard drive the secret
+key is stored on becomes unusable, the paper copy can be used to
+restore the secret key.
+
+
+What paperkey does
+------------------
+
+Due to metadata and redundancy, OpenPGP secret keys are significantly
+larger than just the "secret bits".  In fact, the secret key contains
+a complete copy of the public key.  Since the public key generally
+doesn't need to be escrowed (most people have many copies of it on
+various keyservers, web pages, or similar), only archiving the secret
+parts can be a real advantage.
+
+Paperkey extracts just those secret bytes and prints them in a easily
+handled format.  To reconstruct, you re-enter those bytes (whether by
+hand or via OCR) and paperkey uses them to transform your existing
+public key into a secret key.
+
+For example, the regular DSA+Elgamal secret key I just tested comes
+out to 1281 bytes.  The secret parts of that key (plus some minor
+packet structure) come to only 149 bytes.  It's a lot easier to
+re-enter 149 bytes correctly.
+
+Different key algorithms will benefit to a different degree from this
+size reduction.  In general, DSA or Elgamal keys benefit the most,
+shrinking to around 10% of the original key size, and RSA keys benefit
+the least, only shrinking to about 50% of the original key size.  ECC
+keys are in between, shrinking to around 20-25% of the original, but
+of course, ECC keys are quite small to begin with, and 25% of a small
+number can compare well to 10% of a larger number.
+
+As with any backup or archiving system, it is prudent to verify you
+can restore the key from your paper copy before filing the paper away.
+
+
+Aren't CD-Rs supposed to last a long time?
+------------------------------------------
+
+They're certainly advertised to (and I've seen some pretty incredible
+claims of 100 years or more), but in practice it doesn't really work
+out that way.  The manufacturing of the media, the burn quality, the
+burner quality, the storage, etc, all have a significant impact on how
+long an optical disc will last.  Some tests show that you're lucky to
+get 10 years.
+
+In comparison, to claim that paper will last for 100 years is not even
+vaguely impressive.  High-quality paper with good ink regularly lasts
+many hundreds of years even under less than optimal conditions.
+
+Another bonus is that ink on paper is readable by humans.  Not all
+backup methods will be readable 50 years later, so even if you have
+the backup, you can't easily buy a drive to read it.  I doubt this
+will happen anytime soon with CD-R as there are just so many of them
+out there, but the storage industry is littered with old, now-dead
+methods of storing data.
+
+
+Security
+--------
+
+Note that paperkey does not change the security requirements of
+storing a secret key.  In fact, paperkey doesn't do any crypto at all,
+but just saves and restores the original secret key, whether it is
+encrypted or not.  If your key has a passphrase on it (i.e. is
+encrypted), the paper copy is similarly encrypted.  If your key has no
+passphrase, neither does the paper copy.  Whatever the passphrase (or
+lack thereof) was on the original secret key will be the same on the
+reconstructed key.
+
+
+Examples
+--------
+
+Take the secret key in my-secret-key.gpg and generate a text file
+to-be-printed.txt that contains the secret data:
+
+    paperkey --secret-key my-secret-key.gpg --output to-be-printed.txt
+
+Take the secret key data in my-key-text-file.txt and combine it with
+my-public-key.gpg to reconstruct my-secret-key.gpg:
+
+    paperkey --pubring my-public-key.gpg --secrets my-key-text-file.txt --output my-secret-key.gpg
+
+If --output is not specified, the output goes to stdout.  If
+--secret-key is not specified, the data is read from stdin so you can
+do things like:
+
+    gpg --export-secret-key my-key | paperkey | lpr
+
+Some other useful options are:
+
+    --output-type      can be "base16" or "raw".  "base16" is human
+                       readable, and "raw" is useful if you want to pass
+                       the output to another program like a bar code or
+                       QR code generator (although note that scannable
+                       codes have some of the longevity disadvantages
+                       discussed above).  Defaults to "base16".
+
+    --input-type       same as --output-type, but for the restore side of
+                       things.  By default the input type is inferred
+                       automatically from the input data.
+
+    --output-width     sets the width of base16 output (i.e. given your font,
+              		     how many columns fit on the paper you're printing on).
+                       Defaults to 78.
+
+    --ignore-crc-error allows paperkey to continue when reconstructing
+                       even if it detects data corruption in the input.
+
+    --verbose (or -v)  be chatty about what is happening.  Repeat this
+                       multiple times for more verbosity.
+
+Full documentation for all options is in the man page.
+
+
+RPM
+---
+
+Paperkey ships with a RPM spec file.  You can build an RPM with the
+usual
+```
+rpmbuild -ta /path/to/the/paperkey/tarball.tar.gz
+```
+
+Building
+--------
+
+Paperkey uses [gnulib](https://www.gnu.org/software/gnulib/) to provide SHA-1 and getopt_long functionality as they're not available on all platforms. If you want to build directly from the github version, try this:
+
+```
+git clone git://git.savannah.gnu.org/gnulib.git  # there is also a github mirror at https://github.com/coreutils/gnulib.git
+git clone https://github.com/dmshaw/paperkey.git
+cd paperkey
+../gnulib/gnulib-tool --update
+autoreconf -f -i
+./configure
+make check
+```
+
+Alternately, you can use the [releases in github](https://github.com/dmshaw/paperkey/releases). Those include the gnulib code as part of the package.
+
+
+Copyright
+---------
+
+Paperkey is Copyright (C) 2007-2020 by David Shaw
+
+```
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mQILBDxUyXkBEACgg6vxNPigg9FQz14CkPtR/dEq3sCjK1r4+2oyeoRno+pqZ6Z7
+ZfphgA/q5woweFAGOg17KD2WXegoQ5pXbFvP+w9j9zm3g59XzTRSzZgScelTibPn
+Ky6g8r8GDAY6IQraR6pxe4297/NznqvRvKpTt5g1XP5LyjVBsEv9HAYJE1vyy10q
+SQRtEz3QunUzfELNC4kiYNMZOnmgaFeW4APIIhWDtrrxqW3Ofjp1K4DAhqcnayrf
+vYbOtqh0sxJ246kvVc3Bc9pH6wDw/yub2deuPq6BZBLBJwrtu/20qD0nsZ9is/5j
+0aL1MZuVmr7xKYqeehyzJ1WdpJK52qng9natYedS+GefKDIw1Jq7ppQNWfVduTNI
+TFTF0JswggjQuPqKT8Td5GCywQWN/kGHbp6EdybiUXZ+9fp4eek0UB5M+srSwbkF
+4hQ0mBrqlsaoji4CuXjc0c+Zx1D0pGfqqBCmvEV1tLul3U8h0TzR4opUA8mLKegQ
+p5cjh/dHz7zTPDxVgSr3blJ9FxI1Z69th/+jJj3q6joo3uW/5y8qQCrzdSCzs+TD
+EWwucZtJIuIhTct8AMPY/Ayt+Pf9jXfI+xSQgz3r7Eu5o+rEu02/cthaOc4b3KYD
+tNkjLKszgiext1BYOq06R+Yyh2qgsg9azzkfudvvpwhCpJ7EOxcdaP3bxwAGKbQl
+RGF2aWQgTS4gU2hhdyA8ZHNoYXdAamFiYmVyd29ja3kuY29tPokCOQQTAQIAIwIb
+AwIeAQIXgAUCTwxJwAYLCQgHAwIGFQoJCAsCBRYCAwEAAAoJENtpjXGZJCVgYt0P
+/23rpCNUquNkW1D2BcJOafaPrY9ieJEvGeWUSTQTctKq5F0wigoXwOZAmBg2/I7F
+Paorzf46ZmtkXq2e+wM/DQWqdVkS0eBIY10esf9hf6+CN/vvbTZBvPUhkeyCZVTE
+LCBMLTdMLGNAtjeuOovtS3OH+qlS7tefP7+plMxT0eBD+oywfsg6ijG2San4YnFt
+o18on5a5OjhhguVmyn1SqjhtRcmAftjZZrRvLEnQ/YRPbgA0vFRnafYaGhL9S8S/
+JoroMfctnA2878GMhRljm+pCE0Ws+sK6FmlKvcTGWGOTxuPL3nV0ceXXEgjkXE3j
+O62iZsFX7y9avmKg4CRokIClbBKGjDkDiyF7l8r5m1A7WOqXqcSA3Jy1WQrV0x2N
+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
+=DSRI
+-----END PGP PUBLIC KEY BLOCK-----
+```

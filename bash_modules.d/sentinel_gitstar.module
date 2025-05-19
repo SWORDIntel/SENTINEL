@@ -50,9 +50,11 @@ fi
 
 # Path to GitStar scripts
 SENTINEL_GITSTAR_DIR="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/contrib"
-GITSTAR_DATA_DIR="$HOME/.sentinel/gitstar"
+# New storage location for README files in project root
+gitstar_root_dir="$(dirname "$(dirname "${BASH_SOURCE[0]}")")/gitstar"
+GITSTAR_DATA_DIR="$gitstar_root_dir"
 
-# Create required directories
+# Create required directories in the new location
 mkdir -p "$GITSTAR_DATA_DIR/readmes" 2>/dev/null
 mkdir -p "$GITSTAR_DATA_DIR/models" 2>/dev/null
 mkdir -p "$GITSTAR_DATA_DIR/cache" 2>/dev/null

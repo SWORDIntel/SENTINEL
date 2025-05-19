@@ -61,6 +61,7 @@ def update_exports(filepath, updates):
 
 
 FEATURE_TOGGLES = [
+    'SENTINEL_OBFUSCATE_ENABLED',
     'SENTINEL_FZF_ENABLED',
     'SENTINEL_ML_ENABLED',
     'SENTINEL_OSINT_ENABLED',

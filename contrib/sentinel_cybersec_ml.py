@@ -17,6 +17,7 @@ from pathlib import Path
 import importlib.util
 from datetime import datetime
 import logging
+import numpy as np
 
 # Third-party imports (with robust error handling)
 try:
@@ -100,6 +101,9 @@ DEFAULT_MODEL_PATH = os.path.join(HOME_DIR, ".sentinel", "models", "llama-2-7b-c
 VULN_DB_PATH = os.path.join(CYBERSEC_DIR, "vulnerability_db.json")
 SIGNATURE_DB_PATH = os.path.join(CYBERSEC_DIR, "signatures.json")
 
+GLOVE_PATH = os.path.expanduser("~/.sentinel/models/glove.6B.100d.txt")  # Default path for GloVe 100d
+GLOVE_DIM = 100
+
 # Ensure directories exist
 Path(CYBERSEC_DIR).mkdir(parents=True, exist_ok=True)
 Path(DATASETS_DIR).mkdir(parents=True, exist_ok=True)
@@ -131,12 +135,18 @@ DEFAULT_CONFIG = {
 class CybersecurityMLAnalyzer:
     """Advanced machine learning analyzer for cybersecurity applications"""
 
-    def __init__(self):
+    def __init__(self, config=None):
         self.config = self._load_config()
         self.vulnerability_db = self._load_vulnerability_db()
         self.signature_db = self._load_signature_db()
         self.models = {}
         self.llm = None
+        self.feature_type = "glove"  # Default to GloVe if available
+        if config and "feature_type" in config:
+            self.feature_type = config["feature_type"].lower()
+        self.glove_embeddings = None
+        self.glove_dim = GLOVE_DIM
+        self._load_glove_embeddings()
 
         # Initialize ML components if available
         if ML_AVAILABLE:
@@ -192,6 +202,55 @@ class CybersecurityMLAnalyzer:
                 return {"signatures": [], "last_updated": 0}
         return {"signatures": [], "last_updated": 0}
 
+    def _load_glove_embeddings(self):
+        """Load GloVe embeddings if available and selected."""
+        if self.feature_type != "glove":
+            return
+        if not os.path.exists(GLOVE_PATH):
+            logging.warning(f"GloVe embeddings not found at {GLOVE_PATH}. Falling back to TF-IDF.")
+            self.feature_type = "tfidf"
+            return
+        self.glove_embeddings = {}
+        try:
+            with open(GLOVE_PATH, 'r', encoding='utf-8') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    word = parts[0]
+                    vector = np.asarray(parts[1:], dtype='float32')
+                    if len(vector) == self.glove_dim:
+                        self.glove_embeddings[word] = vector
+            logging.info(f"Loaded GloVe embeddings from {GLOVE_PATH}")
+        except Exception as e:
+            logging.error(f"Error loading GloVe embeddings: {e}")
+            self.feature_type = "tfidf"
+
+    def _text_to_embedding(self, text):
+        """Convert text to an average GloVe embedding vector."""
+        if not self.glove_embeddings:
+            return np.zeros(self.glove_dim)
+        words = text.split()
+        vectors = [self.glove_embeddings[w] for w in words if w in self.glove_embeddings]
+        if not vectors:
+            return np.zeros(self.glove_dim)
+        return np.mean(vectors, axis=0)
+
+    def _vectorize_corpus(self, texts, fit=False):
+        """Vectorize a list of texts using the selected feature type."""
+        if self.feature_type == "glove" and self.glove_embeddings:
+            return np.array([self._text_to_embedding(txt) for txt in texts])
+        # Fallback to TF-IDF
+        if fit or not hasattr(self, 'tfidf_vectorizer'):
+            self.tfidf_vectorizer = TfidfVectorizer(
+                max_features=10000,
+                ngram_range=(1, 3),
+                analyzer='word',
+                token_pattern=r'(?u)\b\w+\b|[^\w\s]',
+                stop_words=None
+            )
+            return self.tfidf_vectorizer.fit_transform(texts)
+        else:
+            return self.tfidf_vectorizer.transform(texts)
+
     def _initialize_ml(self):
         """Initialize basic machine learning components"""
         logging.info("Initializing machine learning components")
@@ -214,13 +273,14 @@ class CybersecurityMLAnalyzer:
                 logging.error(f"Error loading anomaly detection model: {e}")
 
         # Initialize text vectorizers for code analysis
-        self.models["code_vectorizer"] = TfidfVectorizer(
-            max_features=10000,
-            ngram_range=(1, 3),
-            analyzer='word',
-            token_pattern=r'(?u)\b\w+\b|[^\w\s]',
-            stop_words=None  # Don't use standard stop words for code
-        )
+        if self.feature_type == "tfidf":
+            self.tfidf_vectorizer = TfidfVectorizer(
+                max_features=10000,
+                ngram_range=(1, 3),
+                analyzer='word',
+                token_pattern=r'(?u)\b\w+\b|[^\w\s]',
+                stop_words=None
+            )
 
     def _initialize_advanced_ml(self):
         """Initialize advanced ML components (TensorFlow based)"""
@@ -1092,59 +1152,12 @@ class CybersecurityMLAnalyzer:
         except Exception as e:
             logging.error(f"Error in ML analysis of scan results: {e}")
 
-    def train_models(self, training_data_path=None):
-        """Train machine learning models for vulnerability detection"""
-        if not ML_AVAILABLE:
-            logging.error("ML libraries are not available, cannot train models")
-            return False
-
-        logging.info("Training machine learning models")
-
+    def train_models(self, X_train, y_train, X_test, y_test):
+        """Train models using the selected feature type (GloVe or TF-IDF)."""
         try:
-            # Default training data
-            if training_data_path is None:
-                training_data_path = os.path.join(DATASETS_DIR, "training_data.json")
-
-            # Check if file exists
-            if not os.path.exists(training_data_path):
-                logging.error(f"Training data not found: {training_data_path}")
-                return False
-
-            # Load training data
-            with open(training_data_path, "r") as f:
-                training_data = json.load(f)
-
-            # Extract code samples and labels
-            code_samples = []
-            labels = []
-
-            for sample in training_data.get("samples", []):
-                code_samples.append(sample.get("code", ""))
-                labels.append(1 if sample.get("is_vulnerable", False) else 0)
-
-            if not code_samples:
-                logging.error("No code samples found in training data")
-                return False
-
-            # Split into training and testing sets
-            X_train, X_test, y_train, y_test = train_test_split(
-                code_samples, labels, test_size=0.2, random_state=42
-            )
-
-            logging.info(f"Training with {len(X_train)} samples, testing with {len(X_test)} samples")
-
-            # Vectorize the code
-            vectorizer = TfidfVectorizer(
-                max_features=10000,
-                ngram_range=(1, 3),
-                analyzer='word',
-                token_pattern=r'(?u)\b\w+\b|[^\w\s]',
-                stop_words=None  # Don't use standard stop words for code
-            )
-
-            X_train_vec = vectorizer.fit_transform(X_train)
-            X_test_vec = vectorizer.transform(X_test)
-
+            logging.info(f"Training models using feature type: {self.feature_type}")
+            X_train_vec = self._vectorize_corpus(X_train, fit=True)
+            X_test_vec = self._vectorize_corpus(X_test, fit=False)
             # Train a random forest classifier
             classifier = RandomForestClassifier(
                 n_estimators=100,
@@ -1152,41 +1165,33 @@ class CybersecurityMLAnalyzer:
                 n_jobs=-1,
                 random_state=42
             )
-
             classifier.fit(X_train_vec, y_train)
-
-            # Evaluate the model
             y_pred = classifier.predict(X_test_vec)
             accuracy = classifier.score(X_test_vec, y_test)
-
             logging.info(f"Model accuracy: {accuracy:.4f}")
             logging.info("\nClassification Report:\n" + classification_report(y_test, y_pred))
-
             # Train anomaly detection model
             anomaly_detector = IsolationForest(
                 n_estimators=100,
-                contamination=0.1,  # 10% anomalies expected
+                contamination=0.1,
                 random_state=42
             )
-
-            # Train only on the non-vulnerable samples
             non_vuln_indices = [i for i, label in enumerate(y_train) if label == 0]
             X_train_non_vuln = X_train_vec[non_vuln_indices]
-            anomaly_detector.fit(X_train_non_vuln.toarray())
-
-            # Save the models
-            self.models["code_vectorizer"] = vectorizer
+            if hasattr(X_train_non_vuln, 'toarray'):
+                X_train_non_vuln = X_train_non_vuln.toarray()
+            anomaly_detector.fit(X_train_non_vuln)
+            # Save models
+            self.models["feature_type"] = self.feature_type
+            if self.feature_type == "tfidf":
+                self.models["code_vectorizer"] = self.tfidf_vectorizer
+                joblib.dump(self.tfidf_vectorizer, os.path.join(MODELS_DIR, "code_vectorizer.joblib"))
             self.models["vulncode_classifier"] = classifier
             self.models["anomaly_detector"] = anomaly_detector
-
-            # Serialize models to disk
-            joblib.dump(vectorizer, os.path.join(MODELS_DIR, "code_vectorizer.joblib"))
             joblib.dump(classifier, os.path.join(MODELS_DIR, "vulncode_classifier.joblib"))
             joblib.dump(anomaly_detector, os.path.join(MODELS_DIR, "anomaly_detector.joblib"))
-
             logging.info("Models trained and saved successfully")
             return True
-
         except Exception as e:
             logging.error(f"Error training models: {e}")
             return False

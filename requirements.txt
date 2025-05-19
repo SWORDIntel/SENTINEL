@@ -32,7 +32,39 @@ tensorflow>=2.12.0  # Optional: Only needed for advanced ML in cybersec module
 # OpenVINO (optional, for hardware-accelerated suggestions)
 openvino>=2023.1.0  # Optional: Only needed for OpenVINO-accelerated features
 
+# Additional core dependencies for GitStar and analysis
+# (Ensures robust ML, LLM, and TUI support)
+
+# For Markdown parsing and extraction (for future automation)
+markdown-it-py>=3.0.0
+
+# For YAML/JSON handling (future-proofing, e.g., for repo_data.json or config)
+pyyaml>=6.0
+
+# For secure hashing and cryptography (if needed for token/auth)
+cryptography>=42.0.0
+
+# For advanced CLI argument parsing (if needed for future CLI tools)
+argcomplete>=3.2.3
+
+# For enhanced logging and diagnostics
+colorlog>=6.7.0
+
+# For OSINT and web scraping extensions (optional)
+python-nmap>=0.7.1
+scapy>=2.6.1
+
+# For table formatting in TUI/CLI
+prettytable>=3.9.0
+
+# For compatibility with legacy or advanced bash integration
+pexpect>=4.8.0
+
 # Security notes:
+# - All dependencies should be kept up to date and reviewed for CVEs (see CVE-2023-4863, CVE-2023-49103, etc.)
+# - Use a virtual environment for isolation and reproducibility
+# - For GPU/accelerated LLM, see llama-cpp-python docs
+# - For advanced OSINT, consider additional modules as needed
 # - Always keep dependencies up to date to avoid known vulnerabilities (see CVE-2023-4863, CVE-2023-49103, etc.)
 # - For GPU acceleration with llama-cpp-python, see its documentation for CUDA/ROCm requirements
 # - If using Windows, consider alternatives for 'readline' or use pyreadline3 
