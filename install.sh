@@ -25,6 +25,11 @@ BLESH_DIR="${HOME}/.local/share/blesh"
 BLESH_LOADER="${HOME}/blesh_loader.sh"
 MODULES_DIR="${HOME}/bash_modules.d"
 
+# Ensure logs directory exists before any logging
+if [[ ! -d "$LOG_DIR" ]]; then
+    mkdir -p "$LOG_DIR"
+fi
+
 # Colour helpers
 c_red=$'\033[1;31m'; c_green=$'\033[1;32m'; c_yellow=$'\033[1;33m'; c_blue=$'\033[1;34m'; c_reset=$'\033[0m'
 
@@ -279,10 +284,46 @@ install_blesh() {
   step "Installing BLE.sh to ${BLESH_DIR}"
   mkdir -p "${BLESH_DIR}"
   safe_git_clone --depth=1 https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
-  git -C "${BLESH_DIR}" checkout v0.4.0
-  if [[ ! -f "${BLESH_DIR}/ble.sh" ]]; then
-    fail "BLE.sh repository doesn't contain expected files"
+  BLESH_TAG="v0.3.4"
+  if git -C "${BLESH_DIR}" rev-parse "$BLESH_TAG" >/dev/null 2>&1; then
+    git -C "${BLESH_DIR}" checkout "$BLESH_TAG"
+    ok "Checked out BLE.sh tag $BLESH_TAG"
+  else
+    warn "BLE.sh tag $BLESH_TAG not found; using default branch."
   fi
+  
+  # Check various potential locations for ble.sh
+  if [[ ! -f "${BLESH_DIR}/ble.sh" ]]; then
+    step "ble.sh not found, attempting to build it"
+    
+    # First try using make
+    if [[ -f "${BLESH_DIR}/Makefile" ]]; then
+      (cd "${BLESH_DIR}" && make) || warn "Make build failed, trying alternatives"
+    fi
+    
+    # Check if ble.sh was generated in the out directory
+    if [[ -f "${BLESH_DIR}/out/ble.sh" ]]; then
+      # Create a symlink to the built file
+      ln -sf "${BLESH_DIR}/out/ble.sh" "${BLESH_DIR}/ble.sh"
+      ok "Created symlink to built ble.sh in out directory"
+    elif [[ -f "${BLESH_DIR}/ble.pp" ]] && [[ -f "${BLESH_DIR}/make_command.sh" ]]; then
+      # Try alternate build methods if needed
+      warn "Built ble.sh not found in expected location, trying other approaches"
+      (cd "${BLESH_DIR}" && bash make_command.sh) || warn "make_command.sh execution failed"
+    fi
+    
+    # Final check if ble.sh exists anywhere
+    if [[ ! -f "${BLESH_DIR}/ble.sh" ]] && [[ -f "${BLESH_DIR}/out/ble.sh" ]]; then
+      ln -sf "${BLESH_DIR}/out/ble.sh" "${BLESH_DIR}/ble.sh"
+      ok "Created symlink to ble.sh in out directory"
+    elif [[ ! -f "${BLESH_DIR}/ble.sh" ]]; then
+      fail "BLE.sh repository doesn't contain expected files and build failed"
+    else
+      ok "Successfully found/built ble.sh"
+    fi
+  fi
+  
+  # Install BLE.sh
   make -C "${BLESH_DIR}" install PREFIX="${HOME}/.local" >/dev/null
   ok "BLE.sh installed"
 }
@@ -322,6 +363,67 @@ fi
 patch_bashrc() {
   local rc="$1"
   local sentinel_bashrc="${PROJECT_ROOT}/bashrc"
+  
+  # Check if .bashrc is owned by root or not writable
+  if [[ ! -w "$rc" ]]; then
+    warn "Cannot write to $rc (permission denied, may be owned by root)"
+    step "Creating a new bashrc file and requesting to source it from your existing .bashrc"
+    
+    # Create a separate user bashrc file
+    local user_bashrc="${HOME}/.bashrc.sentinel"
+    
+    # Copy SENTINEL bashrc to user_bashrc if available
+    if [[ -f "$sentinel_bashrc" ]]; then
+      safe_cp "$sentinel_bashrc" "$user_bashrc"
+      chmod 644 "$user_bashrc"
+      ok "SENTINEL bashrc installed as $user_bashrc"
+      
+      # Prompt to add sourcing line to original .bashrc via sudo
+      if [[ $INTERACTIVE -eq 1 ]]; then
+        read -r -t 30 -p "Would you like to add a line to source $user_bashrc from your $rc? You may need to enter sudo password. [y/N]: " confirm || confirm="n"
+      else
+        confirm="n"
+        log "Non-interactive mode: using default answer '$confirm'"
+      fi
+      
+      if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        # Use sudo to modify the root-owned .bashrc
+        sudo bash -c "echo '' >> $rc"
+        sudo bash -c "echo '# SENTINEL Framework Integration' >> $rc"
+        sudo bash -c "echo \"if [[ -f \\\"${user_bashrc}\\\" ]]; then\" >> $rc"
+        sudo bash -c "echo \"    source \\\"${user_bashrc}\\\"\" >> $rc"
+        sudo bash -c "echo 'fi' >> $rc"
+        ok "Added sourcing line to $rc via sudo"
+      else
+        echo "Please manually add the following lines to your $rc:"
+        echo ""
+        echo "# SENTINEL Framework Integration"
+        echo "if [[ -f \"${user_bashrc}\" ]]; then"
+        echo "    source \"${user_bashrc}\""
+        echo "fi"
+        ok "Created $user_bashrc but you'll need to source it manually"
+      fi
+      
+      # Add line to source bashrc.postcustom from the user_bashrc
+      if ! grep -q "source.*bashrc.postcustom" "$user_bashrc"; then
+        {
+          echo ''
+          echo '# SENTINEL Extensions'
+          echo "if [[ -f \"\${HOME}/bashrc.postcustom\" ]]; then"
+          echo "    source \"\${HOME}/bashrc.postcustom\""
+          echo 'fi'
+        } >> "$user_bashrc"
+        ok "Added line to source bashrc.postcustom in $user_bashrc"
+      fi
+      
+      return 0
+    else
+      fail "SENTINEL bashrc not found at $sentinel_bashrc"
+      return 1
+    fi
+  fi
+  
+  # Normal flow for writable .bashrc
   if [[ -f "$rc" ]]; then
     safe_cp "$rc" "$rc.sentinel.bak.$(date +%s)"
     ok "Backed up $rc to $rc.sentinel.bak.$(date +%s)"
@@ -492,19 +594,32 @@ if ! is_done "PERMISSIONS_SECURED"; then
   # Make executable files executable
   find "${HOME}/bash_aliases.d" -type f -exec chmod 700 {} \;
   
-  # Secure .bashrc in home
-  if [[ -f "$HOME/.bashrc" ]]; then 
+  # Secure .bashrc in home if it's writable
+  if [[ -f "$HOME/.bashrc" && -w "$HOME/.bashrc" ]]; then 
     chmod 644 "$HOME/.bashrc"
+    ok "Secured permissions on $HOME/.bashrc"
+  elif [[ -f "$HOME/.bashrc" ]]; then
+    warn "Cannot change permissions on $HOME/.bashrc (not writable)"
+  fi
+  
+  # Secure .bashrc.sentinel if it exists instead
+  if [[ -f "$HOME/.bashrc.sentinel" ]]; then 
+    chmod 644 "$HOME/.bashrc.sentinel"
+    ok "Secured permissions on $HOME/.bashrc.sentinel"
   fi
   
   # Secure .blerc if present
-  if [[ -f "$HOME/.blerc" ]]; then 
+  if [[ -f "$HOME/.blerc" && -w "$HOME/.blerc" ]]; then 
     chmod 600 "$HOME/.blerc"
+    ok "Secured permissions on $HOME/.blerc"
+  elif [[ -f "$HOME/.blerc" ]]; then
+    warn "Cannot change permissions on $HOME/.blerc (not writable)"
   fi
   
   # Secure cache directory
   if [[ -d "$HOME/.cache/blesh" ]]; then 
     chmod 700 "$HOME/.cache/blesh"
+    ok "Secured permissions on $HOME/.cache/blesh"
   fi
   
   ok "Secure permissions set on all files and directories"
