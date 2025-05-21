@@ -3,6 +3,8 @@
 
 # LLM and AI
 llama-cpp-python>=0.2.24
+huggingface-hub>=0.19.0
+hf-transfer>=0.1.5  # For faster downloads from HuggingFace
 
 # Terminal UI
 npyscreen>=4.10.5

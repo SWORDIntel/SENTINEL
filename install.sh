@@ -14,6 +14,14 @@
 #   • Resumable: skips steps already done
 ###############################################################################
 
+# Detect if script is being sourced instead of executed
+# This prevents the user's shell from being terminated if they incorrectly use 'source install.sh'
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    echo "Error: This script should be executed with 'bash install.sh', not sourced with 'source install.sh'." >&2
+    echo "Sourcing would cause your shell to exit if an error occurs." >&2
+    return 1
+fi
+
 # Strict mode to catch errors
 set -euo pipefail
 
@@ -186,6 +194,40 @@ if ((${#MISSING[@]})); then
 fi
 ok "All required CLI tools present"
 
+# Debian-specific package dependency checking
+if command -v apt-get &>/dev/null; then
+  step "Detected Debian-based system, checking for additional dependencies"
+  
+  # Check for python3-venv which is not installed by default on Debian
+  if ! dpkg -l python3-venv &>/dev/null; then
+    warn "python3-venv package not detected. It's required for Python virtual environment creation."
+    echo "Please install it with: sudo apt-get install python3-venv"
+    
+    if [[ $INTERACTIVE -eq 1 ]]; then
+      read -r -t 30 -p "Would you like to install python3-venv package now? (requires sudo) [y/N]: " confirm || confirm="n"
+      if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        sudo apt-get update && sudo apt-get install -y python3-venv || fail "Failed to install python3-venv"
+        ok "Successfully installed python3-venv"
+      else
+        fail "python3-venv is required. Please install it and re-run the installer."
+      fi
+    else
+      fail "python3-venv is required. Please install it and re-run the installer."
+    fi
+  fi
+  
+  # Check for other helpful packages
+  OPTIONAL_PKGS=()
+  command -v openssl &>/dev/null || OPTIONAL_PKGS+=("openssl")
+  command -v fzf &>/dev/null || OPTIONAL_PKGS+=("fzf")
+  
+  if ((${#OPTIONAL_PKGS[@]})); then
+    warn "Optional packages not found: ${OPTIONAL_PKGS[*]}"
+    echo "These packages improve functionality but aren't strictly required."
+    echo "You can install them with: sudo apt-get install ${OPTIONAL_PKGS[*]}"
+  fi
+fi
+
 ###############################################################################
 # 2. Create directory structure
 ###############################################################################
@@ -247,6 +289,11 @@ setup_python_venv() {
     safe_mkdir "$(dirname "$VENV_DIR")"
     
     if [[ ! -d "$VENV_DIR" ]]; then
+        # Check if python3-venv is available
+        if ! python3 -c "import venv" &>/dev/null; then
+            fail "Python venv module not available. Please install python3-venv package (e.g. 'sudo apt install python3-venv' on Debian/Ubuntu)"
+        fi
+        
         if ! python3 -m venv "$VENV_DIR"; then
             fail "Failed to create Python virtual environment"
         fi
@@ -324,7 +371,15 @@ install_blesh() {
   fi
   
   # Install BLE.sh
-  make -C "${BLESH_DIR}" install PREFIX="${HOME}/.local" >/dev/null
+  if ! make -C "${BLESH_DIR}" install PREFIX="${HOME}/.local" >/dev/null; then
+    fail "BLE.sh make install failed. See logs for details."
+  fi
+  
+  # Verify installation succeeded
+  if [[ ! -f "${HOME}/.local/share/blesh/ble.sh" ]]; then
+    fail "BLE.sh installation verification failed: ble.sh not found in ${HOME}/.local/share/blesh/"
+  fi
+  
   ok "BLE.sh installed"
 }
 
@@ -682,9 +737,21 @@ echo "• Open a new terminal OR run:  source '${HOME}/bashrc.postcustom'"
 echo "• Verify with:                @autocomplete status"
 echo "• Logs:                       ${LOG_DIR}/install.log"
 echo 
+
+# Add specific guidance for Debian login shells
+echo "Important for Debian/Ubuntu users:"
+echo "• If using login shells (common with GUI terminals), ensure your ~/.profile or ~/.bash_profile"
+echo "  sources ~/.bashrc so SENTINEL loads correctly. Add these lines if missing:"
+echo "    if [ -f \"$HOME/.bashrc\" ]; then"
+echo "        . \"$HOME/.bashrc\""
+echo "    fi"
+echo
+
 echo "If you encounter issues after installation:"
 echo "1. Run: @autocomplete fix"
-echo "2. If that doesn't work, run: bash $0"
+echo "2. Ensure ~/.profile sources ~/.bashrc (see above)"
+echo "3. If problems persist, run: bash $0"
+echo
 
 # Run post-install check if present
 POSTINSTALL_CHECK_SCRIPT="${PROJECT_ROOT}/sentinel_postinstall_check.sh"

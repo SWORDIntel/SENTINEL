@@ -3,3 +3,4 @@
 .cursor
 /.venv
 /__pycache__
+/gitstar/models
