@@ -4,3 +4,5 @@
 /.venv
 /__pycache__
 /gitstar/models
+
+/net-commander
