@@ -187,4 +187,4 @@ if [[ "${SENTINEL_SMALLLLM_ENABLED}" == "1" ]]; then
     fi
 fi
 
-echo "SENTINEL Small LLM Module loaded. Type 'smallllm-help' for usage information." 
+# Module loaded silently Type 'smallllm-help' for usage information." 

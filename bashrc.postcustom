@@ -245,3 +245,56 @@ export SENTINEL_QUIET_STATUS=1
 
 # Enable Small LLM module
 export SENTINEL_SMALLLLM_ENABLED=1
+
+# Python virtual environment management
+mkvenv() {
+    local venv_dir=".venv"
+    local python_cmd="python3"
+    local requirements_file="requirements.txt"
+    
+    # Handle optional arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -d|--dir)
+                venv_dir="$2"
+                shift 2
+                ;;
+            -p|--python)
+                python_cmd="$2"
+                shift 2
+                ;;
+            -r|--requirements)
+                requirements_file="$2"
+                shift 2
+                ;;
+            -h|--help)
+                echo "Usage: mkvenv [OPTIONS]"
+                echo "Create and activate a Python virtual environment in the current directory."
+                echo ""
+                echo "Options:"
+                echo "  -d, --dir DIR          Specify the virtual environment directory (default: .venv)"
+                echo "  -p, --python PYTHON    Specify the Python executable to use (default: python3)"
+                echo "  -r, --requirements FILE Install packages from requirements file after creation"
+                echo "  -h, --help             Show this help message and exit"
+                return 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                echo "Use mkvenv --help for usage information."
+                return 1
+                ;;
+        esac
+    done
+    
+    # Check if Python is available
+    if ! command -v "$python_cmd" &>/dev/null; then
+        echo "[✗] Error: $python_cmd not found"
+        return 1
+    fi
+    
+    # Create the virtual environment if it doesn't exist
+    if [[ ! -d "$venv_dir" ]]; then
+        echo "[+] Creating virtual environment in: $venv_dir"
+        "$python_cmd" -m venv "$venv_dir"
+        if [[ $? -ne 0 ]]; then
+            echo "[✗] Failed to create virtual environment"

@@ -310,7 +310,7 @@ module_enable() {
         
         # Only show success message if direct call and not in quiet mode
         [[ "$called_by" == "direct" && "${SENTINEL_QUIET_MODULES:-0}" != "1" ]] && \
-            emsg "Module '$module_name' loaded successfully." 2>/dev/null || true
+            # Module loaded silently 2>/dev/null || true
         return 0
     else
         # Even if module loading failed, don't crash the terminal
