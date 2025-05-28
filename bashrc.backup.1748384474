@@ -28,35 +28,28 @@ fi
 # SENTINEL Bashrc version info
 BASHRC_VERSION="2.0.0-enhanced"
 
-# DISABLED: secure_source function was causing installation issues
 # Create a secure_source function for consistent file security checks
-#function secure_source() {
-#  local file="$1"
-#  local required_perms="${2:-600}"
-#  
-#  if [[ ! -f "$file" ]]; then
-#    echo "Error: File not found: $file" >&2
-#    return 1
-#  fi
-#  
-#  # Check if permissions are sufficiently restrictive
-#  local perms=$(stat -c %a "$file" 2>/dev/null || stat -f "%Lp" "$file" 2>/dev/null)
-#  if [[ "$perms" -gt "$required_perms" ]]; then
-#    echo "Warning: $file has insecure permissions ($perms). Recommended: chmod $required_perms $file" >&2
-#  fi
-#  
-#  # Source the file
-#  source "$file" || {
-#    echo "Error: Failed to source $file" >&2
-#    return 2
-#  }
-#  
-#  return 0
-#}
-
-# Simple replacement for secure_source that just does basic sourcing
 function secure_source() {
-  source "$1" 2>/dev/null || true
+  local file="$1"
+  local required_perms="${2:-600}"
+  
+  if [[ ! -f "$file" ]]; then
+    echo "Error: File not found: $file" >&2
+    return 1
+  fi
+  
+  # Check if permissions are sufficiently restrictive
+  local perms=$(stat -c %a "$file" 2>/dev/null || stat -f "%Lp" "$file" 2>/dev/null)
+  if [[ "$perms" -gt "$required_perms" ]]; then
+    echo "Warning: $file has insecure permissions ($perms). Recommended: chmod $required_perms $file" >&2
+  fi
+  
+  # Source the file
+  source "$file" || {
+    echo "Error: Failed to source $file" >&2
+    return 2
+  }
+  
   return 0
 }
 
@@ -200,28 +193,37 @@ if ! shopt -oq posix; then
   fi
 fi
 # Path security function - ensure no relative paths or duplicate entries
-# SIMPLIFIED: sanitize_path function - reduced complexity to prevent terminal crashes
 function sanitize_path() {
-  # Always set a fallback PATH in case of problems
-  local fallback_path="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
-  
-  # Safety check - ensure PATH is not empty
-  if [[ -z "$PATH" ]]; then
-    export PATH="$fallback_path"
-    return 0
+  if [[ "${CONFIG[SECURE_PATH]}" != "1" ]]; then
+    return
   fi
   
-  # Simple deduplication without complex validation
-  local path_parts=$(echo $PATH | tr ':' '\n' | awk '!seen[$0]++' | tr '\n' ':' | sed 's/:$//')
+  local old_path="$PATH"
+  local new_path=""
+  local dir=""
   
-  # Only use fallback if result is empty
-  if [[ -z "$path_parts" ]]; then
-    export PATH="$fallback_path"
-  else
-    export PATH="$path_parts"
-  fi
+  # Create array from PATH, splitting on ':'
+  IFS=':' read -ra path_array <<< "$old_path"
   
-  return 0
+  # Process each directory
+  for dir in "${path_array[@]}"; do
+    # Skip empty, relative paths, or paths with '.' or '..'
+    if [[ -z "$dir" || "$dir" =~ ^\. || "$dir" =~ /\.\.?/ ]]; then
+      echo "Warning: Skipping potentially insecure path component: $dir" >&2
+      continue
+    fi
+    
+    # Add only if directory exists and isn't already in new_path
+    if [[ -d "$dir" && ":$new_path:" != *":$dir:"* ]]; then
+      if [[ -z "$new_path" ]]; then
+        new_path="$dir"
+      else
+        new_path="$new_path:$dir"
+      fi
+    fi
+  done
+  
+  export PATH="$new_path"
 }
 
 # Important: Sanitize PATH BEFORE any path manipulations to ensure we start with a clean base
@@ -542,86 +544,105 @@ if [[ "$color_prompt" == "yes" ]]; then
 fi
 # Advanced VCS status functions with caching
 function __git_info() {
-  # Simplified version with error handling to prevent terminal crashes
-  # Skip git checks entirely if git command isn't available
-  if ! command -v git &>/dev/null; then
-    return 0
+  # Optimization: only run git commands if we're in a git directory
+  if [[ "${CONFIG[CACHE_PROMPT]}" == "1" ]]; then
+    if [[ -n "$__git_repo_cached" && "$__git_repo_cached" != "$PWD" && "$PWD" != "$__git_repo_cached"* ]]; then
+      # We've moved outside the previously cached git repo
+      unset __git_repo_cached
+      unset __git_branch_cached
+      unset __git_dirty_cached
+    fi
+    
+    if [[ -z "$__git_repo_cached" ]]; then
+      # Fast check if we're in a git repo
+      if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+        return 1
+      fi
+      
+      # Cache the repo root
+      __git_repo_cached=$(git rev-parse --show-toplevel)
+    fi
+    
+    # Get the branch name (cached for performance)
+    if [[ -z "$__git_branch_cached" || "$SECONDS" -gt "$__git_branch_cache_time" ]]; then
+      __git_branch_cached=$(git symbolic-ref --short HEAD 2>/dev/null || 
+                          git describe --tags --exact-match 2>/dev/null || 
+                          git rev-parse --short HEAD 2>/dev/null || 
+                          echo "(unknown)")
+      __git_branch_cache_time=$((SECONDS+5))  # Cache for 5 seconds
+    fi
+    
+    # Check for dirty state (cached, but checked more frequently)
+    # Use more efficient diff-index instead of git status
+    if [[ -z "$__git_dirty_cached" || "$SECONDS" -gt "$__git_dirty_cache_time" ]]; then
+      if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        __git_dirty_cached="*"
+      else
+        __git_dirty_cached=""
+      fi
+      __git_dirty_cache_time=$((SECONDS+2))  # Cache for 2 seconds
+    fi
+    
+    echo -n "${eLIGHTPURPLE}(${__git_branch_cached}${__git_dirty_cached})${eNC}"
+  else
+    # Non-cached version with performance improvements
+    if ! git rev-parse --is-inside-work-tree &>/dev/null; then
+      return 1
+    fi
+    
+    local branch=$(git symbolic-ref --short HEAD 2>/dev/null || 
+                   git describe --tags --exact-match 2>/dev/null || 
+                   git rev-parse --short HEAD 2>/dev/null || 
+                   echo "(unknown)")
+    
+    local dirty=""
+    # Use more efficient diff-index instead of git status
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+      dirty="*"
+    fi
+    
+    echo -n "${eLIGHTPURPLE}(${branch}${dirty})${eNC}"
   fi
-  
-  # Timeout protection for git commands to prevent hanging
-  local GIT_TIMEOUT=1  # 1 second timeout
-  
-  # Fast check if we're in a git repo - with timeout and error handling
-  if ! timeout $GIT_TIMEOUT git rev-parse --is-inside-work-tree &>/dev/null; then
-    return 0  # Return success anyway to prevent terminal crashes
-  fi
-  
-  # Get branch info with timeout and full error handling
-  local branch=""
-  branch=$(timeout $GIT_TIMEOUT git symbolic-ref --short HEAD 2>/dev/null) || 
-  branch=$(timeout $GIT_TIMEOUT git describe --tags --exact-match 2>/dev/null) || 
-  branch=$(timeout $GIT_TIMEOUT git rev-parse --short HEAD 2>/dev/null) || 
-  branch="?"
-  
-  # Safe dirty check with timeout and error handling
-  local dirty=""
-  if ! timeout $GIT_TIMEOUT git diff --no-ext-diff --quiet 2>/dev/null; then
-    dirty="*"
-  fi
-  
-  # Only output if we got valid information
-  if [[ -n "$branch" && "$branch" != "?" ]]; then
-    echo -n "${eLIGHTPURPLE}(${branch}${dirty})${eNC}" 2>/dev/null || true
-  fi
-  
-  return 0  # Always return success to prevent terminal crashes
 }
 
 # Modern prompt with git info, exit status, and job count
 function __set_prompt() {
-  # Simplified version with error handling to prevent terminal crashes
   local exit_code=$?
-  local jobs_count=0
-  jobs_count=$(jobs | wc -l 2>/dev/null) || jobs_count=0
+  local jobs_count=$(jobs | wc -l)
   
-  # Status indicator with safe defaults
-  local status_color="${eGREEN:-\033[32m}"
+  # Status indicator
+  local status_color="${eGREEN}"
   if [[ $exit_code -ne 0 ]]; then
-    status_color="${eRED:-\033[31m}"
+    status_color="${eRED}"
   fi
   
-  # Job count indicator with error handling
+  # Job count indicator
   local job_info=""
   if [[ $jobs_count -gt 0 ]]; then
-    job_info="${eYELLOW:-\033[33m}[${jobs_count}]${eNC:-\033[0m} "
+    job_info="${eYELLOW}[${jobs_count}]${eNC} "
   fi
 
-  # Get git branch if appropriate - with error handling
-  local git_info=""
-  git_info=$(__git_info 2>/dev/null) || git_info=""
+  # Get git branch if appropriate
+  local git_info=$(__git_info)
   [[ -n "$git_info" ]] && git_info=" $git_info"
   
-  # Set title safely with error handling
+  # Set title to last command if enabled
   if [[ "${CONFIG[UPDATE_TITLE]}" == "1" ]]; then
-    local last_cmd=""
-    last_cmd=$(HISTTIMEFORMAT= history 1 2>/dev/null | sed 's/^ *[0-9]\+ *//' 2>/dev/null) || last_cmd="bash"
-    echo -ne "\033]0;${last_cmd:0:50}\007" 2>/dev/null || true
+    local last_cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^ *[0-9]\+ *//')
+    echo -ne "\033]0;${last_cmd:0:50}\007"
   fi
   
-  # Security indicator with error handling
+  # Security indicator (if any SSH connection or sudo)
   local sec_indicator=""
   if [[ -n "$SSH_CLIENT" || -n "$SSH_TTY" ]]; then
-    sec_indicator="${eYELLOW:-\033[33m}(ssh)${eNC:-\033[0m} "
+    sec_indicator="${eYELLOW}(ssh)${eNC} "
   fi
   if [[ -n "$SUDO_USER" ]]; then
-    sec_indicator="${eRED:-\033[31m}(!sudo!)${eNC:-\033[0m} "
+    sec_indicator="${eRED}(!sudo!)${eNC} "
   fi
   
-  # Set the actual prompt - use basic colors if custom colors fail
-  PS1="${sec_indicator}${job_info}${status_color}\u@\h${eNC:-\033[0m}:${eBLUE:-\033[34m}\w${eNC:-\033[0m}${git_info}\n${status_color}\\$${eNC:-\033[0m} " 2>/dev/null || \
-  PS1="\u@\h:\w\n\\$ " # Ultra-safe fallback
-  
-  return 0 # Always return success to prevent terminal crashes
+  # Set the actual prompt
+  PS1="${sec_indicator}${job_info}${status_color}\u@\h${eNC}:${eBLUE}\w${eNC}${git_info}\n${status_color}\$${eNC} "
 }
 
 # Set up PROMPT_COMMAND
@@ -690,23 +711,47 @@ fi
 
 # Internal utility functions
 # Include all files in a directory with security checks
-# SIMPLIFIED: loadRcDir function - reduced security checks to prevent terminal crashes
 function loadRcDir() {
-  # Skip if directory doesn't exist
-  [[ ! -d "$1" ]] && return 0
+  if [[ ! -d "$1" ]]; then
+    echo "Error: Directory not found: $1" >&2
+    return 1
+  fi
   
   local rcFile
+  local load_count=0
+  local error_count=0
   
-  # Simple loading of files without complex checks
   for rcFile in "$1"/*; do
-    # Skip non-files
-    [[ ! -f "$rcFile" ]] && continue
+    # Skip non-files and files we can't read
+    if [[ ! -f "$rcFile" || ! -r "$rcFile" ]]; then
+      continue
+    fi
     
-    # Source the file with error redirection
-    source "$rcFile" 2>/dev/null || true
+    # Check file ownership and permissions
+    local file_owner=$(stat -c %U "$rcFile" 2>/dev/null || stat -f "%Su" "$rcFile" 2>/dev/null)
+    local file_perms=$(stat -c %a "$rcFile" 2>/dev/null || stat -f "%Lp" "$rcFile" 2>/dev/null)
+    
+    # Skip files not owned by the user or with insecure permissions
+    if [[ "$file_owner" != "$USER" && "$file_owner" != "$(id -un)" ]]; then
+      echo "Warning: Skipping $rcFile - not owned by current user" >&2
+      error_count=$((error_count+1))
+      continue
+    fi
+    
+    # Use secure_source instead of direct source
+    if secure_source "$rcFile" 750; then
+      load_count=$((load_count+1))
+    else
+      echo "Error loading $rcFile" >&2
+      error_count=$((error_count+1))
+    fi
   done
   
-  return 0
+  if [[ "${CONFIG[DEBUG]}" == "1" ]]; then
+    echo "Loaded $load_count files from $1 (errors: $error_count)" >&2
+  fi
+  
+  return $error_count
 }
 
 # Improved logging functions
@@ -771,20 +816,42 @@ if [[ "${CONFIG[AGENTS]}" == "1" ]]; then
 fi
 
 # Enhanced directory jumping function
-# function j() removed to prevent terminal crashes
-# SIMPLIFIED: bookmark function - basic implementation to prevent terminal instability
-function bookmark() {
-  echo "Simplified bookmark functionality"
-  local bfile="~/.bookmarks"
-  
-  # Basic add/list functionality only
-  if [[ "$1" == "-a" ]]; then
-    echo "$PWD" >> ~/.bookmarks 2>/dev/null
-    echo "Bookmark added"
-  elif [[ "$1" == "-l" ]]; then
-    cat ~/.bookmarks 2>/dev/null || echo "No bookmarks found"
+function j() {
+  local dir
+  if [[ -f ~/.bookmarks ]]; then
+    if [[ "$1" == "-a" ]]; then
+      echo "$PWD" >> ~/.bookmarks
+      sort -u ~/.bookmarks -o ~/.bookmarks
+      echo "Bookmark added: $PWD"
+    elif [[ "$1" == "-l" ]]; then
+      nl -w2 ~/.bookmarks | sed 's/^ *//'
+    elif [[ "$1" == "-r" ]]; then
+      if [[ -n "$2" && "$2" =~ ^[0-9]+$ ]]; then
+        sed -i "${2}d" ~/.bookmarks
+        echo "Removed bookmark #$2"
+      else
+        eerror "Usage: j -r <number>"
+      fi
+    else
+      if [[ "$1" =~ ^[0-9]+$ && "$1" -le $(wc -l <~/.bookmarks) ]]; then
+        dir=$(sed -n "${1}p" ~/.bookmarks)
+        cd "$dir" || eerror "Directory no longer exists: $dir"
+      elif [[ -n "$1" ]]; then
+        # Fuzzy find with grep
+        dir=$(grep -i "$1" ~/.bookmarks | head -n1)
+        if [[ -n "$dir" ]]; then
+          cd "$dir" || eerror "Directory no longer exists: $dir"
+        else
+          eerror "No bookmark matching '$1'"
+        fi
+      else
+        j -l
+      fi
+    fi
   else
-    echo "Usage: bookmark [-a|-l]"
+    touch ~/.bookmarks
+    echo "Created empty bookmarks file at ~/.bookmarks"
+    echo "Usage: j [-a|-l|-r <num>|<name>|<num>]"
   fi
 }
 
@@ -793,29 +860,84 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
   # Standardized module interface functions
   
   # Function to check for module dependencies
-  # DISABLED: module_check_dependencies function was causing installation issues
   function module_check_dependencies() {
-    # Simplified version that always succeeds
+    local module="$1"
+    local deps_file="${HOME}/.bash_modules.d/${module}.deps"
+    
+    # If no deps file exists, assume no dependencies
+    if [[ ! -f "$deps_file" ]]; then
+      return 0
+    fi
+    
+    local missing_deps=()
+    while IFS= read -r dep; do
+      # Skip comments and empty lines
+      [[ -z "$dep" || "$dep" =~ ^# ]] && continue
+      
+      # Check if dependency module exists
+      if [[ ! -f "${HOME}/.bash_modules.d/${dep}.module" && ! -f "${HOME}/.bash_modules.d/${dep}.sh" ]]; then
+        missing_deps+=("$dep")
+        continue
+      fi
+      
+      # Check if dependency is already loaded
+      if [[ -z "${LOADED_MODULES[$dep]}" ]]; then
+        # Recursively load dependency if needed
+        module_enable "$dep" || {
+          missing_deps+=("$dep")
+        }
+      fi
+    done < "$deps_file"
+    
+    # Return error if any dependencies couldn't be loaded
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+      echo "Module $module is missing dependencies: ${missing_deps[*]}" >&2
+      return 1
+    fi
+    
     return 0
   }
   
   # Improved module_enable function
-  # DISABLED: module_enable function was causing installation issues
   function module_enable() {
     local module="$1"
-    local module_file=""
+    local force="${2:-0}"
     
-    # Simple direct loading without complex checks
+    # Skip if already loaded and not forced
+    if [[ -n "${LOADED_MODULES[$module]}" && "$force" != "1" ]]; then
+      return 0
+    fi
+    
+    # Determine module file path
+    local module_file=""
     if [[ -f "${HOME}/.bash_modules.d/${module}.module" ]]; then
       module_file="${HOME}/.bash_modules.d/${module}.module"
     elif [[ -f "${HOME}/.bash_modules.d/${module}.sh" ]]; then
       module_file="${HOME}/.bash_modules.d/${module}.sh"
     else
-      return 0  # Silently skip missing modules
+      echo "Error: Module '$module' not found" >&2
+      return 1
     fi
     
-    # Simple source with error redirection
-    source "$module_file" 2>/dev/null || true
+    # Check module file security
+    if [[ "${CONFIG[SECURE_PERMISSIONS]}" == "1" ]]; then
+      local perms=$(stat -c %a "$module_file" 2>/dev/null || stat -f "%Lp" "$module_file" 2>/dev/null)
+      if [[ "$perms" -gt "750" ]]; then
+        echo "Warning: Module file $module_file has insecure permissions: $perms" >&2
+      fi
+    fi
+    
+    # Check dependencies
+    module_check_dependencies "$module" || {
+      echo "Error: Failed to load dependencies for module $module" >&2
+      return 1
+    }
+    
+    # Source the module file using secure_source
+    secure_source "$module_file" 750 || {
+      echo "Error: Failed to load module $module" >&2
+      return 1
+    }
     
     # Mark as loaded
     LOADED_MODULES["$module"]=1
@@ -823,24 +945,32 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
   }
   
   # Main module loading function
-  # DISABLED: _load_enabled_modules function was causing installation issues
   function _load_enabled_modules() {
     # Track loaded modules with an associative array
     declare -gA LOADED_MODULES
     
-    # Skip if modules file doesn't exist
-    [[ ! -f "${HOME}/.bash_modules" ]] && return 0
+    if [[ ! -f "${HOME}/.bash_modules" ]]; then
+      echo "No modules file found at ${HOME}/.bash_modules" >&2
+      return 1
+    fi
     
-    # Simple loading without error checking
+    local load_errors=0
     while IFS= read -r module; do
       # Skip comments and empty lines
       [[ -z "$module" || "$module" =~ ^# ]] && continue
       
-      # Try to load the module silently
-      module_enable "$module" 2>/dev/null || true
+      # Try to load the module
+      module_enable "$module" || {
+        echo "Failed to load module: $module" >&2
+        load_errors=$((load_errors+1))
+      }
     done < "${HOME}/.bash_modules"
     
-    return 0
+    if [[ $load_errors -gt 0 ]]; then
+      echo "Warning: $load_errors module(s) failed to load" >&2
+    fi
+    
+    return $load_errors
   }
   
   # Load modules
@@ -873,12 +1003,6 @@ if [[ "${CONFIG[MODULES]}" == "1" ]]; then
       fi
     done < "${HOME}/.bash_modules"
   fi
-fi
-
-# BLE.sh configuration - added to prevent 'unrecognized attach method' errors
-# This ensures ble.sh loads correctly with the proper attach method
-if ! grep -q "BLESH_ATTACH_METHOD" ~/.bashrc &>/dev/null; then
-  export BLESH_ATTACH_METHOD="attach"
 fi
 
 # Core aliases
@@ -1039,7 +1163,7 @@ function checksec() {
   local file="$1"
   
   if [[ ! -f "$file" ]]; then
-    echo -e "\033[1;31mError: File not found: $file\033[0m" >&2
+    eerror "File not found: $file"
     return 1
   fi
   
@@ -1103,31 +1227,11 @@ function securerm() {
       
       echo "Securely deleting $file..."
       if command -v shred &>/dev/null; then
-        # Use shred with error handling
-        if ! shred -uz "$file" 2>/dev/null; then
-          echo "Warning: shred failed, falling back to alternative method" >&2
-          # Safe fallback with error handling
-          if [[ -f "$file" && -w "$file" ]]; then
-            dd if=/dev/urandom of="$file" bs=1k count=1 conv=notrunc >/dev/null 2>&1
-            rm -f "$file"
-          else
-            echo "Error: Could not securely delete $file" >&2
-          fi
-        fi
+        shred -uz "$file"
       else
-        # Fallback if shred not available - with safe size calculation
-        if [[ -f "$file" && -w "$file" ]]; then
-          local size
-          size=$(stat -c %s "$file" 2>/dev/null || echo "1024")
-          # Prevent overflow by limiting max size
-          if (( size > 10485760 )); then  # Limit to 10MB max
-            size=10485760
-          fi
-          dd if=/dev/urandom of="$file" bs=1k count=$((size/1024+1)) conv=notrunc >/dev/null 2>&1
-          rm -f "$file"
-        else
-          echo "Error: Could not securely delete $file" >&2
-        fi
+        # Fallback if shred not available
+        dd if=/dev/urandom of="$file" bs=1k count=$(($(stat -c %s "$file")/1024+1)) conv=notrunc >/dev/null 2>&1
+        rm -f "$file"
       fi
     else
       echo "File not found: $file"
@@ -1142,12 +1246,6 @@ function netcheck() {
   echo -e "\n${LIGHTGREEN}Listening ports:${NC}"
   netstat -tuln | grep LISTEN
 }
-# Safety check - ensure basic PATH exists before loading external files
-if [[ -z "$PATH" ]]; then
-  export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
-  echo "[bashrc] Warning: PATH was empty, reset to default" >&2
-fi
-
 # Load postcustom configuration if enabled - using simplified loading for reliability
 if [[ "${CONFIG[POSTCUSTOM]}" == "1" && -f ~/.bashrc.postcustom ]]; then
   # Simple, safe loading of postcustom file that won't crash the terminal

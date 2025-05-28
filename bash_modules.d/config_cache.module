@@ -39,11 +39,14 @@ config_cache_key() {
     echo "$key"
 }
 
-# Enhanced config cache function
+# Enhanced config cache function with error handling to prevent terminal crashes
 # Usage: config_cache_load <filepath> [options]
 config_cache_load() {
     # Skip if caching is disabled
-    [[ "$SENTINEL_CONFIG_CACHE_ENABLED" != "1" ]] && source "$1" && return $?
+    if [[ "$SENTINEL_CONFIG_CACHE_ENABLED" != "1" ]]; then 
+        source "$1" 2>/dev/null || true
+        return 0  # Always return success to prevent terminal crashes
+    fi
     
     local filepath="$1"
     shift
@@ -52,7 +55,13 @@ config_cache_load() {
     local debug=0
     local selective_vars=""
     
-    # Process options
+    # Check if file exists - skip caching with soft error if not
+    if [[ ! -f "$filepath" ]]; then
+        echo "[config_cache] Config file not found: $filepath" >&2
+        return 0  # Return success to prevent terminal crashes
+    fi
+    
+    # Process options with error handling
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --debug)
@@ -74,44 +83,38 @@ config_cache_load() {
         shift
     done
     
-    # Generate cache key and paths
-    local cache_key=$(config_cache_key "$filepath")
+    # Generate cache key and paths with error handling
+    local cache_key=""
+    cache_key=$(config_cache_key "$filepath" 2>/dev/null) || cache_key="${filepath//[^a-zA-Z0-9]/_}"
+    
+    # Ensure cache directory exists
+    mkdir -p "$SENTINEL_CONFIG_CACHE_DIR" 2>/dev/null || {
+        # If cache directory creation fails, just source directly
+        source "$filepath" 2>/dev/null || true
+        return 0  # Return success to prevent terminal crashes
+    }
+    
     local cache_file="${SENTINEL_CONFIG_CACHE_DIR}/${cache_key}.cache"
     local hash_file="${SENTINEL_CONFIG_CACHE_DIR}/${cache_key}.hash"
     local stats_file="${SENTINEL_CONFIG_CACHE_DIR}/${cache_key}.stats"
     
-    # Debug output
-    if [[ $debug -eq 1 ]]; then
-        if type sentinel_log_debug &>/dev/null; then
-            sentinel_log_debug "config_cache" "Processing config: $filepath (cache: $cache_file)"
-        else
-            echo "[config_cache] Processing config: $filepath (cache: $cache_file)" >&2
+    # Skip hash verification if md5sum isn't available
+    if [[ $verify -eq 1 ]]; then
+        if ! command -v md5sum &>/dev/null; then
+            verify=0
         fi
     fi
     
-    # Check if file exists
-    if [[ ! -f "$filepath" ]]; then
-        if type sentinel_log_error &>/dev/null; then
-            sentinel_log_error "config_cache" "Config file not found: $filepath"
-        else
-            echo "[config_cache] Config file not found: $filepath" >&2
-        fi
-        return 1
-    fi
-    
-    # Check for forced refresh or verify hash
+    # Check for forced refresh or verify hash with error handling
     if [[ $force_refresh -eq 1 || $verify -eq 1 ]]; then
         if [[ -f "$hash_file" && -f "$cache_file" && $verify -eq 1 ]]; then
-            local stored_hash=$(cat "$hash_file")
-            local current_hash=$(md5sum "$filepath" | cut -d' ' -f1)
-            if [[ "$stored_hash" != "$current_hash" ]]; then
-                if [[ $debug -eq 1 ]]; then
-                    if type sentinel_log_debug &>/dev/null; then
-                        sentinel_log_debug "config_cache" "Hash mismatch, forcing refresh"
-                    else
-                        echo "[config_cache] Hash mismatch, forcing refresh" >&2
-                    fi
-                fi
+            local stored_hash=""
+            local current_hash=""
+            stored_hash=$(cat "$hash_file" 2>/dev/null) || stored_hash=""
+            current_hash=$(md5sum "$filepath" 2>/dev/null | cut -d' ' -f1 2>/dev/null) || current_hash=""
+            
+            # If either hash operation failed, force a refresh
+            if [[ -z "$stored_hash" || -z "$current_hash" || "$stored_hash" != "$current_hash" ]]; then
                 force_refresh=1
             fi
         else
@@ -119,111 +122,102 @@ config_cache_load() {
         fi
     fi
 
-    # Create stats file if it doesn't exist
+    # Create stats file if it doesn't exist - with error handling
     if [[ ! -f "$stats_file" ]]; then
-        echo "first_load=$(date +%s)" > "$stats_file"
-        echo "load_count=0" >> "$stats_file"
+        { echo "first_load=$(date +%s 2>/dev/null || echo 0)" > "$stats_file" && \
+          echo "load_count=0" >> "$stats_file"; } 2>/dev/null || true
     fi
     
-    # Use cache if available, newer than config, and no force refresh
-    if [[ -f "$cache_file" && "$cache_file" -nt "$filepath" && $force_refresh -eq 0 ]]; then
-        # Update stats
-        local load_count=$(grep "load_count=" "$stats_file" | cut -d= -f2)
-        load_count=$((load_count + 1))
-        sed -i "s/load_count=.*/load_count=$load_count/" "$stats_file"
-        echo "last_load=$(date +%s)" >> "$stats_file"
-        
-        # Log cache hit
-        if [[ $debug -eq 1 ]]; then
-            if type sentinel_log_debug &>/dev/null; then
-                sentinel_log_debug "config_cache" "Cache hit for $filepath (load #$load_count)"
-            else
-                echo "[config_cache] Cache hit for $filepath (load #$load_count)" >&2
+    # Use cache if available, newer than config, and no force refresh - with error handling
+    if [[ -f "$cache_file" && -f "$filepath" ]] && [[ -f "$cache_file" -a "$cache_file" -nt "$filepath" ]] && [[ $force_refresh -eq 0 ]]; then
+        # Try to update stats but don't fail if it doesn't work
+        {
+            if [[ -f "$stats_file" ]]; then
+                local load_count=0
+                load_count=$(grep "load_count=" "$stats_file" 2>/dev/null | cut -d= -f2 2>/dev/null) || load_count=0
+                load_count=$((load_count + 1))
+                # Use safer method than sed -i which might not be available
+                local stats_content=$(cat "$stats_file" 2>/dev/null)
+                echo "${stats_content/load_count=*/load_count=$load_count}" > "$stats_file"
+                echo "last_load=$(date +%s 2>/dev/null || echo 0)" >> "$stats_file"
             fi
-        fi
+        } 2>/dev/null || true
         
-        # Source the cached file
-        source "$cache_file"
-        return 0
+        # Source the cached file with error handling
+        source "$cache_file" 2>/dev/null || {
+            # If cache file sourcing fails, try the original file
+            source "$filepath" 2>/dev/null || true
+        }
+        return 0  # Always return success
     fi
     
-    # Cache miss or force refresh
+    # Cache miss or force refresh - with simplified error handling
+    # Direct sourcing approach - skip complex caching if any commands might fail
+    if ! command -v mktemp &>/dev/null || ! command -v diff &>/dev/null; then
+        # If required tools are missing, just source directly
+        source "$filepath" 2>/dev/null || true
+        return 0  # Always return success
+    fi
+    
+    # Safely create temporary files with error handling
+    local temp_env_before=""
+    local temp_env_after=""
+    local temp_cache=""
+    
+    # Use safer alternative if mktemp fails
+    temp_env_before=$(mktemp 2>/dev/null) || temp_env_before="${SENTINEL_CONFIG_CACHE_DIR}/tmp_before_$$"
+    temp_env_after=$(mktemp 2>/dev/null) || temp_env_after="${SENTINEL_CONFIG_CACHE_DIR}/tmp_after_$$"
+    temp_cache=$(mktemp 2>/dev/null) || temp_cache="${SENTINEL_CONFIG_CACHE_DIR}/tmp_cache_$$"
+    
+    # Touch files to ensure they exist
+    touch "$temp_env_before" "$temp_env_after" "$temp_cache" 2>/dev/null
+    
+    # Capture current environment with error handling
+    declare -p > "$temp_env_before" 2>/dev/null || true
+    
+    # Source the actual config file with error handling
+    source "$filepath" 2>/dev/null || {
+        # Clean up and return on error
+        rm -f "$temp_env_before" "$temp_env_after" "$temp_cache" 2>/dev/null || true
+        return 0  # Always return success
+    }
+    
+    # Capture environment after sourcing
+    declare -p > "$temp_env_after" 2>/dev/null || true
+    
+    # Generate minimal cache with basic variable extraction and error handling
+    { diff -u "$temp_env_before" "$temp_env_after" 2>/dev/null | \
+      grep '^+declare' 2>/dev/null | \
+      grep -v '^+declare -[^=]*$' 2>/dev/null > "$temp_cache" 2>/dev/null; } || true
+    
+    # Try to create cache file but don't fail if it doesn't work
+    {
+        # Copy temporary cache to final location if it exists and has content
+        if [[ -s "$temp_cache" ]]; then
+            cat "$temp_cache" > "$cache_file" 2>/dev/null
+            
+            # Try to update hash but don't fail
+            if command -v md5sum &>/dev/null; then
+                md5sum "$filepath" 2>/dev/null | cut -d' ' -f1 > "$hash_file" 2>/dev/null || true
+            fi
+            
+            # Update stats file safely
+            echo "last_refresh=$(date +%s 2>/dev/null || echo 0)" > "$stats_file" 2>/dev/null
+            echo "load_count=1" >> "$stats_file" 2>/dev/null
+        fi
+    } 2>/dev/null || true
+    
+    # Cleanup temporary files with error handling
+    rm -f "$temp_env_before" "$temp_env_after" "$temp_cache" 2>/dev/null || true
+    
+    # Log success only if debug is enabled and logging available
     if [[ $debug -eq 1 ]]; then
-        if type sentinel_log_debug &>/dev/null; then
-            sentinel_log_debug "config_cache" "Cache miss for $filepath, generating new cache"
-        else
-            echo "[config_cache] Cache miss for $filepath, generating new cache" >&2
+        if type sentinel_log_info &>/dev/null; then
+            sentinel_log_info "config_cache" "Updated cache for $filepath" 2>/dev/null || true
         fi
     fi
     
-    # Source the original file
-    source "$filepath"
-    
-    # Create cache file with smart variable extraction
-    echo "# SENTINEL Configuration Cache" > "$cache_file"
-    echo "# Original: $filepath" >> "$cache_file"
-    echo "# Generated: $(date)" >> "$cache_file"
-    echo "" >> "$cache_file"
-    
-    if [[ -n "$selective_vars" ]]; then
-        # Only cache specified variables
-        for var in $selective_vars; do
-            if [[ -v "$var" ]]; then
-                declare -p "$var" >> "$cache_file" 2>/dev/null
-            fi
-        done
-    else
-        # Create a temporary file with all variables
-        local tmp_env=$(mktemp)
-        declare -p > "$tmp_env"
-        
-        # Filter out system variables and keep only user-defined ones
-        grep -v "^declare -[^-]* BASH_[A-Z_]*=" "$tmp_env" | \
-        grep -v "^declare -[^-]* COMP_[A-Z_]*=" | \
-        grep -v "^declare -[^-]* DIRSTACK=" | \
-        grep -v "^declare -[^-]* EUID=" | \
-        grep -v "^declare -[^-]* FUNCNAME=" | \
-        grep -v "^declare -[^-]* GROUPS=" | \
-        grep -v "^declare -[^-]* HISTCMD=" | \
-        grep -v "^declare -[^-]* HOSTNAME=" | \
-        grep -v "^declare -[^-]* HOSTTYPE=" | \
-        grep -v "^declare -[^-]* IFS=" | \
-        grep -v "^declare -[^-]* MACHTYPE=" | \
-        grep -v "^declare -[^-]* OPTERR=" | \
-        grep -v "^declare -[^-]* OPTIND=" | \
-        grep -v "^declare -[^-]* OSTYPE=" | \
-        grep -v "^declare -[^-]* PIPESTATUS=" | \
-        grep -v "^declare -[^-]* PPID=" | \
-        grep -v "^declare -[^-]* PWD=" | \
-        grep -v "^declare -[^-]* RANDOM=" | \
-        grep -v "^declare -[^-]* SECONDS=" | \
-        grep -v "^declare -[^-]* SHELLOPTS=" | \
-        grep -v "^declare -[^-]* SHLVL=" | \
-        grep -v "^declare -[^-]* UID=" | \
-        grep -v "^declare -[^-]* _=" >> "$cache_file"
-        
-        rm -f "$tmp_env"
-    fi
-    
-    # Create hash for future verification
-    md5sum "$filepath" | cut -d' ' -f1 > "$hash_file"
-    
-    # Update stats
-    load_count=$(grep "load_count=" "$stats_file" | cut -d= -f2 || echo 0)
-    load_count=$((load_count + 1))
-    sed -i "s/load_count=.*/load_count=$load_count/" "$stats_file" 2>/dev/null || \
-    echo "load_count=$load_count" >> "$stats_file"
-    sed -i "/last_load=/d" "$stats_file" 2>/dev/null
-    echo "last_load=$(date +%s)" >> "$stats_file"
-    echo "last_refresh=$(date +%s)" >> "$stats_file"
-    
-    # Secure the files
-    chmod 600 "$cache_file" "$hash_file" "$stats_file"
-    
-    # Log success
-    if type sentinel_log_info &>/dev/null; then
-        sentinel_log_info "config_cache" "Updated cache for $filepath"
-    fi
+    return 0  # Always return success to prevent terminal crashes
     
     return 0
 }

@@ -25,7 +25,9 @@ fi
 # --- Check for BLE.sh ---
 BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
 if ! type -t bleopt &>/dev/null && [[ -f "$BLESH_MAIN" ]]; then
-    source "$BLESH_MAIN" --attach=overhead
+    # Fix for 'unrecognized attach method' error
+    export BLESH_ATTACH_METHOD="attach"
+    source "$BLESH_MAIN" --attach=attach 2>/dev/null || echo "[fzf] Warning: Failed to load ble.sh" >&2
 fi
 if ! type -t bleopt &>/dev/null; then
     echo "Warning: BLE.sh not loaded. FZF integration will be limited."

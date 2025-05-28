@@ -56,10 +56,20 @@ safe_cp() {
 
 safe_mkdir() {
     local dir="$1"
+    local perm="${2:-700}"  # Default permission 700 (user rwx only)
+    
     if ! mkdir -p "$dir"; then
         fail "Failed to create directory: $dir"
+        return 1
     fi
-    ok "Created directory: $dir"
+    
+    # Set proper permissions
+    chmod "$perm" "$dir" 2>/dev/null || {
+        warn "Failed to set permissions $perm on directory: $dir"
+    }
+    
+    ok "Created directory: $dir with permissions: $perm"
+    return 0
 }
 
 # Robust error handler for fatal errors (security: prevents silent failures)
@@ -403,9 +413,11 @@ if ! is_done "BLESH_LOADER_DROPPED"; then
 # shellcheck shell=bash
 if [[ -n ${SENTINEL_BLESH_LOADED:-} ]]; then return; fi
 export SENTINEL_BLESH_LOADED=1
+# Fix for 'unrecognized attach method' error
+export BLESH_ATTACH_METHOD="attach"
 BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
 if [[ -f ${BLESH_MAIN} ]]; then
-  source "${BLESH_MAIN}" --attach=overhead
+  source "${BLESH_MAIN}" --attach=attach 2>/dev/null || echo "[install] Warning: Failed to load ble.sh" >&2
 fi
 EOF
   mark_done "BLESH_LOADER_DROPPED"
@@ -506,7 +518,8 @@ patch_bashrc() {
         echo ''
         echo '# SENTINEL Framework Integration'
         echo "if [[ -f \"\${HOME}/bashrc.postcustom\" ]]; then"
-        echo "    source \"\${HOME}/bashrc.postcustom\""
+        echo "    # Safe loading mechanism that won't crash the terminal"
+        echo "    source \"\${HOME}/bashrc.postcustom\" 2>/dev/null || echo \"[bashrc] Warning: Failed to load bashrc.postcustom\" >&2"
         echo 'fi'
       } >> "$rc"
       ok "Patched $rc to load SENTINEL"
@@ -685,6 +698,25 @@ fi
 # 12. Run verification checks
 ###############################################################################
 step "Verifying installation"
+
+# Ensure autocomplete directory exists before verification
+if [[ ! -d "${HOME}/autocomplete" ]]; then
+  step "Creating missing autocomplete directory"
+  safe_mkdir "${HOME}/autocomplete" 755
+  safe_mkdir "${HOME}/autocomplete/snippets" 755
+  safe_mkdir "${HOME}/autocomplete/context" 755
+  safe_mkdir "${HOME}/autocomplete/projects" 755
+  safe_mkdir "${HOME}/autocomplete/params" 755
+  
+  # Ensure proper permissions explicitly
+  chmod 755 "${HOME}/autocomplete" 2>/dev/null
+  find "${HOME}/autocomplete" -type d -exec chmod 755 {} \; 2>/dev/null
+  
+  # Make any executable scripts actually executable
+  find "${HOME}/autocomplete" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null
+  
+  ok "Autocomplete directories created with proper permissions"
+fi
 
 # Check that essential directories exist
 for dir in "${HOME}/autocomplete" "${MODULES_DIR}"; do

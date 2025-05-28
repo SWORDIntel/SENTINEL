@@ -45,9 +45,15 @@ _ble_load() {
     if [[ -f "$BLSH_SCRIPT" ]]; then
         # Prevent double-loading
         if [[ -z "${_BLSH_LOADED:-}" ]]; then
-            source "$BLSH_SCRIPT"
+            # Fix for 'unrecognized attach method' error
+            export BLESH_ATTACH_METHOD="attach"
+            source "$BLSH_SCRIPT" --attach=attach 2>/dev/null || {
+                _ble_error "Failed to load BLE.sh"
+                echo "Warning: Failed to load BLE.sh" >&2
+                return 1
+            }
             export _BLSH_LOADED=1
-            _ble_info "BLE.sh loaded"
+            _ble_info "BLE.sh loaded successfully"
         fi
     else
         _ble_error "BLE.sh script not found at $BLSH_SCRIPT"

@@ -31,24 +31,41 @@ else
     : "${SENTINEL_LOG_ROTATION_SIZE:=1024}"  # 1MB
 fi
 
-# Main logging function
+# Main logging function with error handling to prevent terminal crashes
 sentinel_log() {
-    local level=$1
-    local component=$2
-    local message=$3
-    local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-    local log_file="$SENTINEL_LOG_DIR/${component}-$(date +%Y%m%d).log"
+    # Parse parameters with defaults to prevent unbound variable errors
+    local level=${1:-1}
+    local component=${2:-"unknown"}
+    local message=${3:-""}
     local exit_code=${4:-0}
     
     # Early return if log level is below configured level
     # Example: If SENTINEL_LOG_LEVEL=2 (WARNING), DEBUG(0) and INFO(1) are skipped
-    [[ $level -lt $SENTINEL_LOG_LEVEL ]] && return 0
+    [[ $level -lt ${SENTINEL_LOG_LEVEL:-1} ]] && return 0
     
-    # Ensure log directory exists
-    mkdir -p "$SENTINEL_LOG_DIR"
+    # Generate timestamp safely
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S" 2>/dev/null) || timestamp="UNKNOWN_TIME"
     
-    # Convert level to text
-    local level_text
+    # Generate log_file path safely
+    local date_suffix
+    date_suffix=$(date +%Y%m%d 2>/dev/null) || date_suffix="unknown"
+    local log_file="${SENTINEL_LOG_DIR:-$HOME/.sentinel/logs}/${component}-${date_suffix}.log"
+    
+    # Ensure log directory exists with error handling
+    mkdir -p "${SENTINEL_LOG_DIR:-$HOME/.sentinel/logs}" 2>/dev/null || {
+        # If we can't create the log directory, use a fallback approach
+        if [[ -d "/tmp" ]]; then
+            # Use /tmp as fallback
+            log_file="/tmp/sentinel-${component}-${date_suffix}.log"
+        else
+            # If we can't log anywhere, just return
+            return $exit_code
+        fi
+    }
+    
+    # Convert level to text safely
+    local level_text="UNKNOWN"
     case $level in
         $SENTINEL_LOG_LEVEL_DEBUG)
             level_text="DEBUG"
@@ -65,42 +82,50 @@ sentinel_log() {
         $SENTINEL_LOG_LEVEL_CRITICAL)
             level_text="CRITICAL"
             ;;
-        *)
-            level_text="UNKNOWN"
-            ;;
     esac
     
     # Format: [TIMESTAMP] [LEVEL] [COMPONENT] Message
     local log_entry="[$timestamp] [$level_text] [$component] $message"
     
-    # Write to log file
-    echo "$log_entry" >> "$log_file"
+    # Write to log file with error handling
+    echo "$log_entry" >> "$log_file" 2>/dev/null || true
     
     # For errors and critical messages, also output to stderr if we're in a terminal
-    if [[ $level -ge $SENTINEL_LOG_LEVEL_ERROR && -t 1 ]]; then
-        if [[ "$SENTINEL_LOG_COLORS_ENABLED" == "true" ]]; then
-            # Color coding for terminal output
-            local color
-            if [[ $level -eq $SENTINEL_LOG_LEVEL_ERROR ]]; then
-                color="\033[1;31m" # Red
+    if [[ $level -ge ${SENTINEL_LOG_LEVEL_ERROR:-3} ]]; then
+        # Only output to terminal if it exists
+        if [[ -t 2 ]]; then
+            if [[ "${SENTINEL_LOG_COLORS_ENABLED:-false}" == "true" ]]; then
+                # Color coding for terminal output with error handling
+                local color="\033[0m" # Default
+                if [[ $level -eq ${SENTINEL_LOG_LEVEL_ERROR:-3} ]]; then
+                    color="\033[1;31m" # Red
+                elif [[ $level -eq ${SENTINEL_LOG_LEVEL_CRITICAL:-4} ]]; then
+                    color="\033[1;35m" # Purple for critical
+                fi
+                # Use printf instead of echo -e for better portability
+                printf "%b%s%b\n" "$color" "$log_entry" "\033[0m" >&2 2>/dev/null || echo "$log_entry" >&2
             else
-                color="\033[1;35m" # Purple for critical
+                echo "$log_entry" >&2 2>/dev/null || true
             fi
-            echo -e "${color}$log_entry\033[0m" >&2
-        else
-            echo "$log_entry" >&2
         fi
     fi
     
-    # Check log file size and rotate if needed
-    local file_size=$(stat -c %s "$log_file" 2>/dev/null || echo "0")
-    if [[ $file_size -gt $SENTINEL_LOG_ROTATION_SIZE ]]; then
-        # Convert to KB for comparison
-        file_size=$(( file_size / 1024 ))
-        if [[ $file_size -gt $SENTINEL_LOG_ROTATION_SIZE ]]; then
-            # Rotate log file
-            mv "$log_file" "${log_file}.1"
-            sentinel_log $SENTINEL_LOG_LEVEL_INFO "logging" "Rotated log file $log_file ($file_size KB)"
+    # Check log file size and rotate if needed - with error handling
+    if [[ -f "$log_file" ]]; then
+        # Get file size, defaulting to 0 if stat fails
+        local file_size=0
+        if command -v stat &>/dev/null; then
+            file_size=$(stat -c %s "$log_file" 2>/dev/null || echo "0")
+            
+            # Only proceed if we got a valid size and rotation is configured
+            if [[ $file_size =~ ^[0-9]+$ && ${SENTINEL_LOG_ROTATION_SIZE:-1024} -gt 0 ]]; then
+                # Convert to KB for comparison
+                file_size=$(( file_size / 1024 ))
+                if [[ $file_size -gt ${SENTINEL_LOG_ROTATION_SIZE:-1024} ]]; then
+                    # Rotate log file with error handling
+                    mv "$log_file" "${log_file}.1" 2>/dev/null || true
+                fi
+            fi
         fi
     fi
     

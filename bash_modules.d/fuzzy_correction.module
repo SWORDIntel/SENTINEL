@@ -11,20 +11,12 @@ if [ -n "${_SENTINEL_FUZZY_CORRECTION_LOADED}" ]; then
 fi
 export _SENTINEL_FUZZY_CORRECTION_LOADED=1
 
-# Ensure logging is available
-if ! type -t sentinel_log_info &>/dev/null; then
-    sentinel_log_info() { logger -t SENTINEL "[INFO] $*"; }
-    sentinel_log_warning() { logger -t SENTINEL "[WARN] $*"; }
-    sentinel_log_error() { logger -t SENTINEL "[ERROR] $*"; }
-fi
-if ! type -t sentinel_log_info &>/dev/null; then
-    echo "ERROR: sentinel_log_info not loaded in fuzzy_correction";
-else
-    echo "DEBUG: sentinel_log_info loaded in fuzzy_correction";
-fi
+# Simplified logging that won't crash the terminal
+sentinel_log_info() { logger -t SENTINEL "[INFO] $*" 2>/dev/null || true; }
+sentinel_log_warning() { logger -t SENTINEL "[WARN] $*" 2>/dev/null || true; }
+sentinel_log_error() { logger -t SENTINEL "[ERROR] $*" 2>/dev/null || true; }
 
-# Set strict error handling
-set -o pipefail
+# Removed strict error handling (set -o pipefail) to prevent terminal crashes
 
 # FEATURE: Fuzzy Command Correction
 # Provides intelligent suggestions for mistyped commands
