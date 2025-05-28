@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
- 
+# SENTINEL - FZF Integration Module
+# Version: 1.0.0
+# Description: Integrates fzf (Fuzzy Finder) with SENTINEL and BLE.sh for enhanced fuzzy finding and completion
+# Dependencies: fzf, ble.sh
+# Maintainer: SENTINEL Team
 
-# Check if module is enabled via environment variable with robust error handling
-# and silent status check that doesn't print messages
+# Make sure we have color variables defined to prevent crashes
+RED="\033[0;31m" 2>/dev/null || RED=""
+GREEN="\033[0;32m" 2>/dev/null || GREEN=""
+YELLOW="\033[0;33m" 2>/dev/null || YELLOW=""
+BLUE="\033[0;34m" 2>/dev/null || BLUE=""
+NC="\033[0m" 2>/dev/null || NC=""
+
+# --- Module Enable/Disable Guard with error handling ---
 if [[ "${SENTINEL_FZF_ENABLED:-0}" != "1" ]]; then
-    # Module is disabled but won't echo about it
-    # This line would return, preventing the module from loading
-    # when the environment variable is not set
-    return 0 2>/dev/null || true
+    { # Silently check if module is disabled; } 2>/dev/null || true
+    return 0
 fi
-
-# Continue with the rest of the file, starting after the original check
 
 # --- Security: Ensure only user can read/modify this file ---
 { chmod 600 "${BASH_SOURCE[0]}"; } 2>/dev/null || true

@@ -1,17 +1,35 @@
 #!/usr/bin/env bash
 ### BEGIN MODULE INFO
-### END MODULE INFO 
+# Name:			obfuscate
+# Short-Description:	File obfuscation techniques for evading signature-based detection
+# Description:		This module provides various obfuscation techniques for files and strings
+#			including bash scripts, PowerShell, Python, JavaScript, PE and ELF binaries.
+#			For legitimate security testing and educational purposes only.
+# Author:		John
+# URL:			https://github.com/SWORDIntel/SENTINEL/
+# Version:		1.0.0
+# Stability:		stable
+# Tags:			security, obfuscation, steganography, redteam
+# Provides:		file_obfuscation
+# Requires:		coreutils
+# Conflicts:
+### END MODULE INFO
 
-# Check if module is enabled via environment variable with robust error handling
-# and silent status check that doesn't print messages
-if [[ "${SENTINEL_OBFUSCATE_ENABLED:-0}" != "1" ]]; then
-    # Module is disabled but won't echo about it
-    # This line would return, preventing the module from loading
-    # when the environment variable is not set
-    return 0 2>/dev/null || true
+# Ensure color variables are defined to prevent crashes if they're not set elsewhere
+RED="\033[0;31m" 2>/dev/null || RED=""
+GREEN="\033[0;32m" 2>/dev/null || GREEN=""
+YELLOW="\033[0;33m" 2>/dev/null || YELLOW=""
+BLUE="\033[0;34m" 2>/dev/null || BLUE=""
+CYAN="\033[0;36m" 2>/dev/null || CYAN=""
+NC="\033[0m" 2>/dev/null || NC=""
+
+# Check if the module is enabled
+if [[ "${SENTINEL_OBFUSCATE_ENABLED:-1}" != "1" ]]; then
+    # Silently check if module is disabled 2>/dev/null || true
+    # No need to show this message as it's documented elsewhere 2>/dev/null || true
+    # End of silent check 2>/dev/null || true
+    return 0
 fi
-
-# Continue with the rest of the file, starting after the original check
 
 # Check if we're being sourced
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

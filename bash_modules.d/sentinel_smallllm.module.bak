@@ -8,18 +8,13 @@
 ### Version: 1.0.0
 ### Tags: llm, ai, small-models
 ### Requirements: python3, pip
-### ================================================= 
+### =================================================
 
-# Check if module is enabled via environment variable with robust error handling
-# and silent status check that doesn't print messages
-if [[ "${SENTINEL_SMALLLLM_ENABLED:-0}" != "1" ]]; then
-    # Module is disabled but won't echo about it
-    # This line would return, preventing the module from loading
-    # when the environment variable is not set
-    return 0 2>/dev/null || true
+# Ensure the script is sourced and not executed directly.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    echo "This script is meant to be sourced, not executed directly."
+    exit 1
 fi
-
-# Continue with the rest of the file, starting after the original check
 
 # Set environment variables and defaults
 export SENTINEL_SMALLLLM_DIR="${SENTINEL_BASE_DIR:-$HOME/Documents/GitHub/SENTINEL}/gitstar/models"

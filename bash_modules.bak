@@ -12,12 +12,12 @@ export CYAN="\033[0;36m"
 export NC="\033[0m" # No Color
 
 # Module directory path
-export SENTINEL_MODULES_PATH="$HOME/bash_modules.d"
+export SENTINEL_MODULES_PATH=${U_MODULES_PATH:-"$HOME/.bash_modules.d"}
 
 # Ensure module directory is properly set and exists
 if [[ -z "$SENTINEL_MODULES_PATH" ]]; then
     # Fallback to standard location
-    export SENTINEL_MODULES_PATH="$HOME/bash_modules.d"
+    export SENTINEL_MODULES_PATH="$HOME/.bash_modules.d"
     ewarn "SENTINEL_MODULES_PATH was empty, reset to default $SENTINEL_MODULES_PATH"
 fi
 

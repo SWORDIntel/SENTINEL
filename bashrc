@@ -30,35 +30,47 @@ BASHRC_VERSION="2.0.0-enhanced"
 
 # DISABLED: secure_source function was causing installation issues
 # Create a secure_source function for consistent file security checks
-#function secure_source() {
-#  local file="$1"
-#  local required_perms="${2:-600}"
-#  
-#  if [[ ! -f "$file" ]]; then
-#    echo "Error: File not found: $file" >&2
-#    return 1
-#  fi
-#  
-#  # Check if permissions are sufficiently restrictive
-#  local perms=$(stat -c %a "$file" 2>/dev/null || stat -f "%Lp" "$file" 2>/dev/null)
-#  if [[ "$perms" -gt "$required_perms" ]]; then
-#    echo "Warning: $file has insecure permissions ($perms). Recommended: chmod $required_perms $file" >&2
-#  fi
-#  
-#  # Source the file
-#  source "$file" || {
-#    echo "Error: Failed to source $file" >&2
-#    return 2
-#  }
-#  
-#  return 0
-#}
+## REMOVED: loadRcDir function was causing terminal crashes
+# Instead, we'll use a safer direct approach when needed
 
-# Simple replacement for secure_source that just does basic sourcing
-function secure_source() {
-  source "$1" 2>/dev/null || true
+# Ultra-safe directory loading function that won't crash the terminal
+# Safe alternative that can be used if directory loading is needed
+safe_load_directory() {
+  # Wrap everything in error handling
+  {
+    local dir="$1"
+    local pattern="$2"
+    
+    # Skip if directory doesn't exist
+    [[ ! -d "$dir" ]] && return 0
+    
+    # Use nullglob to prevent errors when no files match
+    shopt -q nullglob && local NULLGLOB_WAS_SET=1 || local NULLGLOB_WAS_SET=0
+    shopt -s nullglob
+    
+    # Simple, direct file listing - less error prone
+    local files=($dir/$pattern)
+    
+    # Restore nullglob setting
+    [[ "$NULLGLOB_WAS_SET" == "0" ]] && shopt -u nullglob
+    
+    # Source each file with comprehensive error handling
+    local file
+    for file in "${files[@]}"; do
+      # Skip non-existent or non-file entries
+      [[ ! -f "$file" ]] && continue
+      
+      # Use brace expansion to ensure errors don't propagate
+      { source "$file"; } 2>/dev/null || true
+    done
+  } 2>/dev/null || true
+  
+  # Always return success
   return 0
 }
+# REMOVED: secure_source function was causing terminal crashes
+# Using direct sourcing with error handling instead
+# Any file sourcing is now done with: { source "file"; } 2>/dev/null || true
 
 # OS detection for platform-specific commands
 case "$(uname -s)" in
@@ -691,23 +703,8 @@ fi
 # Internal utility functions
 # Include all files in a directory with security checks
 # SIMPLIFIED: loadRcDir function - reduced security checks to prevent terminal crashes
-function loadRcDir() {
-  # Skip if directory doesn't exist
-  [[ ! -d "$1" ]] && return 0
-  
-  local rcFile
-  
-  # Simple loading of files without complex checks
-  for rcFile in "$1"/*; do
-    # Skip non-files
-    [[ ! -f "$rcFile" ]] && continue
-    
-    # Source the file with error redirection
-    source "$rcFile" 2>/dev/null || true
-  done
-  
-  return 0
-}
+# REMOVED: loadRcDir function was causing terminal crashes
+# Use safe_load_directory instead if needed
 
 # Improved logging functions
 function emsg() { echo -e " ${LIGHTGREEN}*${NC} $*" >&2; }

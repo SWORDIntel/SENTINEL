@@ -242,6 +242,3 @@ export SENTINEL_MODULE_VERIFY=1
 
 # Silence module status messages
 export SENTINEL_QUIET_STATUS=1
-
-# Enable Small LLM module
-export SENTINEL_SMALLLLM_ENABLED=1
