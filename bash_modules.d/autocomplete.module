@@ -6,7 +6,15 @@
 # Author  : SENTINEL Team
 # License : MIT
 #-----------------------------------------------------------------------------
-set -euo pipefail
+# DO NOT use strict error handling as it can cause terminal crashes
+# set -euo pipefail
+
+# Make sure we have color variables defined to prevent crashes
+RED="\033[0;31m" 2>/dev/null || RED=""
+GREEN="\033[0;32m" 2>/dev/null || GREEN=""
+YELLOW="\033[0;33m" 2>/dev/null || YELLOW=""
+BLUE="\033[0;34m" 2>/dev/null || BLUE=""
+NC="\033[0m" 2>/dev/null || NC=""
 
 ###############################################################################
 # 0.  Metadata
@@ -19,10 +27,20 @@ SENTINEL_AUTOCOMPLETE_AUTHOR="SENTINEL Team"
 # 1.  Logging (secure, robust)
 ###############################################################################
 SENTINEL_LOG_DIR="${HOME}/logs"
-mkdir -p "$SENTINEL_LOG_DIR"
+# Create directory with error handling
+{ mkdir -p "$SENTINEL_LOG_DIR"; } 2>/dev/null || true
 _sentinel_log() {
+    # Exit early if no arguments to prevent crashes
+    [[ $# -lt 1 ]] && return 0
+    
     local level="$1"; shift
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $level: $*" >> "$SENTINEL_LOG_DIR/autocomplete-$(date +%Y%m%d).log"
+    # Use protected commands with error handling
+    { 
+        echo "[$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 'unknown')] $level: $*" >> "$SENTINEL_LOG_DIR/autocomplete-$(date +%Y%m%d 2>/dev/null || echo 'unknown').log"; 
+    } 2>/dev/null || true
+    
+    # Always return success
+    return 0
 }
 _sentinel_log_info()    { _sentinel_log "INFO"    "$@"; }
 _sentinel_log_warning() { _sentinel_log "WARNING" "$@"; }
@@ -46,50 +64,69 @@ sentinel_autocomplete_register_module() {
 ###############################################################################
 SENTINEL_BLESH_LOADER="${HOME}/blesh_loader.sh"
 sentinel_check_blesh() {
-    # Check if BLE.sh is already loaded
-    if type -t bleopt &>/dev/null; then
-        _sentinel_log_info "BLE.sh already loaded" 2>/dev/null || true
-        return 0
-    fi
-    
-    # Check if loader exists
-    if [[ ! -f $SENTINEL_BLESH_LOADER ]]; then
-        # Create a simplified loader on-the-fly if it doesn't exist
-        cat > "$SENTINEL_BLESH_LOADER" <<'EOF'
+    { # Use a block with error redirection for all BLE.sh operations
+        # Check if BLE.sh is already loaded
+        if type -t bleopt &>/dev/null; then
+            { _sentinel_log_info "BLE.sh already loaded"; } 2>/dev/null || true
+            return 0
+        fi
+        
+        # Check if loader exists - with robust error handling
+        if [[ ! -f $SENTINEL_BLESH_LOADER ]]; then
+            # Create a simplified loader on-the-fly if it doesn't exist
+            # First ensure parent directory exists
+            { mkdir -p "$(dirname "$SENTINEL_BLESH_LOADER")"; } 2>/dev/null || true
+            
+            # Use a safer approach to create the file
+            {
+                cat > "$SENTINEL_BLESH_LOADER.tmp" <<'EOF' && mv "$SENTINEL_BLESH_LOADER.tmp" "$SENTINEL_BLESH_LOADER"
 #!/bin/bash
-# Auto-generated BLE.sh loader
+# Auto-generated BLE.sh loader with ultra-robust error handling
 [[ -n ${SENTINEL_BLESH_LOADED:-} ]] && return 0
 export SENTINEL_BLESH_LOADED=1
 BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
 if [[ -f "${BLESH_MAIN}" ]]; then
   # Fix for 'unrecognized attach method' error
-  export BLESH_ATTACH_METHOD="attach"
-  source "${BLESH_MAIN}" --attach=attach 2>/dev/null || true
+  { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true
+  { source "${BLESH_MAIN}" --attach=attach; } 2>/dev/null || true
 fi
+# Always return success
+return 0
 EOF
-        chmod 644 "$SENTINEL_BLESH_LOADER" 2>/dev/null || true
-        _sentinel_log_info "Created minimal BLE.sh loader" 2>/dev/null || true
-    fi
+            } 2>/dev/null || true
+            
+            # Set permissions with error handling
+            { chmod 644 "$SENTINEL_BLESH_LOADER"; } 2>/dev/null || true
+            { _sentinel_log_info "Created minimal BLE.sh loader"; } 2>/dev/null || true
+        fi
+        
+        # Try to source the loader with comprehensive error handling
+        { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true  # Set this before sourcing the loader
+        
+        # Source with maximum protection
+        {
+            { source "$SENTINEL_BLESH_LOADER"; } 2>/dev/null || {
+                # Try alternative sourcing method if the first fails
+                { . "$SENTINEL_BLESH_LOADER"; } 2>/dev/null || {
+                    # Log failure but continue
+                    { _sentinel_log_error "Failed to source BLE.sh loader"; } 2>/dev/null || true
+                }
+            }
+        } 2>/dev/null || true
+        
+        # Check if BLE.sh was successfully loaded
+        if type -t bleopt &>/dev/null; then
+            { _sentinel_log_info "BLE.sh successfully loaded"; } 2>/dev/null || true
+            # Show a success message if this was an explicit action
+            [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] && { echo "BLE.sh successfully loaded"; } 2>/dev/null || true
+        else
+            # Silent failure with minimal output
+            { _sentinel_log_warning "BLE.sh loading skipped"; } 2>/dev/null || true
+        fi
+    } 2>/dev/null || true
     
-    # Try to source the loader with proper error handling
-    export BLESH_ATTACH_METHOD="attach"  # Set this before sourcing the loader
-    source "$SENTINEL_BLESH_LOADER" 2>/dev/null || {
-        # Silent failure - don't crash the terminal
-        _sentinel_log_error "Failed to source BLE.sh loader" 2>/dev/null || true
-        return 0  # Return success anyway to prevent terminal crashes
-    }
-    
-    # Check if BLE.sh was successfully loaded
-    if type -t bleopt &>/dev/null; then
-        _sentinel_log_info "BLE.sh successfully loaded" 2>/dev/null || true
-        # Show a success message if this was an explicit action
-        [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] && echo "BLE.sh successfully loaded"
-        return 0
-    else
-        # Silent failure with minimal output
-        _sentinel_log_warning "BLE.sh loading skipped" 2>/dev/null || true
-        return 0  # Return success to prevent terminal crashes
-    fi
+    # Always return success to prevent terminal crashes
+    return 0
 }
 sentinel_blesh_status() {
     if type -t bleopt &>/dev/null; then
@@ -284,11 +321,31 @@ sentinel_autocomplete_list_modules_names() {
 # 6.  Initialization
 ###############################################################################
 sentinel_autocomplete_init() {
+    # Skip if not in interactive shell
     [[ $- != *i* ]] && return 0
-    _sentinel_log_info "Initializing autocomplete system"
-    sentinel_autocomplete_register_module "manager" "$SENTINEL_AUTOCOMPLETE_VERSION" "${BASH_SOURCE[0]}"
-    _sentinel_snippet_import_all
-    echo "SENTINEL Autocomplete v${SENTINEL_AUTOCOMPLETE_VERSION} loaded"
+    
+    # Create all necessary directories first to prevent crashes
+    {
+        # Create the full set of required directories with error handling
+        mkdir -p "${HOME}/autocomplete" 2>/dev/null || true
+        mkdir -p "${HOME}/autocomplete/snippets" 2>/dev/null || true
+        mkdir -p "${HOME}/autocomplete/context" 2>/dev/null || true
+        mkdir -p "${HOME}/autocomplete/projects" 2>/dev/null || true
+        mkdir -p "${HOME}/autocomplete/params" 2>/dev/null || true
+        mkdir -p "${HOME}/logs" 2>/dev/null || true
+        mkdir -p "${HOME}/.cache/blesh" 2>/dev/null || true
+    } 2>/dev/null || true
+    
+    # Initialize with robust error handling
+    { _sentinel_log_info "Initializing autocomplete system"; } 2>/dev/null || true
+    { sentinel_autocomplete_register_module "manager" "$SENTINEL_AUTOCOMPLETE_VERSION" "${BASH_SOURCE[0]}"; } 2>/dev/null || true
+    { _sentinel_snippet_import_all; } 2>/dev/null || true
+    
+    # Output only if in verbose mode
+    [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] && { echo "SENTINEL Autocomplete v${SENTINEL_AUTOCOMPLETE_VERSION} loaded"; } 2>/dev/null || true
+    
+    # Always return success
+    return 0
 }
 sentinel_autocomplete_init
 

@@ -15,11 +15,19 @@
 # Conflicts:
 ### END MODULE INFO
 
+# Ensure color variables are defined to prevent crashes if they're not set elsewhere
+RED="\033[0;31m" 2>/dev/null || RED=""
+GREEN="\033[0;32m" 2>/dev/null || GREEN=""
+YELLOW="\033[0;33m" 2>/dev/null || YELLOW=""
+BLUE="\033[0;34m" 2>/dev/null || BLUE=""
+CYAN="\033[0;36m" 2>/dev/null || CYAN=""
+NC="\033[0m" 2>/dev/null || NC=""
+
 # Check if the module is enabled
 if [[ "${SENTINEL_OBFUSCATE_ENABLED:-1}" != "1" ]]; then
-    echo "SENTINEL obfuscation module is disabled."
-    echo "To enable, add the following line to your ~/.bashrc.postcustom file:"
-    echo "  export SENTINEL_OBFUSCATE_ENABLED=1"
+    echo "SENTINEL obfuscation module is disabled." 2>/dev/null || true
+    echo "To enable, add the following line to your ~/.bashrc.postcustom file:" 2>/dev/null || true
+    echo "  export SENTINEL_OBFUSCATE_ENABLED=1" 2>/dev/null || true
     return 0
 fi
 
@@ -29,22 +37,22 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     exit 1
 fi
 
-# Display initial message with warning
-echo -e "${RED}[!] WARNING: Obfuscation module loaded${NC}"
-echo -e "${YELLOW}These tools are for legitimate security testing and educational purposes only.${NC}"
-echo -e "${YELLOW}Improper use may violate laws and organizational policies.${NC}"
-echo -e "${GREEN}Type 'obfuscate_help' for usage information.${NC}"
+# Display initial message with warning - with error handling
+{ echo -e "${RED}[!] WARNING: Obfuscation module loaded${NC}"; } 2>/dev/null || true
+{ echo -e "${YELLOW}These tools are for legitimate security testing and educational purposes only.${NC}"; } 2>/dev/null || true
+{ echo -e "${YELLOW}Improper use may violate laws and organizational policies.${NC}"; } 2>/dev/null || true
+{ echo -e "${GREEN}Type 'obfuscate_help' for usage information.${NC}"; } 2>/dev/null || true
 
 # Configuration
 OBFUSCATE_TEMP_DIR="${OBFUSCATE_TEMP_DIR:-/tmp/obfuscate_temp}"
 OBFUSCATE_OUTPUT_DIR="${OBFUSCATE_OUTPUT_DIR:-${HOME}/obfuscated_files}"
 
-# Create necessary directories
-mkdir -p "$OBFUSCATE_TEMP_DIR" 2>/dev/null
-mkdir -p "$OBFUSCATE_OUTPUT_DIR" 2>/dev/null
+# Create necessary directories with error handling
+mkdir -p "$OBFUSCATE_TEMP_DIR" 2>/dev/null || true
+mkdir -p "$OBFUSCATE_OUTPUT_DIR" 2>/dev/null || true
 
-# Clean up temp files on exit
-trap 'rm -rf "${OBFUSCATE_TEMP_DIR:-/tmp/obfuscate_temp}/"*' EXIT
+# Clean up temp files on exit - with error handling
+trap 'rm -rf "${OBFUSCATE_TEMP_DIR:-/tmp/obfuscate_temp}/"* 2>/dev/null || true' EXIT HUP INT TERM
 
 # Help function
 obfuscate_help() {
@@ -1450,8 +1458,14 @@ EOF
     echo -e "  $decompressor [input_file] [output_file]"
 }
 
-# Check for required tools on load
-obfuscate_check_tools > /dev/null
+# Check for required tools on load - with error handling
+{ obfuscate_check_tools > /dev/null; } 2>/dev/null || true
 
-# Display module loaded message
-echo -e "${GREEN}[+]${NC} File obfuscation module loaded with ${CYAN}$(( $(declare -F | grep -c "^declare -f obfuscate_") ))${NC} obfuscation techniques."
+# Count obfuscation techniques safely
+OBFUSCATE_FUNC_COUNT=$(declare -F | grep -c "^declare -f obfuscate_" 2>/dev/null || echo "several")
+
+# Display module loaded message with error handling
+{ echo -e "${GREEN}[+]${NC} File obfuscation module loaded with ${CYAN}${OBFUSCATE_FUNC_COUNT}${NC} obfuscation techniques."; } 2>/dev/null || true
+
+# Always return success to prevent terminal crashes
+return 0

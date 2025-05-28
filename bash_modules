@@ -281,26 +281,17 @@ module_enable() {
         chmod +x "$module_file" 2>/dev/null || true
     fi
     
-    # Using cached config loading if available - with error handling
-    if type load_cached_config &>/dev/null && [[ "${SENTINEL_CONFIG_CACHE_ENABLED:-1}" == "1" ]]; then
-        [[ "$debug_mode" == "1" ]] && echo "DEBUG: Loading module '$module_name' with caching" >&2 2>/dev/null || true
-        
-        # Try cached loading with error handling
-        if load_cached_config "$module_file" ${debug_mode:+--debug} 2>/dev/null; then
-            module_loaded=1
-        else
-            # If caching fails, fall back to direct loading with error handling
-            [[ "$debug_mode" == "1" ]] && echo "DEBUG: Caching failed, falling back to direct loading" >&2 2>/dev/null || true
-            if source "$module_file" 2>/dev/null; then
-                module_loaded=1
-            fi
-        fi
+    # Always use safe_source_module for consistency and maximum protection
+    # Don't rely on specialized functions that might not be available
+    [[ "$debug_mode" == "1" ]] && { echo "DEBUG: Loading module '$module_name' safely" >&2; } 2>/dev/null || true
+    
+    # Use our super-safe module loader regardless of config cache setting
+    if safe_source_module "$module_file"; then
+        module_loaded=1
     else
-        # Traditional direct loading with error handling
-        [[ "$debug_mode" == "1" ]] && echo "DEBUG: Loading module '$module_name' directly" >&2 2>/dev/null || true
-        if source "$module_file" 2>/dev/null; then
-            module_loaded=1
-        fi
+        # If safe loading fails, log the issue but continue
+        { echo "Warning: Module '$module_name' failed to load, but continuing" >&2; } 2>/dev/null || true
+        module_loaded=0
     fi
     
     # Process the loading result - with error handling
@@ -336,6 +327,9 @@ module_enable() {
 # Function to load all modules in enabled modules list with enhanced error handling
 # to prevent terminal crashes
 _load_enabled_modules() {
+    # First set up safety nets
+    trap '' ERR
+    set +e
     local debug_mode="${SENTINEL_DEBUG_MODULES:-0}"
     
     [[ "$debug_mode" == "1" ]] && echo "DEBUG: Loading enabled modules from $HOME/.bash_modules" >&2 2>/dev/null || true
@@ -620,11 +614,71 @@ if [[ -n "${SENTINEL_MODULES+x}" ]]; then
     done
 fi
 
-# Load modules on startup
-_load_enabled_modules
+# Safe module loading wrapper to prevent any module from crashing the terminal
+safe_module_loader() {
+    local function_name="$1"
+    shift
+    
+    # Create a subshell with error handling to protect the main shell
+    (
+        # Temporarily disable error trapping
+        trap '' ERR
+        # Disable shell error exit behavior
+        set +e
+        
+        # Call the function with its arguments, redirecting errors
+        "$function_name" "$@" 2>/dev/null || true
+        
+        # Always return success
+        return 0
+    ) 2>/dev/null || true
+    
+    # Always return success to prevent terminal crashes
+    return 0
+}
 
-# Load all modules from all subdirectories
-_load_all_modules
+# Create safer wrappers for problematic modules
+safe_source_module() {
+    local module_path="$1"
+    
+    # Safety check for empty path
+    if [[ -z "$module_path" ]]; then
+        return 0
+    fi
+    
+    # Check if file exists with better error handling
+    if [[ ! -f "$module_path" ]]; then
+        return 0
+    fi
+    
+    # Get module name for logging with error handling
+    local module_name=$(basename "$module_path" 2>/dev/null) || local module_name="unknown"
+    
+    # Don't use a subshell - it can cause issues with variable scope
+    # Instead use a more direct approach with comprehensive error handling
+    
+    # Disable error trapping and error exit
+    local old_opts=$(set +o)
+    trap '' ERR
+    set +e
+    
+    # Source the module with error handling - fully protected
+    { source "$module_path" ; } 2>/dev/null || {
+        { echo "Warning: Failed to load module: $module_name" >&2 ; } 2>/dev/null || true
+    }
+    
+    # Restore previous shell options
+    eval "$old_opts" 2>/dev/null || true
+    
+    # Always return success
+    return 0
+}
+
+# Load modules on startup with safety wrapper
+safe_module_loader _load_enabled_modules
+
+# Load all modules from all subdirectories with safety wrapper
+safe_module_loader _load_all_modules
 
 # Interactive menu for module management
 module_menu() {

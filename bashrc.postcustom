@@ -76,26 +76,35 @@ export CCACHE_SIZE="5G"                  # Maximum size of ccache
 
 # =============================
 # =============================
-# Safe module loading with error handling
-if [[ -f "${HOME}/.bash_modules" ]]; then
-    while IFS= read -r module; do
-        # Skip empty lines and comments
-        [[ -z "$module" || "$module" =~ ^# ]] && continue
-        
-        # Check if module_enable function exists
-        if type module_enable &>/dev/null; then
-            # Safely load module with error redirection
-            module_enable "$module" 2>/dev/null || true
-        else
-            # Direct loading fallback if module_enable isn't available
-            if [[ -f "${HOME}/.bash_modules.d/${module}.module" ]]; then
-                source "${HOME}/.bash_modules.d/${module}.module" 2>/dev/null || true
-            elif [[ -f "${HOME}/.bash_modules.d/${module}.sh" ]]; then
-                source "${HOME}/.bash_modules.d/${module}.sh" 2>/dev/null || true
-            fi
-        fi
-    done < "${HOME}/.bash_modules"
-fi
+# SAFER module loading with ultra-robust error handling
+# This completely prevents terminal crashes even if modules are broken
+{ 
+    # Only attempt module loading if the file exists
+    if [[ -f "${HOME}/.bash_modules" ]]; then
+        # Read modules in a protected way that can't crash the terminal
+        { 
+            while IFS= read -r module || [[ -n "$module" ]]; do
+                # Skip empty lines and comments with proper quoting
+                [[ -z "$module" || "$module" =~ ^[[:space:]]*# ]] && continue
+                
+                # Extremely safe module loading with multiple layers of protection
+                {
+                    # Try module_enable if it exists
+                    if type module_enable &>/dev/null; then
+                        { module_enable "$module"; } 2>/dev/null || true
+                    else
+                        # Direct loading with ultimate fallback protection
+                        if [[ -f "${HOME}/.bash_modules.d/${module}.module" ]]; then
+                            { source "${HOME}/.bash_modules.d/${module}.module"; } 2>/dev/null || true
+                        elif [[ -f "${HOME}/.bash_modules.d/${module}.sh" ]]; then
+                            { source "${HOME}/.bash_modules.d/${module}.sh"; } 2>/dev/null || true
+                        fi
+                    fi
+                } 2>/dev/null || true
+            done < "${HOME}/.bash_modules"
+        } 2>/dev/null || true
+    fi
+} 2>/dev/null || true
 
 # ========================================================================
 # Performance Configuration
@@ -131,49 +140,49 @@ fi
 # =============================
 if [[ "${CONFIG[LAZY_LOAD]}" == "1" || "$U_LAZY_LOAD" == "1" ]]; then
     function pyenv() {
-        unset -f pyenv
+        { unset -f pyenv; } 2>/dev/null || true
         if [[ -d "$HOME/.pyenv" ]]; then
-            export PYENV_ROOT="$HOME/.pyenv"
-            export PATH="$PYENV_ROOT/bin:$PATH"
-            eval "$(command pyenv init -)"
-            eval "$(command pyenv virtualenv-init -)"
-            pyenv "$@"
+            { export PYENV_ROOT="$HOME/.pyenv"; } 2>/dev/null || true
+            { export PATH="$PYENV_ROOT/bin:$PATH"; } 2>/dev/null || true
+            { eval "$(command pyenv init - 2>/dev/null)"; } 2>/dev/null || true
+            { eval "$(command pyenv virtualenv-init - 2>/dev/null)"; } 2>/dev/null || true
+            { pyenv "$@"; } 2>/dev/null || return 0
         else
-            echo "pyenv is not installed"
-            return 1
+            { echo "pyenv is not installed"; } 2>/dev/null || true
+            return 0
         fi
     }
     function nvm() {
-        unset -f nvm
+        { unset -f nvm; } 2>/dev/null || true
         if [[ -d "$HOME/.nvm" ]]; then
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-            [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"
-            nvm "$@"
+            { export NVM_DIR="$HOME/.nvm"; } 2>/dev/null || true
+            { [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; } 2>/dev/null || true
+            { [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"; } 2>/dev/null || true
+            { nvm "$@"; } 2>/dev/null || return 0
         else
-            echo "nvm is not installed"
-            return 1
+            { echo "nvm is not installed"; } 2>/dev/null || true
+            return 0
         fi
     }
     function node() {
-        unset -f node
-        nvm >/dev/null 2>&1
-        node "$@"
+        { unset -f node; } 2>/dev/null || true
+        { nvm >/dev/null 2>&1; } 2>/dev/null || true
+        { node "$@"; } 2>/dev/null || return 0
     }
     function npm() {
-        unset -f npm
-        nvm >/dev/null 2>&1
-        npm "$@"
+        { unset -f npm; } 2>/dev/null || true
+        { nvm >/dev/null 2>&1; } 2>/dev/null || true
+        { npm "$@"; } 2>/dev/null || return 0
     }
     function python() {
-        unset -f python
-        pyenv >/dev/null 2>&1
-        python "$@"
+        { unset -f python; } 2>/dev/null || true
+        { pyenv >/dev/null 2>&1; } 2>/dev/null || true
+        { python "$@"; } 2>/dev/null || return 0
     }
     function pip() {
-        unset -f pip
-        pyenv >/dev/null 2>&1
-        pip "$@"
+        { unset -f pip; } 2>/dev/null || true
+        { pyenv >/dev/null 2>&1; } 2>/dev/null || true
+        { pip "$@"; } 2>/dev/null || return 0
     }
 fi
 
@@ -183,12 +192,22 @@ export U_LAZY_LOAD=1
 # End of bashrc.postcustom
 # =============================
 
-# Load BLE.sh if available - with proper error handling
-if [[ -f "${HOME}/blesh_loader.sh" ]]; then
-    # Fix for 'unrecognized attach method' error
-    export BLESH_ATTACH_METHOD="attach"
-    source "${HOME}/blesh_loader.sh" 2>/dev/null || true
-fi
+# Load BLE.sh if available - with ultra-robust error handling
+{
+    if [[ -f "${HOME}/blesh_loader.sh" ]]; then
+        # Fix for 'unrecognized attach method' error
+        { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true
+        
+        # Super-safe source with multiple layers of protection
+        {
+            # Try to source with explicit error handling
+            { source "${HOME}/blesh_loader.sh"; } 2>/dev/null || {
+                # If that fails, try the dot operator
+                { . "${HOME}/blesh_loader.sh"; } 2>/dev/null || true
+            }
+        } 2>/dev/null || true
+    fi
+} 2>/dev/null || true
 
 # =============================
 # SENTINEL Feature Module Toggles

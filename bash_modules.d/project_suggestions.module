@@ -10,13 +10,21 @@
 [[ -n "${_SENTINEL_PROJECT_SUGGESTIONS_LOADED}" ]] && return 0
 export _SENTINEL_PROJECT_SUGGESTIONS_LOADED=1
 
-# Set strict error handling
-set -o pipefail
+# Make sure we have color variables defined to prevent crashes
+RED="\033[0;31m" 2>/dev/null || RED=""
+GREEN="\033[0;32m" 2>/dev/null || GREEN=""
+YELLOW="\033[0;33m" 2>/dev/null || YELLOW=""
+BLUE="\033[0;34m" 2>/dev/null || BLUE=""
+NC="\033[0m" 2>/dev/null || NC=""
+
+# Don't use strict error handling as it can cause terminal crashes
+# set -o pipefail
 
 # FEATURE: Project-Specific Suggestions
 # Detects project types and provides contextually relevant suggestions
 _sentinel_project_suggestions() {
-    local current_dir=$(pwd)
+    # Add error handling to prevent terminal crashes
+    local current_dir=$(pwd 2>/dev/null) || local current_dir="$HOME"
     local project_root="$current_dir"
     local project_type=""
     local project_subtypes=()
@@ -197,10 +205,10 @@ _sentinel_project_suggestions() {
         sed -i "s/last_used=.*/last_used=$(date +%s)/" "$project_file"
     fi
     
-    # Check if ble.sh is available for enhanced suggestions
+    # Check if ble.sh is available for enhanced suggestions - with error handling
     if ! type -t ble-sabbrev &>/dev/null; then
-        _projects_log_warning "BLE.sh not available - project suggestions will be limited"
-        return
+        { _projects_log_warning "BLE.sh not available - project suggestions will be limited"; } 2>/dev/null || true
+        return 0
     fi
     
     # Project-specific suggestions based on type and subtypes
@@ -444,56 +452,64 @@ _sentinel_project_suggestions() {
     fi
 }
 
-# Logging functions
+# Logging functions with error handling
 _projects_log_error() {
     local msg="$1"
-    mkdir -p ~/.sentinel/logs
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $msg" >> ~/.sentinel/logs/errors-$(date +%Y%m%d).log
+    { mkdir -p ~/.sentinel/logs; } 2>/dev/null || return 0
+    { echo "[$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 'unknown')] ERROR: $msg" >> ~/.sentinel/logs/errors-$(date +%Y%m%d 2>/dev/null || echo 'unknown').log; } 2>/dev/null || true
+    return 0
 }
 
 _projects_log_warning() {
     local msg="$1"
-    mkdir -p ~/.sentinel/logs
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: $msg" >> ~/.sentinel/logs/warnings-$(date +%Y%m%d).log
+    { mkdir -p ~/.sentinel/logs; } 2>/dev/null || return 0
+    { echo "[$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo 'unknown')] WARNING: $msg" >> ~/.sentinel/logs/warnings-$(date +%Y%m%d 2>/dev/null || echo 'unknown').log; } 2>/dev/null || true
+    return 0
 }
 
-# Register project hook with ble.sh if available
+# Register project hook with ble.sh if available - with robust error handling
 _register_project_hook() {
+    # Try to register with ble.sh first if available
     if type -t blehook &>/dev/null; then
-        # Check if hook exists first
-        if ! blehook ATTACH_LINE_END 2>/dev/null | grep -q _sentinel_project_suggestions; then
-            blehook ATTACH_LINE_END+=_sentinel_project_suggestions 2>/dev/null || true
+        # Check if hook exists first with proper error handling
+        local hook_exists=0
+        { blehook ATTACH_LINE_END 2>/dev/null | grep -q _sentinel_project_suggestions && hook_exists=1; } 2>/dev/null || true
+        
+        if [[ $hook_exists -eq 0 ]]; then
+            { blehook ATTACH_LINE_END+=_sentinel_project_suggestions; } 2>/dev/null || true
         fi
     else
-        # Fallback to PROMPT_COMMAND if ble.sh not available
-        if [[ ! "$PROMPT_COMMAND" =~ _sentinel_project_suggestions ]]; then
-            PROMPT_COMMAND="_sentinel_project_suggestions;${PROMPT_COMMAND:-:}"
+        # Fallback to PROMPT_COMMAND if ble.sh not available - with error handling
+        if [[ ! "${PROMPT_COMMAND:-}" =~ _sentinel_project_suggestions ]]; then
+            PROMPT_COMMAND="_sentinel_project_suggestions 2>/dev/null || true;${PROMPT_COMMAND:-:}"
         fi
     fi
-}
-
-# Initialize the project suggestion system
-sentinel_init_project_suggestions() {
-    # Skip if not in interactive shell
-    [[ $- != *i* ]] && return 0
-    
-    # Set up error handling
-    set -o pipefail
-    
-    # Create required directories
-    mkdir -p ~/.sentinel/autocomplete/projects
-    
-    # Register with the appropriate hook system
-    _register_project_hook
-    
-    # Create initial project detection in background
-    (_sentinel_project_suggestions &>/dev/null &)
-    
-    # Log startup
-    _projects_log_warning "Project suggestion system initialized"
     
     return 0
 }
 
-# Run initialization
-sentinel_init_project_suggestions 
+# Initialize the project suggestion system with robust error handling
+sentinel_init_project_suggestions() {
+    # Skip if not in interactive shell
+    [[ $- != *i* ]] && return 0
+    
+    # Create required directories with error handling
+    { mkdir -p ~/.sentinel/autocomplete/projects; } 2>/dev/null || true
+    
+    # Register with the appropriate hook system
+    { _register_project_hook; } 2>/dev/null || true
+    
+    # Create initial project detection in background with proper isolation
+    ( { _sentinel_project_suggestions; } &>/dev/null & ) 2>/dev/null || true
+    
+    # Log startup with error handling
+    { _projects_log_warning "Project suggestion system initialized"; } 2>/dev/null || true
+    
+    return 0
+}
+
+# Run initialization with error handling to prevent terminal crashes
+{ sentinel_init_project_suggestions; } 2>/dev/null || true
+
+# Always return success to prevent terminal crashes
+return 0
