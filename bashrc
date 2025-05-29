@@ -65,6 +65,11 @@ if [[ -d "$HOME/.local/bin" ]]; then
   PATH="$HOME/.local/bin:$PATH"
 fi
 
+# Add Go binary path
+if [[ -d "$HOME/go/go/bin" ]]; then
+  PATH="$HOME/go/go/bin:$PATH"
+fi
+
 # Clean up any duplicate entries
 sanitize_path
 
