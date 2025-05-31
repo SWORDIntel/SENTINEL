@@ -24,32 +24,32 @@ BLSH_BIN="${HOME}/.local/bin/blesh"
 _ble_install() {
     if [[ -d "$BLSH_DIR/.git" ]]; then
         _ble_info "BLE.sh already cloned, pulling latest changes"
-        local last_check_file="\$BLSH_DIR/.last_update_check";
+        local last_check_file=\"$BLSH_DIR/.last_update_check\";
         local now_ts=\$(date +%s);
         local update_interval=\$((24 * 60 * 60)); # 1 day in seconds
         local should_update=0;
 
-        if [[ ! -f "\$last_check_file" ]]; then
+        if [[ ! -f \"$last_check_file\" ]]; then
             should_update=1;
-            _ble_info "Last update check timestamp not found, will check for BLE.sh updates.";
+            _ble_info \"Last update check timestamp not found, will check for BLE.sh updates.\";
         else
-            local last_check_ts=\$(cat "\$last_check_file");
+            local last_check_ts=\$(cat \"$last_check_file\");
             if (( now_ts - last_check_ts > update_interval )); then
                 should_update=1;
-                _ble_info "Update interval elapsed, will check for BLE.sh updates.";
+                _ble_info \"Update interval elapsed, will check for BLE.sh updates.\";
             else
-                _ble_info "Skipping BLE.sh update check, last check was recent.";
+                _ble_info \"Skipping BLE.sh update check, last check was recent.\";
             fi;
         fi;
 
-        if [[ "\$should_update" -eq 1 ]]; then
-            _ble_info "Checking for BLE.sh updates (git pull)...";
+        if [[ \"$should_update\" -eq 1 ]]; then
+            _ble_info \"Checking for BLE.sh updates (git pull)...\";
                     git -C "$BLSH_DIR" pull --ff-only || { _ble_error "Failed to update BLE.sh"; return 1; }
             if [[ \$? -eq 0 ]]; then
-                echo "\$now_ts" > "\$last_check_file";
-                _ble_info "BLE.sh updated successfully or was already up-to-date.";
+                echo \"$now_ts\" > \"$last_check_file\";
+                _ble_info \"BLE.sh updated successfully or was already up-to-date.\";
             else
-                _ble_error "Failed to update BLE.sh via git pull (new logic check). Original error handling in effect.";
+                _ble_error \"Failed to update BLE.sh via git pull (new logic check). Ensure _ble_error is available.\";
             fi;
         fi;
     else
