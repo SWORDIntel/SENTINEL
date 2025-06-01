@@ -39,17 +39,17 @@ sanitize_path() {
     export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
     return 0
   fi
-  
+
   # Simple deduplication without complex validation
   local path_parts=$(echo $PATH | tr ':' '\n' | awk '!seen[$0]++' | tr '\n' ':' | sed 's/:$//')
-  
+
   # Use fallback if result is empty
   if [[ -z "$path_parts" ]]; then
     export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
   else
     export PATH="$path_parts"
   fi
-  
+
   return 0
 }
 
@@ -170,7 +170,7 @@ extract() {
 mkvenv() {
   local venv_name="${1:-venv}"
   local python_cmd="python3"
-  
+
   # Check if Python is available
   if ! command -v $python_cmd &>/dev/null; then
     python_cmd="python"
@@ -179,22 +179,22 @@ mkvenv() {
       return 1
     fi
   fi
-  
+
   # Check if virtualenv command exists, otherwise use venv module
   if command -v virtualenv &>/dev/null; then
-    { virtualenv "$venv_name" 2>/dev/null || echo "Error creating virtualenv $venv_name" >&2; } && 
+    { virtualenv "$venv_name" 2>/dev/null || echo "Error creating virtualenv $venv_name" >&2; } &&
     echo "Created virtualenv: $venv_name (using virtualenv)"
   else
     # Try to create using the venv module with error handling
     { $python_cmd -m venv "$venv_name" 2>/dev/null || echo "Error creating venv $venv_name" >&2; } &&
     echo "Created virtualenv: $venv_name (using python -m venv)"
   fi
-  
+
   # Provide activation instructions
   if [ -d "$venv_name" ]; then
     echo "Activate it with: source $venv_name/bin/activate"
   fi
-  
+
   return 0  # Always return success to prevent terminal crashes
 }
 
@@ -224,31 +224,31 @@ safe_load_directory() {
   {
     local dir="$1"
     local pattern="$2"
-    
+
     # Skip if directory doesn't exist
     [[ ! -d "$dir" ]] && return 0
-    
+
     # Use nullglob to prevent errors when no files match
     shopt -q nullglob && local NULLGLOB_WAS_SET=1 || local NULLGLOB_WAS_SET=0
     shopt -s nullglob
-    
+
     # Simple, direct file listing - less error prone
     local files=("$dir"/$pattern)
-    
+
     # Restore nullglob setting
     [[ "$NULLGLOB_WAS_SET" == "0" ]] && shopt -u nullglob
-    
+
     # Source each file with comprehensive error handling
     local file
     for file in "${files[@]}"; do
       # Skip non-existent or non-file entries
       [[ ! -f "$file" ]] && continue
-      
+
       # Use safe_source function
       safe_source "$file"
     done
   } 2>/dev/null || true
-  
+
   # Always return success
   return 0
 }
@@ -288,25 +288,25 @@ load_module() {
   local module_path=""
   local max_depth=5 # Prevent infinite recursion
   local current_depth=0
-  
+
   # Check if the module is already loaded
   for loaded in "${_module_loaded[@]}"; do
     if [[ "$loaded" == "$module_name" ]]; then
       return 0 # Already loaded, nothing to do
     fi
   done
-  
+
   # Function to find and load a module
   _find_and_load_module() {
     local module="$1"
     local depth="$2"
-    
+
     # Check recursion depth
     if ((depth > max_depth)); then
       echo "Warning: Maximum recursion depth reached when loading $module" >&2
       return 0 # Return success anyway to avoid crashing
     fi
-    
+
     # Find the module file in standard locations
     local module_file=""
     local locations=(
@@ -314,60 +314,60 @@ load_module() {
       "$HOME/.bash_modules.d/${module}.module"
       "$HOME/Documents/GitHub/SENTINEL/bash_modules.d/${module}.module"
     )
-    
+
     for location in "${locations[@]}"; do
       if [[ -f "$location" ]]; then
         module_file="$location"
         break
       fi
     done
-    
+
     # If module not found, return success anyway to avoid crashes
     if [[ -z "$module_file" ]]; then
       echo "Warning: Module '$module' not found" >&2
       return 0
     fi
-    
+
     # Source the module with error handling
     { source "$module_file"; } 2>/dev/null || {
       echo "Warning: Error loading module '$module'" >&2
       return 0 # Return success anyway to avoid crashing
     }
-    
+
     # Mark as loaded to prevent duplicates
     _module_loaded+=("$module")
-    
+
     return 0
   }
-  
+
   # Load the module
   _find_and_load_module "$module_name" 0
-  
+
   return 0 # Always return success to prevent crashes
 }
 
 # Function to load a list of enabled modules from a file
 load_enabled_modules() {
   local modules_file="$1"
-  
+
   # Check if the file exists
   if [[ ! -f "$modules_file" ]]; then
     echo "Warning: Modules list file '$modules_file' not found" >&2
     return 0 # Return success anyway to avoid crashes
   fi
-  
+
   # Read the file line by line with error handling
   while IFS= read -r module || [[ -n "$module" ]]; do
     # Skip empty lines and comments
     [[ -z "$module" || "$module" == \#* ]] && continue
-    
+
     # Load the module
     load_module "$module"
   done < "$modules_file" 2>/dev/null || {
     echo "Warning: Error reading modules file '$modules_file'" >&2
     return 0 # Return success anyway to avoid crashes
   }
-  
+
   return 0 # Always return success to prevent crashes
 }
 
@@ -395,56 +395,33 @@ fi
 # Load critical modules with robust error handling - ONLY if not already loaded
 if [[ "$_SENTINEL_MODULES_LOADED" == "0" ]]; then
   # Check if a modules list exists and load enabled modules
-# Original block for loading $HOME/.enabled_modules replaced by new logic below
-# This section determines which .enabled_modules file to use
-ENABLED_MODULES_FILE="$HOME/.enabled_modules"
-DEFAULT_ENABLED_MODULES_FILE="config/.enabled_modules" # Relative to repo root
+  if [[ -f "$HOME/.enabled_modules" ]]; then
+    echo "Loading enabled modules from $HOME/.enabled_modules..."
 
-if [[ ! -f "$ENABLED_MODULES_FILE" ]]; then
-  if [[ -f "$DEFAULT_ENABLED_MODULES_FILE" ]]; then
-    echo "User $HOME/.enabled_modules not found. Using default $DEFAULT_ENABLED_MODULES_FILE."
-    ENABLED_MODULES_FILE_PATH_TO_TEST="$DEFAULT_ENABLED_MODULES_FILE"
-    if [[ "$DEFAULT_ENABLED_MODULES_FILE" != /* ]]; then
-        if [[ -n "$SENTINEL_DIR" ]]; then
-            ENABLED_MODULES_FILE_PATH_TO_TEST="$SENTINEL_DIR/$DEFAULT_ENABLED_MODULES_FILE"
-        elif [[ -n "$SCRIPT_DIR" ]]; then
-             ENABLED_MODULES_FILE_PATH_TO_TEST="$SCRIPT_DIR/$DEFAULT_ENABLED_MODULES_FILE"
-        # If SCRIPT_DIR is not defined, this will assume DEFAULT_ENABLED_MODULES_FILE is relative to current dir
-        # or already an absolute path. This part might need refinement based on actual bashrc structure.
-        fi
-    fi
-    if [[ -f "$ENABLED_MODULES_FILE_PATH_TO_TEST" ]]; then
-        ENABLED_MODULES_FILE="$ENABLED_MODULES_FILE_PATH_TO_TEST"
-    else
-        echo "Warning: Default $DEFAULT_ENABLED_MODULES_FILE (tested as $ENABLED_MODULES_FILE_PATH_TO_TEST) not found." >&2
-        ENABLED_MODULES_FILE=""
-    fi
-  else
-    echo "Warning: Default $DEFAULT_ENABLED_MODULES_FILE not specified or not found." >&2
-    ENABLED_MODULES_FILE=""
+    # Define module directory paths with fallbacks
+    export SENTINEL_MODULES_PATH=${SENTINEL_MODULES_PATH:-"$HOME/bash_modules.d"}
+
+    # Create an array of module directories to search in order
+    module_dirs=(
+      "$HOME/bash_modules.d"
+      "$HOME/.bash_modules.d"
+      "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"
+    )
+
+    # Load enabled modules with proper dependency resolution
+    load_enabled_modules "$HOME/.enabled_modules" 2>/dev/null || {
+      echo "Error loading modules from .enabled_modules, trying critical modules only" >&2
+
+      # Fallback: load critical modules directly if the enabled_modules loading fails
+      for critical_module in "logging" "config_cache" "module_manager"; do
+        echo "Loading critical module: $critical_module"
+        load_module "$critical_module" 2>/dev/null || true
+      done
+    }
+
+    # Mark modules as loaded
+    export _SENTINEL_MODULES_LOADED=1
   fi
-fi
-
-# Load modules if a valid file was identified
-if [[ -n "$ENABLED_MODULES_FILE" ]] && [[ -f "$ENABLED_MODULES_FILE" ]]; then
-  echo "Loading enabled modules from $ENABLED_MODULES_FILE..."
-  load_enabled_modules "$ENABLED_MODULES_FILE" 2>/dev/null || {
-    echo "Error loading modules from $ENABLED_MODULES_FILE, trying critical modules only" >&2
-    for critical_module in "logging" "config_cache" "module_manager"; do
-      echo "Loading critical module: $critical_module"
-      load_module "$critical_module" 2>/dev/null || true
-    done
-  }
-  export _SENTINEL_MODULES_LOADED=1
-else
-  echo "No .enabled_modules file found or specified. Skipping module loading via .enabled_modules."
-  echo "Loading critical modules directly as fallback..."
-  for critical_module in "logging" "config_cache" "module_manager"; do
-    echo "Loading critical module: $critical_module"
-    load_module "$critical_module" 2>/dev/null || true
-  done
-  export _SENTINEL_MODULES_LOADED=1
-fi
 fi
 
 # Alternatively, load these specific critical modules
@@ -473,23 +450,23 @@ safe_load_direct_module() {
     "$HOME/.bash_modules.d/${module}.module"
     "$HOME/Documents/GitHub/SENTINEL/bash_modules.d/${module}.module"
   )
-  
+
     # Debug messages disabled for stability
   # echo "Looking for module: $module"
-  
+
   for path in "${paths[@]}"; do
     if [[ -f "$path" ]]; then
       # Silent loading to reduce output
       # echo "Found module at: $path"
       # echo "Loading module: $module"
-      { 
+      {
         # We'll use the . command instead of source for better compatibility
         . "$path" || true
       } 2>/dev/null || true
       return 0
     fi
   done
-  
+
   echo "Module not found: $module" >&2
   return 0  # Return success anyway to prevent crashes
 }
@@ -505,32 +482,32 @@ declare -A _SENTINEL_LOADED_MODULES
 # Function to safely load a module only once
 safe_load_module_once() {
   local module="$1"
-  
+
   # Skip if already loaded
   if [[ "${_SENTINEL_LOADED_MODULES[$module]:-0}" == "1" ]]; then
     return 0
   fi
-  
+
   # Find and load the module
   for dir in "$HOME/bash_modules.d" "$HOME/.bash_modules.d" "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"; do
     if [[ -f "$dir/${module}.module" ]]; then
       echo "Loading module: $module (first time)"
-      
+
       # Special case for FZF module
       [[ "$module" == "fzf" ]] && export SENTINEL_FZF_ENABLED=1
-      
+
       # Special case for obfuscate module - set guard variable before loading
       [[ "$module" == "obfuscate" ]] && export _SENTINEL_OBFUSCATE_LOADED=1
-      
+
       # Source with error handling
       { source "$dir/${module}.module"; } 2>/dev/null || true
-      
+
       # Mark as loaded
       _SENTINEL_LOADED_MODULES[$module]=1
       return 0
     fi
   done
-  
+
   echo "Module not found: $module" >&2
   return 0
 }
