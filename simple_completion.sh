@@ -14,24 +14,16 @@ export _SENTINEL_SIMPLE_COMPLETION_LOADED=1
 { mkdir -p "$HOME/autocomplete/completions"; } 2>/dev/null || true
 
 # Try to load BLE.sh first, but continue with simple completion if it fails
-echo "Checking for BLE.sh (installed by blesh_installer.module)..."
-BLESH_MAIN_SCRIPT="\$HOME/.local/share/blesh/ble.sh"
-if [[ -f "\$BLESH_MAIN_SCRIPT" ]]; then
-  if [[ -z "\${_BLSH_LOADED:-}" && -z "\${SENTINEL_BLESH_LOADED:-}" ]]; then # Check guards from both blesh_installer and autocomplete.module
-    echo "Attempting to load BLE.sh from \$BLESH_MAIN_SCRIPT..."
-    export BLESH_ATTACH_METHOD="attach"
-    if { source "\$BLESH_MAIN_SCRIPT" --attach=attach; } 2>/dev/null; then
-      export _BLSH_LOADED=1; # Set a common guard
-      echo "BLE.sh loaded successfully by simple completion system.";
-    else
-      echo "Warning: Failed to source BLE.sh from \$BLESH_MAIN_SCRIPT. Falling back to native bash completion." >&2;
-    fi;
+if [[ -f "$HOME/blesh_loader.sh" ]]; then
+  # First ensure we have the correct attachment method
+  export BLESH_ATTACH_METHOD="attach"
+  # Try to source with robust error handling
+  if { source "$HOME/blesh_loader.sh"; } 2>/dev/null; then
+    echo "BLE.sh loaded successfully by simple completion system"
   else
-    echo "BLE.sh already loaded or guard variable set.";
-  fi;
-else
-  echo "BLE.sh not found at \$BLESH_MAIN_SCRIPT (expected location from blesh_installer.module). Skipping BLE.sh loading.";
-fi;
+    echo "Falling back to native bash completion"
+  fi
+fi
 
 # Load standard bash completions safely
 echo "Loading basic bash completion (native)..."

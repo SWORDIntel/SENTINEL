@@ -385,8 +385,6 @@ if [[ -f "$HOME/Documents/GitHub/SENTINEL/bash_modules" ]]; then
   # Loading SENTINEL module management system silently
   # Set flag to prevent bash_modules from loading modules itself
   export SENTINEL_SKIP_AUTO_LOAD=1
-export SENTINEL_SKIP_LOAD_ALL=1
-export SENTINEL_SKIP_LOAD_ALL=1
   { source "$HOME/Documents/GitHub/SENTINEL/bash_modules"; } 2>/dev/null || {
     echo "Warning: Error loading bash_modules, some module commands may not be available" >&2
   }
@@ -395,56 +393,33 @@ fi
 # Load critical modules with robust error handling - ONLY if not already loaded
 if [[ "$_SENTINEL_MODULES_LOADED" == "0" ]]; then
   # Check if a modules list exists and load enabled modules
-# Original block for loading $HOME/.enabled_modules replaced by new logic below
-# This section determines which .enabled_modules file to use
-ENABLED_MODULES_FILE="$HOME/.enabled_modules"
-DEFAULT_ENABLED_MODULES_FILE="config/.enabled_modules" # Relative to repo root
-
-if [[ ! -f "$ENABLED_MODULES_FILE" ]]; then
-  if [[ -f "$DEFAULT_ENABLED_MODULES_FILE" ]]; then
-    echo "User $HOME/.enabled_modules not found. Using default $DEFAULT_ENABLED_MODULES_FILE."
-    ENABLED_MODULES_FILE_PATH_TO_TEST="$DEFAULT_ENABLED_MODULES_FILE"
-    if [[ "$DEFAULT_ENABLED_MODULES_FILE" != /* ]]; then
-        if [[ -n "$SENTINEL_DIR" ]]; then
-            ENABLED_MODULES_FILE_PATH_TO_TEST="$SENTINEL_DIR/$DEFAULT_ENABLED_MODULES_FILE"
-        elif [[ -n "$SCRIPT_DIR" ]]; then
-             ENABLED_MODULES_FILE_PATH_TO_TEST="$SCRIPT_DIR/$DEFAULT_ENABLED_MODULES_FILE"
-        # If SCRIPT_DIR is not defined, this will assume DEFAULT_ENABLED_MODULES_FILE is relative to current dir
-        # or already an absolute path. This part might need refinement based on actual bashrc structure.
-        fi
-    fi
-    if [[ -f "$ENABLED_MODULES_FILE_PATH_TO_TEST" ]]; then
-        ENABLED_MODULES_FILE="$ENABLED_MODULES_FILE_PATH_TO_TEST"
-    else
-        echo "Warning: Default $DEFAULT_ENABLED_MODULES_FILE (tested as $ENABLED_MODULES_FILE_PATH_TO_TEST) not found." >&2
-        ENABLED_MODULES_FILE=""
-    fi
-  else
-    echo "Warning: Default $DEFAULT_ENABLED_MODULES_FILE not specified or not found." >&2
-    ENABLED_MODULES_FILE=""
+  if [[ -f "$HOME/.enabled_modules" ]]; then
+    echo "Loading enabled modules from $HOME/.enabled_modules..."
+    
+    # Define module directory paths with fallbacks
+    export SENTINEL_MODULES_PATH=${SENTINEL_MODULES_PATH:-"$HOME/bash_modules.d"}
+    
+    # Create an array of module directories to search in order
+    module_dirs=(
+      "$HOME/bash_modules.d"
+      "$HOME/.bash_modules.d"
+      "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"
+    )
+    
+    # Load enabled modules with proper dependency resolution
+    load_enabled_modules "$HOME/.enabled_modules" 2>/dev/null || {
+      echo "Error loading modules from .enabled_modules, trying critical modules only" >&2
+      
+      # Fallback: load critical modules directly if the enabled_modules loading fails
+      for critical_module in "logging" "config_cache" "module_manager"; do
+        echo "Loading critical module: $critical_module"
+        load_module "$critical_module" 2>/dev/null || true
+      done
+    }
+    
+    # Mark modules as loaded
+    export _SENTINEL_MODULES_LOADED=1
   fi
-fi
-
-# Load modules if a valid file was identified
-if [[ -n "$ENABLED_MODULES_FILE" ]] && [[ -f "$ENABLED_MODULES_FILE" ]]; then
-  echo "Loading enabled modules from $ENABLED_MODULES_FILE..."
-  load_enabled_modules "$ENABLED_MODULES_FILE" 2>/dev/null || {
-    echo "Error loading modules from $ENABLED_MODULES_FILE, trying critical modules only" >&2
-    for critical_module in "logging" "config_cache" "module_manager"; do
-      echo "Loading critical module: $critical_module"
-      load_module "$critical_module" 2>/dev/null || true
-    done
-  }
-  export _SENTINEL_MODULES_LOADED=1
-else
-  echo "No .enabled_modules file found or specified. Skipping module loading via .enabled_modules."
-  echo "Loading critical modules directly as fallback..."
-  for critical_module in "logging" "config_cache" "module_manager"; do
-    echo "Loading critical module: $critical_module"
-    load_module "$critical_module" 2>/dev/null || true
-  done
-  export _SENTINEL_MODULES_LOADED=1
-fi
 fi
 
 # Alternatively, load these specific critical modules

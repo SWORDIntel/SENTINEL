@@ -686,7 +686,7 @@ safe_source_module() {
 safe_module_loader _load_enabled_modules
 
 # Load all modules from all subdirectories with safety wrapper
-if [[ "${SENTINEL_SKIP_LOAD_ALL:-0}" != "1" ]]; then safe_module_loader _load_all_modules; fi
+safe_module_loader _load_all_modules
 
 # Interactive menu for module management
 module_menu() {
