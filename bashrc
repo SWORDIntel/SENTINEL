@@ -513,6 +513,7 @@ safe_load_module_once() {
 # Only load essential modules, avoiding those with terminal issues
 safe_load_module_once "config_cache" 2>/dev/null
 safe_load_module_once "logging" 2>/dev/null
+safe_load_module_once "auto_install" 2>/dev/null # Added auto_install module
 
 # Temporarily disable problematic modules
 # safe_load_module_once "module_manager"
@@ -521,5 +522,10 @@ safe_load_module_once "logging" 2>/dev/null
 # Note: This is a step-by-step rebuild of the .bashrc
 # To reinstall SENTINEL properly after all issues are fixed, run:
 #   cd ~/Documents/GitHub/SENTINEL && ./install.sh
+
+# Source custom venv helpers
+if [[ -f "$HOME/bash_functions.d/venv_helpers" ]]; then
+    safe_source "$HOME/bash_functions.d/venv_helpers" 2>/dev/null || true
+fi
 
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
