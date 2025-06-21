@@ -371,8 +371,7 @@ load_enabled_modules() {
   return 0 # Always return success to prevent crashes
 }
 
-# Set BLESH_ATTACH_METHOD to avoid ble.sh issues
-export BLESH_ATTACH_METHOD="attach"
+# BLESH_ATTACH_METHOD="attach" # Removed as BLE.sh is no longer used
 
 # Enable FZF module
 export SENTINEL_FZF_ENABLED=1

@@ -62,108 +62,49 @@ sentinel_autocomplete_register_module() {
 ###############################################################################
 # 3.  BLE.sh Integration
 ###############################################################################
-SENTINEL_BLESH_LOADER="${HOME}/blesh_loader.sh"
+# SENTINEL_BLESH_LOADER="${HOME}/blesh_loader.sh" # BLE.sh is being removed
 sentinel_check_blesh() {
-    { # Use a block with error redirection for all BLE.sh operations
-        # Check if BLE.sh is already loaded
-        if type -t bleopt &>/dev/null; then
-            { _sentinel_log_info "BLE.sh already loaded"; } 2>/dev/null || true
-            return 0
-        fi
-        
-        # Check if loader exists - with robust error handling
-        if [[ ! -f $SENTINEL_BLESH_LOADER ]]; then
-            # Create a simplified loader on-the-fly if it doesn't exist
-            # First ensure parent directory exists
-            { mkdir -p "$(dirname "$SENTINEL_BLESH_LOADER")"; } 2>/dev/null || true
-            
-            # Use a safer approach to create the file
-            {
-                cat > "$SENTINEL_BLESH_LOADER.tmp" <<'EOF' && mv "$SENTINEL_BLESH_LOADER.tmp" "$SENTINEL_BLESH_LOADER"
-#!/bin/bash
-# Auto-generated BLE.sh loader with ultra-robust error handling
-[[ -n ${SENTINEL_BLESH_LOADED:-} ]] && return 0
-export SENTINEL_BLESH_LOADED=1
-BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
-if [[ -f "${BLESH_MAIN}" ]]; then
-  # Fix for 'unrecognized attach method' error
-  { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true
-  { source "${BLESH_MAIN}" --attach=attach; } 2>/dev/null || true
-fi
-# Always return success
-return 0
-EOF
-            } 2>/dev/null || true
-            
-            # Set permissions with error handling
-            { chmod 644 "$SENTINEL_BLESH_LOADER"; } 2>/dev/null || true
-            { _sentinel_log_info "Created minimal BLE.sh loader"; } 2>/dev/null || true
-        fi
-        
-        # Try to source the loader with comprehensive error handling
-        { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true  # Set this before sourcing the loader
-        
-        # Source with maximum protection
-        {
-            { source "$SENTINEL_BLESH_LOADER"; } 2>/dev/null || {
-                # Try alternative sourcing method if the first fails
-                { . "$SENTINEL_BLESH_LOADER"; } 2>/dev/null || {
-                    # Log failure but continue
-                    { _sentinel_log_error "Failed to source BLE.sh loader"; } 2>/dev/null || true
-                }
-            }
-        } 2>/dev/null || true
-        
-        # Check if BLE.sh was successfully loaded
-        if type -t bleopt &>/dev/null; then
-            { _sentinel_log_info "BLE.sh successfully loaded"; } 2>/dev/null || true
-            # Show a success message if this was an explicit action
-            [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] && { echo "BLE.sh successfully loaded"; } 2>/dev/null || true
-        else
-            # Silent failure with minimal output
-            { _sentinel_log_warning "BLE.sh loading skipped"; } 2>/dev/null || true
-        fi
-    } 2>/dev/null || true
-    
+    { _sentinel_log_info "BLE.sh check skipped as it is being removed."; } 2>/dev/null || true
     # Always return success to prevent terminal crashes
     return 0
 }
+
 sentinel_blesh_status() {
-    if type -t bleopt &>/dev/null; then
-        echo "BLE.sh       : LOADED (v$(bleopt --version 2>/dev/null || echo 'unknown'))"
-    else
-        echo "BLE.sh       : NOT loaded"
-    fi
+    echo "BLE.sh       : Functionality removed."
 }
 
 ###############################################################################
-# 4.  Snippet Engine
+# 4.  Snippet Engine (Depends on BLE.sh - will be disabled)
 ###############################################################################
 SENTINEL_SNIPPET_DIR="${HOME}/autocomplete/snippets"
 _sentinel_snippet_import_all() {
-    [[ -d $SENTINEL_SNIPPET_DIR ]] || return 0
-    sentinel_check_blesh || return 0
-    for f in "$SENTINEL_SNIPPET_DIR"/*.snippet; do
-        [[ -f $f ]] || continue
-        local name="${f##*/}"; name="${name%.snippet}"
-        local cmd; cmd="$(sed ':a;N;$!ba;s/\n/\\n/g' "$f")"
-        ble-sabbrev -m "$name=$cmd"
-    done
+    # [[ -d $SENTINEL_SNIPPET_DIR ]] || return 0
+    # sentinel_check_blesh || return 0 # BLE.sh dependency
+    # for f in "$SENTINEL_SNIPPET_DIR"/*.snippet; do
+    #     [[ -f $f ]] || continue
+    #     local name="${f##*/}"; name="${name%.snippet}"
+    #     local cmd; cmd="$(sed ':a;N;$!ba;s/\n/\\n/g' "$f")"
+    #     ble-sabbrev -m "$name=$cmd" # BLE.sh command
+    # done
+    { _sentinel_log_info "Snippet import skipped (BLE.sh dependency removed)."; } 2>/dev/null || true
+    echo "Snippet engine disabled (dependency on BLE.sh removed)." >&2
 }
 sentinel_snippet_add() {
-    local name="$1" cmd="$2"
-    [[ -z $name || -z $cmd ]] && { echo "Usage: sentinel_snippet_add <n> <command...>" >&2; return 1; }
-    mkdir -p "$SENTINEL_SNIPPET_DIR"
-    printf '%s\n' "$cmd" > "$SENTINEL_SNIPPET_DIR/$name.snippet"
-    _sentinel_log_info "snippet $name added"
-    _sentinel_snippet_import_all
+    # local name="$1" cmd="$2"
+    # [[ -z $name || -z $cmd ]] && { echo "Usage: sentinel_snippet_add <n> <command...>" >&2; return 1; }
+    # mkdir -p "$SENTINEL_SNIPPET_DIR"
+    # printf '%s\n' "$cmd" > "$SENTINEL_SNIPPET_DIR/$name.snippet"
+    # _sentinel_log_info "snippet $name added"
+    # _sentinel_snippet_import_all
+    echo "Snippet engine disabled (dependency on BLE.sh removed)." >&2
 }
 sentinel_snippet_list() {
-    [[ -d $SENTINEL_SNIPPET_DIR ]] || { echo "No snippets."; return; }
-    for f in "$SENTINEL_SNIPPET_DIR"/*.snippet; do
-        [[ -f $f ]] || continue
-        printf '%-20s %s\n' "${f##*/}" "$(head -n1 "$f")"
-    done | column -t
+    # [[ -d $SENTINEL_SNIPPET_DIR ]] || { echo "No snippets."; return; }
+    # for f in "$SENTINEL_SNIPPET_DIR"/*.snippet; do
+    #     [[ -f $f ]] || continue
+    #     printf '%-20s %s\n' "${f##*/}" "$(head -n1 "$f")"
+    # done | column -t
+    echo "Snippet engine disabled (dependency on BLE.sh removed)." >&2
 }
 
 ###############################################################################
@@ -175,9 +116,9 @@ sentinel_autocomplete_command() {
     case "$cmd" in
         help|--help|-h|"") sentinel_autocomplete_help ;;
         status|--status|-s) sentinel_autocomplete_status ;;
-        fix|--fix|-f) sentinel_autocomplete_fix ;;
+        fix|--fix|-f) sentinel_autocomplete_fix ;; # Will be modified
         reload|--reload|-r) sentinel_autocomplete_reload ;;
-        install|--install|-i) sentinel_autocomplete_install ;;
+        install|--install|-i) sentinel_autocomplete_install ;; # Will be modified
         modules|--modules|-m) sentinel_autocomplete_list_modules ;;
         *)
             if [[ "$cmd" == *":"* ]]; then
@@ -224,12 +165,8 @@ sentinel_autocomplete_status() {
         local version="${SENTINEL_AUTOCOMPLETE_MODULES[$module]}"
         echo -e "  \033[1;34m$module\033[0m v$version"
     done
-    if type -t sentinel_blesh_status &>/dev/null; then
-        echo -e "\n\033[1;32mBLE.sh Status:\033[0m"
-        sentinel_blesh_status | sed 's/^/  /'
-    else
-        echo -e "\n\033[1;31mBLE.sh module not loaded\033[0m"
-    fi
+    # Remove BLE.sh status check
+    echo -e "\n\033[1;33mBLE.sh integration has been removed.\033[0m"
     echo -e "\n\033[1;32mDirectories:\033[0m"
     for dir in ${HOME}/autocomplete ${HOME}/logs ~/.cache/blesh; do
         echo -n "  $dir: "
@@ -263,45 +200,50 @@ sentinel_autocomplete_fix() {
     mkdir -p "${HOME}/.cache/blesh" 2>/dev/null || true
     chmod 700 "${HOME}/.cache/blesh" 2>/dev/null || true
     
-    # Create or update the BLE.sh loader
-    echo "Updating BLE.sh loader..."
-    cat > "${HOME}/blesh_loader.sh" <<'EOF'
-#!/bin/bash
-# Auto-generated by SENTINEL autocomplete fix
-# Simplified loader with proper error handling
-
-# Skip if already loaded
-[[ -n ${SENTINEL_BLESH_LOADED:-} ]] && return 0
-export SENTINEL_BLESH_LOADED=1
-
-# Set correct attach method before loading
-export BLESH_ATTACH_METHOD="attach"
-
-# Try to load BLE.sh with proper error handling
-BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
-if [[ -f "${BLESH_MAIN}" ]]; then
-  source "${BLESH_MAIN}" --attach=attach 2>/dev/null || true
-fi
-EOF
-    chmod 644 "${HOME}/blesh_loader.sh" 2>/dev/null || true
+    # BLE.sh loader update removed.
+    # Ensure standard bash completion is sourced if needed
+    if ! type _filedir &>/dev/null; then # A common bash-completion function
+        if [[ -f /usr/share/bash-completion/bash_completion ]]; then
+            source /usr/share/bash-completion/bash_completion
+            echo "Standard bash-completion sourced."
+        elif [[ -f /etc/bash_completion ]]; then
+            source /etc/bash_completion
+            echo "Standard bash-completion sourced."
+        else
+            echo "Warning: Standard bash-completion script not found."
+        fi
+    fi
     
     # Always return success to prevent terminal crashes
     echo -e "\nRepair completed. Please \033[1;32mclose and reopen your terminal\033[0m for changes to take full effect."
+    echo "Note: BLE.sh specific fixes are no longer applicable."
     return 0
 }
 sentinel_autocomplete_reload() {
     echo "Reloading autocomplete system..."
     _sentinel_log_info "Reloading autocomplete system"
-    _sentinel_snippet_import_all
-    echo "Autocomplete system reloaded."
-    _sentinel_log_info "Autocomplete system reload completed"
+    # _sentinel_snippet_import_all # Snippet engine disabled
+    # Source the new sentinel completion script if it exists
+    if [[ -f "$HOME/.bash_completion.d/sentinel-completion.bash" ]]; then
+        source "$HOME/.bash_completion.d/sentinel-completion.bash"
+        echo "Sourced sentinel-completion.bash"
+    elif [[ -f "/etc/bash_completion.d/sentinel" ]]; then # Example system path
+        source "/etc/bash_completion.d/sentinel"
+        echo "Sourced system sentinel completion"
+    else
+        echo "New sentinel completion script not found to source."
+    fi
+    echo "Autocomplete system reload attempted."
+    _sentinel_log_info "Autocomplete system reload attempt completed"
 }
 sentinel_autocomplete_install() {
-    echo "Installing autocomplete system..."
-    _sentinel_log_info "Installing autocomplete system"
-    sentinel_check_blesh
-    echo "Autocomplete system installation complete. Please restart your terminal."
-    _sentinel_log_info "Autocomplete system installation completed"
+    echo "Installing autocomplete system (now standard bash-completion)."
+    _sentinel_log_info "Installing new autocomplete system"
+    # sentinel_check_blesh # BLE.sh check removed
+    echo "Ensure 'sentinel-completion.bash' is in your bash_completion.d directory and your .bashrc sources bash_completion."
+    echo "For Python autocompletion, ensure 'argcomplete' is installed (pip install argcomplete)."
+    echo "Installation instructions updated. Please restart your terminal."
+    _sentinel_log_info "Autocomplete system installation instructions provided"
 }
 sentinel_autocomplete_list_modules() {
     echo -e "\033[1;32mLoaded Autocomplete Modules:\033[0m"

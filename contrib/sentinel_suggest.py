@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
+# PYTHON_ARGCOMPLETE_OK
 # sentinel_suggest.py: ML-powered CLI suggestions
-# Requires: pip install markovify
+# Requires: pip install markovify argcomplete
 
 # Standard library imports
 import os
 import sys
+import argparse
+import argcomplete
 
 # Third-party imports (with robust error handling)
 try:
@@ -51,8 +54,36 @@ def suggest(prefix, n=5):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        sys.exit(0)
-    prefix = sys.argv[1]
-    for s in suggest(prefix):
-        print(s)
+    parser = argparse.ArgumentParser(description="Generate command suggestions based on history.")
+    parser.add_argument(
+        "prefix",
+        help="The prefix to generate suggestions for."
+    )
+    parser.add_argument(
+        "-n", "--num-suggestions",
+        type=int,
+        default=5,
+        help="Number of suggestions to generate."
+    )
+
+    argcomplete.autocomplete(parser)
+
+    try:
+        args = parser.parse_args()
+        # In case argcomplete exits after printing completions
+        if hasattr(args, 'comp_TYPE'):
+             sys.exit(0)
+
+        for s in suggest(args.prefix, args.num_suggestions):
+            print(s)
+
+    except SystemExit as e:
+        # argcomplete can cause a SystemExit, only exit with error if it's not from argcomplete
+        if e.code != 0 and not hasattr(args, 'comp_TYPE'):
+            raise
+    except Exception as e:
+        # Handle other potential errors during script execution
+        # For this script, actual errors might be rare after arg parsing,
+        # but good practice to have a general handler.
+        print(f"An error occurred: {e}", file=sys.stderr)
+        sys.exit(1)

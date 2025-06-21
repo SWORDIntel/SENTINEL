@@ -1,0 +1,123 @@
+#!/bin/bash
+
+# Dummy SENTINEL main script
+
+# Global options
+VERBOSE=false
+CONFIG_FILE=""
+
+# Subcommands
+MODULE_SUBCOMMAND="module"
+PROCESS_SUBCOMMAND="process"
+
+# Dummy list of available modules
+AVAILABLE_MODULES=("alpha" "beta" "gamma")
+# Dummy list of loaded modules (can be modified by load/unload for more dynamic feel)
+LOADED_MODULES_FILE="/tmp/sentinel_loaded_modules.txt"
+# Initialize with some loaded modules for testing unload
+echo "alpha" > "$LOADED_MODULES_FILE"
+echo "gamma" >> "$LOADED_MODULES_FILE"
+
+
+# Function to handle module operations
+handle_module() {
+    local action="$1"
+    shift
+    local module_name="$1"
+
+    case "$action" in
+        list)
+            echo "Available modules:"
+            for mod in "${AVAILABLE_MODULES[@]}"; do
+                echo "  - $mod"
+            done
+            ;;
+        load)
+            if [[ -z "$module_name" ]]; then
+                echo "Error: module name required for load."
+                return 1
+            fi
+            echo "Loading module: $module_name"
+            if ! grep -qxF "$module_name" "$LOADED_MODULES_FILE"; then
+                echo "$module_name" >> "$LOADED_MODULES_FILE"
+            fi
+            # Actual load logic would go here
+            ;;
+        unload)
+            if [[ -z "$module_name" ]]; then
+                echo "Error: module name required for unload."
+                return 1
+            fi
+            echo "Unloading module: $module_name"
+            # Remove module from loaded list
+            sed -i "/^${module_name}$/d" "$LOADED_MODULES_FILE"
+            # Actual unload logic would go here
+            ;;
+        *)
+            echo "Unknown module action: $action"
+            echo "Usage: sentinel module [list|load <module>|unload <module>]"
+            ;;
+    esac
+}
+
+# Parse global options first
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --config)
+            if [[ -n "$2" ]]; then
+                CONFIG_FILE="$2"
+                shift 2
+            else
+                echo "Error: --config requires an argument."
+                exit 1
+            fi
+            ;;
+        *)
+            ARGS+=("$1") # Store positional arguments
+            shift
+            ;;
+    esac
+done
+
+# Restore positional arguments
+set -- "${ARGS[@]}"
+
+# Main command dispatcher
+if [[ -z "$1" ]]; then
+    echo "Usage: sentinel [--verbose] [--config <file>] <subcommand> [args...]"
+    echo "Subcommands:"
+    echo "  module    Manage modules"
+    echo "  process   Process a file"
+    exit 1
+fi
+
+SUBCOMMAND="$1"
+shift
+
+case "$SUBCOMMAND" in
+    "$MODULE_SUBCOMMAND")
+        handle_module "$@"
+        ;;
+    "$PROCESS_SUBCOMMAND")
+        # In a real scenario, ensure sentinel_process.py is executable and in PATH
+        # For this prototype, we'll assume it's in the same directory
+        ./sentinel_process.py "$@"
+        ;;
+    *)
+        echo "Unknown subcommand: $SUBCOMMAND"
+        echo "Usage: sentinel <subcommand> [args...]"
+        exit 1
+        ;;
+esac
+
+if [[ "$VERBOSE" = true ]]; then
+    echo "Verbose mode is ON."
+    if [[ -n "$CONFIG_FILE" ]]; then
+        echo "Config file: $CONFIG_FILE"
+    fi
+fi

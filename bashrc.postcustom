@@ -192,22 +192,7 @@ export U_LAZY_LOAD=1
 # End of bashrc.postcustom
 # =============================
 
-# Load BLE.sh if available - with ultra-robust error handling
-{
-    if [[ -f "${HOME}/blesh_loader.sh" ]]; then
-        # Fix for 'unrecognized attach method' error
-        { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true
-        
-        # Super-safe source with multiple layers of protection
-        {
-            # Try to source with explicit error handling
-            { source "${HOME}/blesh_loader.sh"; } 2>/dev/null || {
-                # If that fails, try the dot operator
-                { . "${HOME}/blesh_loader.sh"; } 2>/dev/null || true
-            }
-        } 2>/dev/null || true
-    fi
-} 2>/dev/null || true
+# BLE.sh loading removed as part of autocomplete refactoring.
 
 # =============================
 # SENTINEL Feature Module Toggles
