@@ -1,123 +1,477 @@
 #!/bin/bash
+# set -x # Enable debugging output
 
-# Dummy SENTINEL main script
+# Sentinel - APT Wrapper Module
 
-# Global options
-VERBOSE=false
-CONFIG_FILE=""
+# --- Configuration ---
+LOG_FILE="/tmp/sentinel_apt.log"
+# ANSI Color Codes
+COLOR_GREEN='\033[0;32m'
+COLOR_YELLOW='\033[0;33m'
+COLOR_RED='\033[0;31m'
+COLOR_NC='\033[0m' # No Color
 
-# Subcommands
-MODULE_SUBCOMMAND="module"
-PROCESS_SUBCOMMAND="process"
+# --- Logging Function ---
+log_message() {
+    local message="$1"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $message" >> "$LOG_FILE"
+}
 
-# Dummy list of available modules
-AVAILABLE_MODULES=("alpha" "beta" "gamma")
-# Dummy list of loaded modules (can be modified by load/unload for more dynamic feel)
-LOADED_MODULES_FILE="/tmp/sentinel_loaded_modules.txt"
-# Initialize with some loaded modules for testing unload
-echo "alpha" > "$LOADED_MODULES_FILE"
-echo "gamma" >> "$LOADED_MODULES_FILE"
+# --- Usage Function ---
+usage() {
+    echo "Usage: $0 [options] <package1> [package2 ...]"
+    echo "       $0 --chmod-sh"
+    echo
+    echo "Description:"
+    echo "  When called with package names, Sentinel attempts to install them, finding"
+    echo "  alternatives for missing packages if possible."
+    echo
+    echo "Options:"
+    echo "  --chmod-sh    Recursively find all .sh files in the current directory"
+    echo "                and subdirectories, and offer to make them executable (+x)."
+    echo "                Warns if files are found deeper than 3 levels."
+    echo
+    echo "Example (APT wrapper): $0 git curl my-nonexistent-package"
+    echo "Example (Chmod util):  $0 --chmod-sh"
+}
 
+# --- Main Script Logic ---
 
-# Function to handle module operations
-handle_module() {
-    local action="$1"
-    shift
-    local module_name="$1"
+# Initialize log file
+echo "" > "$LOG_FILE" # Clear log file at start
+log_message "Sentinel script started."
 
-    case "$action" in
-        list)
-            echo "Available modules:"
-            for mod in "${AVAILABLE_MODULES[@]}"; do
-                echo "  - $mod"
+# Check for special flags first
+if [[ "$1" == "--chmod-sh" ]]; then
+    if [ "$#" -ne 1 ]; then
+        echo -e "${COLOR_RED}Error: --chmod-sh does not accept additional arguments.${COLOR_NC}"
+        usage
+        exit 1
+    fi
+    chmod_sh_recursive
+    log_message "Sentinel script finished after chmod_sh_recursive."
+    exit 0
+fi
+
+# If not a special flag, proceed with APT wrapper logic
+# Check if any arguments are provided (for package installation)
+if [ "$#" -eq 0 ]; then
+    usage
+    log_message "No packages or known flags provided. Displayed usage and exited."
+    exit 1
+fi
+
+# Store all arguments as the initial list of packages
+INITIAL_PACKAGES=("$@")
+log_message "Initial packages to process for APT: ${INITIAL_PACKAGES[*]}"
+
+# Make the script executable (should ideally be done outside, but for completeness)
+# This line should be removed if sentinel is installed/managed by a package manager or build script
+# chmod +x sentinel # This was problematic during testing.
+
+# --- APT Command Execution Function ---
+execute_apt_install() {
+    local packages_to_install=("${@}")
+    local apt_output
+    local apt_exit_code
+
+    log_message "Attempting apt dry-run for packages: ${packages_to_install[*]}"
+    echo "Simulating installation (dry run) for: ${packages_to_install[*]}"
+
+    local temp_output_file
+    temp_output_file=$(mktemp)
+
+    sudo apt install -y --dry-run "${packages_to_install[@]}" > "$temp_output_file" 2>&1
+    apt_exit_code=$?
+    apt_output=$(cat "$temp_output_file")
+    rm "$temp_output_file"
+
+    log_message "APT dry-run exit code: $apt_exit_code"
+
+    if [ "$apt_exit_code" -eq 0 ]; then
+        log_message "APT dry-run successful for all packages."
+        echo -e "${COLOR_GREEN}APT dry-run successful. All specified packages are available.${COLOR_NC}"
+        echo "$apt_output"
+        log_message "Sentinel script finished successfully after dry-run."
+        exit 0
+    else
+        log_message "APT dry-run failed or some packages might be problematic. Exit code: $apt_exit_code."
+        echo -e "${COLOR_YELLOW}APT dry-run indicated issues. Analyzing output...${COLOR_NC}"
+        echo "$apt_output"
+        return 1 # Indicate that parsing is needed
+    fi
+}
+
+# --- Error Parsing and Package Analysis Function ---
+parse_apt_output() {
+    local output="$1"
+    declare -gA failed_packages_map
+    declare -gA successful_packages_map
+
+    failed_packages_map=()
+    successful_packages_map=()
+    log_message "Parsing APT output."
+    local in_new_packages_section=0
+
+    while IFS= read -r line; do
+        if [[ "$line" == E:\ *Unable\ to\ locate\ package\ * ]]; then
+            local pkg_name=$(echo "$line" | sed -E 's/E: Unable to locate package (.*)/\1/')
+            failed_packages_map["$pkg_name"]="not_found"
+            log_message "Failed package (not_found): $pkg_name"
+            continue
+        fi
+        if [[ "$line" == E:\ Package\ \'*\'\ has\ no\ installation\ candidate ]]; then
+            local pkg_name=$(echo "$line" | sed -E "s/E: Package '(.*)' has no installation candidate/\1/")
+            failed_packages_map["$pkg_name"]="no_candidate"
+            log_message "Failed package (no_candidate): $pkg_name"
+            continue
+        fi
+        if [[ "$line" == "The following NEW packages will be installed:" ]]; then
+            in_new_packages_section=1
+            log_message "Found 'The following NEW packages will be installed:' section."
+            continue
+        fi
+        if [[ "$line" == "The following packages will be upgraded:" || \
+              "$line" == "The following packages will be REMOVED:" || \
+              "$line" == "0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded." || \
+              "$line" =~ [0-9]+\ upgraded,\ [0-9]+\ newly\ installed, || \
+              "$line" == "Suggested packages:" || \
+              "$line" == "Recommended packages:" ]]; then # Added these terminators
+            if [ "$in_new_packages_section" -eq 1 ]; then
+                log_message "Exiting 'NEW packages' section due to line: $line"
+            fi
+            in_new_packages_section=0
+        fi
+        if [ "$in_new_packages_section" -eq 1 ]; then
+            local pkgs_on_line=$(echo "$line" | sed -E 's/^\s+//' | sed -E 's/\s+\{.*\}//g' | sed -E 's/\s+\(.*?\)//g')
+            for pkg in $pkgs_on_line; do
+                if [[ -n "$pkg" ]]; then
+                    successful_packages_map["$pkg"]=1
+                    log_message "Potential successful package: $pkg"
+                fi
             done
-            ;;
-        load)
-            if [[ -z "$module_name" ]]; then
-                echo "Error: module name required for load."
-                return 1
+        fi
+    done <<< "$output"
+    for pkg_name in "${!successful_packages_map[@]}"; do
+        if [[ -n "${failed_packages_map[$pkg_name]}" ]]; then
+            log_message "Package $pkg_name was listed as successful but also failed. Marking as failed."
+            unset successful_packages_map["$pkg_name"]
+        fi
+    done
+
+    echo "Failed packages (from parse_apt_output):"
+    for pkg in "${!failed_packages_map[@]}"; do echo "  - $pkg (${failed_packages_map[$pkg]})"; done
+    echo "Successful packages (from parse_apt_output):"
+    for pkg in "${!successful_packages_map[@]}"; do echo "  - $pkg"; done
+}
+
+# --- Dynamic Package Alternative Search Function ---
+find_alternatives() {
+    local failed_pkgs_to_check=("${@}")
+    log_message "Finding alternatives for: ${failed_pkgs_to_check[*]}"
+    declare -g APT_UPDATED_THIS_RUN
+
+    for failed_pkg in "${failed_pkgs_to_check[@]}"; do
+        log_message "Searching alternatives for '$failed_pkg' using apt-cache search."
+        if [ -z "$APT_UPDATED_THIS_RUN" ]; then
+            echo "Updating apt cache to improve search results (once per run)..."
+            if sudo apt update >/dev/null 2>&1; then
+                APT_UPDATED_THIS_RUN=true
+                log_message "apt update successful."
+            else
+                log_message "apt update failed. Search results might be stale."
+                echo -e "${COLOR_YELLOW}Warning: 'apt update' failed. Search results may be incomplete/stale.${COLOR_NC}"
+                # Continue without update, or could choose to exit
             fi
-            echo "Loading module: $module_name"
-            if ! grep -qxF "$module_name" "$LOADED_MODULES_FILE"; then
-                echo "$module_name" >> "$LOADED_MODULES_FILE"
+        fi
+
+        local search_output
+        search_output=$(apt-cache search "$failed_pkg" 2>&1)
+        local best_alternative=""
+        local best_score=0
+        local base_failed_pkg_name=$(echo "$failed_pkg" | sed -E 's/(-dev|-common|-utils|[0-9.-]+)$//; s/([0-9.]+)$//')
+
+        while IFS= read -r line; do
+            local current_pkg_name=$(echo "$line" | awk '{print $1}')
+            local current_score=0
+            if [ -z "$current_pkg_name" ] || [[ "$current_pkg_name" == "$failed_pkg" ]]; then continue; fi
+            log_message "Considering '$current_pkg_name' for '$failed_pkg'"
+            if [[ "$current_pkg_name" == "$failed_pkg"* ]]; then
+                current_score=$((current_score + 50))
+                if [[ "$current_pkg_name" == "$failed_pkg-dev" || \
+                      "$current_pkg_name" == "$failed_pkg-doc" || \
+                      "$current_pkg_name" == "$failed_pkg-utils" || \
+                      "$current_pkg_name" == "$failed_pkg-common" ]]; then
+                    current_score=$((current_score + 30))
+                fi
             fi
-            # Actual load logic would go here
-            ;;
-        unload)
-            if [[ -z "$module_name" ]]; then
-                echo "Error: module name required for unload."
-                return 1
+            local base_current_pkg_name=$(echo "$current_pkg_name" | sed -E 's/(-dev|-common|-utils|[0-9.-]+)$//; s/([0-9.]+)$//')
+            if [[ "$base_failed_pkg_name" == "$base_current_pkg_name" ]] && [[ "$failed_pkg" != "$current_pkg_name" ]]; then
+                current_score=$((current_score + 40))
+                local version_failed=$(echo "$failed_pkg" | grep -oE '[0-9]+([.-][0-9]+)*' | tail -n1)
+                local version_current=$(echo "$current_pkg_name" | grep -oE '[0-9]+([.-][0-9]+)*' | tail -n1)
+                if [[ -n "$version_failed" && -n "$version_current" ]]; then
+                    # dpkg might not be available, or fail. Add error handling.
+                    if type dpkg > /dev/null 2>&1 && dpkg --compare-versions "$version_current" gt "$version_failed"; then
+                        current_score=$((current_score + 20))
+                    fi
+                elif [[ -n "$version_current" ]]; then
+                    current_score=$((current_score + 10))
+                fi
             fi
-            echo "Unloading module: $module_name"
-            # Remove module from loaded list
-            sed -i "/^${module_name}$/d" "$LOADED_MODULES_FILE"
-            # Actual unload logic would go here
+            local len_diff=$(( ${#failed_pkg} - ${#current_pkg_name} )); len_diff=${len_diff#-}
+            if [ "$len_diff" -lt 3 ]; then current_score=$((current_score + 10 - len_diff)); fi
+            if [ "$current_score" -gt "$best_score" ]; then
+                best_score=$current_score
+                best_alternative="$current_pkg_name"
+                log_message "New best alternative for '$failed_pkg': '$best_alternative' (Score: $best_score)"
+            fi
+        done <<< "$search_output"
+        if [ -n "$best_alternative" ]; then
+            alternatives_map["$failed_pkg"]="$best_alternative"
+            log_message "Found alternative for $failed_pkg: $best_alternative"
+        else
+            alternatives_map["$failed_pkg"]="NOT_FOUND"
+            log_message "No suitable alternative found for $failed_pkg"
+        fi
+    done
+}
+
+# --- Interactive User Prompt and Command Generation ---
+present_solution() {
+    log_message "Presenting solution to the user."
+    echo
+    local proposed_command_packages=()
+    echo -e "${COLOR_GREEN}--- Packages that can be installed directly ---${COLOR_NC}"
+    if [ "${#SUCCESSFUL_PACKAGES_NAMES[@]}" -gt 0 ]; then
+        for pkg in "${SUCCESSFUL_PACKAGES_NAMES[@]}"; do
+            echo -e "${COLOR_GREEN}  - $pkg${COLOR_NC}"
+            proposed_command_packages+=("$pkg")
+        done
+    else echo -e "${COLOR_GREEN}  (None)${COLOR_NC}"; fi; echo
+    echo -e "${COLOR_YELLOW}--- Failed packages with suggested alternatives ---${COLOR_NC}"
+    local has_alternatives=false
+    for failed_pkg in "${!alternatives_map[@]}"; do
+        local alternative="${alternatives_map[$failed_pkg]}"
+        if [[ "$alternative" != "NOT_FOUND" && -n "$alternative" ]]; then
+            echo -e "${COLOR_YELLOW}  - $failed_pkg -> $alternative${COLOR_NC}"
+            proposed_command_packages+=("$alternative")
+            has_alternatives=true
+        fi
+    done
+    if ! $has_alternatives; then echo -e "${COLOR_YELLOW}  (None)${COLOR_NC}"; fi; echo
+    echo -e "${COLOR_RED}--- Failed packages with NO alternatives found ---${COLOR_NC}"
+    local has_no_alternatives=false
+    for failed_pkg in "${!alternatives_map[@]}"; do
+        local alternative="${alternatives_map[$failed_pkg]}"
+        if [[ "$alternative" == "NOT_FOUND" ]]; then
+            echo -e "${COLOR_RED}  - $failed_pkg${COLOR_NC}"
+            has_no_alternatives=true
+        fi
+    done
+    if ! $has_no_alternatives; then echo -e "${COLOR_RED}  (None)${COLOR_NC}"; fi; echo
+    if [ "${#proposed_command_packages[@]}" -eq 0 ]; then
+        echo -e "${COLOR_RED}No packages to install. Mission aborted.${COLOR_NC}"
+        log_message "No packages to install after analysis. Aborting."
+        return 1
+    fi
+    local proposed_command="sudo apt install -y ${proposed_command_packages[*]}"
+    echo -e "Proposed command to execute:"
+    echo -e "${COLOR_GREEN}$proposed_command${COLOR_NC}"
+    echo
+    read -r -p "Do you want to execute this command? [Y/n]: " user_choice
+    log_message "User prompt for command execution. Choice: '$user_choice'"
+    case "$user_choice" in [Yy]* ) return 0;; * ) return 1;; esac
+}
+
+# --- Final Execution Function ---
+execute_final_command() {
+    if [ "${#FINAL_PACKAGES_TO_INSTALL[@]}" -eq 0 ]; then
+        log_message "execute_final_command called with no packages."
+        echo "No packages were approved for final installation."
+        return 1
+    fi
+    log_message "Executing final apt command for: ${FINAL_PACKAGES_TO_INSTALL[*]}"
+    echo -e "${COLOR_GREEN}Executing: sudo apt install -y ${FINAL_PACKAGES_TO_INSTALL[*]}${COLOR_NC}"
+    if sudo apt install -y "${FINAL_PACKAGES_TO_INSTALL[@]}"; then
+        log_message "Final apt command executed successfully."
+        echo -e "${COLOR_GREEN}Installation successful.${COLOR_NC}"
+        return 0
+    else
+        local exit_code=$?
+        log_message "Final apt command failed with exit code $exit_code."
+        echo -e "${COLOR_RED}Installation failed. Please check the output above for details.${COLOR_NC}"
+        return $exit_code
+    fi
+}
+
+# --- Main Script Logic (continued) ---
+APT_OUTPUT=$(execute_apt_install "${INITIAL_PACKAGES[@]}")
+EXECUTE_APT_EXIT_CODE=$?
+
+declare -gA failed_packages_map
+declare -gA successful_packages_map
+declare -gA alternatives_map
+alternatives_map=()
+declare -g FINAL_PACKAGES_TO_INSTALL=()
+
+if [ "$EXECUTE_APT_EXIT_CODE" -ne 0 ]; then
+    log_message "Proceeding to parse APT output."
+    parse_apt_output "$APT_OUTPUT"
+
+    FAILED_PACKAGES_NAMES=(${!failed_packages_map[@]})
+    SUCCESSFUL_PACKAGES_NAMES=(${!successful_packages_map[@]})
+
+    log_message "Parsed failed packages: ${FAILED_PACKAGES_NAMES[*]}"
+    log_message "Parsed successful packages: ${SUCCESSFUL_PACKAGES_NAMES[*]}"
+
+    if [ "${#FAILED_PACKAGES_NAMES[@]}" -gt 0 ]; then
+        find_alternatives "${FAILED_PACKAGES_NAMES[@]}"
+        log_message "Alternatives map: "
+        for key in "${!alternatives_map[@]}"; do log_message "  ${key} -> ${alternatives_map[${key}]}"; done
+    else
+        log_message "No failed packages to find alternatives for."
+    fi
+
+    USER_CHOICE_EXIT_CODE=1
+    # Ensure present_solution is called if there was any input,
+    # or if parsing found something even if initial apt dry run failed weirdly
+    if [ "$EXECUTE_APT_EXIT_CODE" -ne 0 ] && \
+       ( [ "${#FAILED_PACKAGES_NAMES[@]}" -gt 0 ] || \
+         [ "${#SUCCESSFUL_PACKAGES_NAMES[@]}" -gt 0 ] || \
+         [ ${#INITIAL_PACKAGES[@]} -gt 0 ] ); then
+        present_solution
+        USER_CHOICE_EXIT_CODE=$?
+    else
+        if [ "$EXECUTE_APT_EXIT_CODE" -ne 0 ]; then
+             echo -e "${COLOR_RED}No packages were successfully parsed or found alternatives for, or initial dry-run failed unexpectedly.${COLOR_NC}"
+             log_message "Present solution skipped: No successful/alternative packages or unexpected dry-run failure."
+        fi
+    fi
+
+    if [ "$USER_CHOICE_EXIT_CODE" -eq 0 ]; then
+        log_message "User approved the command."
+        FINAL_PACKAGES_TO_INSTALL=()
+        FINAL_PACKAGES_TO_INSTALL+=(${SUCCESSFUL_PACKAGES_NAMES[@]})
+        for failed_pkg_key in "${!alternatives_map[@]}"; do
+            local alternative_val="${alternatives_map[$failed_pkg_key]}"
+            if [[ "$alternative_val" != "NOT_FOUND" && -n "$alternative_val" ]]; then
+                if ! [[ " ${FINAL_PACKAGES_TO_INSTALL[*]} " =~ " ${alternative_val} " ]]; then
+                    FINAL_PACKAGES_TO_INSTALL+=("$alternative_val")
+                fi
+            fi
+        done
+        log_message "Final packages for execution: ${FINAL_PACKAGES_TO_INSTALL[*]}"
+        if [ ${#FINAL_PACKAGES_TO_INSTALL[@]} -gt 0 ]; then
+            execute_final_command
+        else
+            echo -e "${COLOR_YELLOW}User confirmed, but no packages were selected for installation. This may indicate an issue.${COLOR_NC}"
+            log_message "User confirmed but FINAL_PACKAGES_TO_INSTALL is empty."
+        fi
+    else
+        echo -e "${COLOR_RED}Mission aborted by user.${COLOR_NC}"
+        log_message "User declined the command or no command was proposed."
+    fi
+else
+    # This case implies execute_apt_install exited with 0 (all packages fine on dry run)
+    # The script would have exited within execute_apt_install.
+    log_message "Dry-run was successful, script should have exited earlier if not for simulation changes."
+fi
+
+# --- Chmod Recursive .sh Function ---
+chmod_sh_recursive() {
+    log_message "chmod_sh_recursive function called."
+    echo "Searching for .sh files recursively..."
+
+    local sh_files=()
+    local file_depths=() # Associative array to store depth for each file
+    local max_depth_found=0
+
+    # Need to handle paths starting with ./ correctly for depth calculation
+    # find outputs paths like ./foo/bar.sh or ./baz.sh
+    while IFS= read -r file_path; do
+        sh_files+=("$file_path")
+
+        # Calculate depth
+        # Remove leading ./ if present for depth calculation
+        local relative_path="${file_path#./}"
+        # Count slashes in the relative path. Depth is slash_count + 1 for files in subdirs, or 1 if no slashes.
+        # Or, more simply, count path components.
+        local depth
+        depth=$(echo "$relative_path" | awk -F'/' '{print NF}')
+
+        file_depths["$file_path"]=$depth
+        log_message "Found: $file_path (Depth: $depth)"
+
+        if [ "$depth" -gt "$max_depth_found" ]; then
+            max_depth_found=$depth
+        fi
+    done < <(find . -type f -name "*.sh") # Process substitution is good here
+
+    if [ ${#sh_files[@]} -eq 0 ]; then
+        echo "No .sh files found in the current directory or subdirectories."
+        log_message "No .sh files found."
+        return
+    fi
+
+    echo "Found ${#sh_files[@]} .sh file(s)."
+    # For debugging:
+    # for file in "${sh_files[@]}"; do
+    #     echo "  - $file (Depth: ${file_depths["$file"]})"
+    # done
+
+    # Implement depth warning
+    if [ "$max_depth_found" -gt 3 ]; then
+        echo -e "${COLOR_YELLOW}Warning: Found .sh files deeper than 3 directory levels.${COLOR_NC}"
+        echo -e "${COLOR_YELLOW}The deepest file found is at level $max_depth_found.${COLOR_NC}"
+        log_message "Depth warning issued: Max depth found $max_depth_found."
+    fi
+
+    echo "The following .sh files were found:"
+    for file in "${sh_files[@]}"; do
+        echo "  - $file (Depth: ${file_depths["$file"]})"
+    done
+    echo # Add a blank line for readability
+
+    local user_choice
+    read -r -p "Do you want to set +x permission on these ${#sh_files[@]} file(s)? [Y/n]: " user_choice
+    log_message "User prompt for chmod +x. Choice: '$user_choice'"
+
+    case "$user_choice" in
+        [Yy]* )
+            # Proceed with chmod
+            log_message "User confirmed chmod +x."
+            echo "Applying chmod +x to the following files:"
+            local success_count=0
+            local error_count=0
+            for file in "${sh_files[@]}"; do
+                if chmod +x "$file"; then
+                    echo "  - Successfully set +x on $file"
+                    log_message "Successfully set +x on $file"
+                    success_count=$((success_count + 1))
+                else
+                    echo -e "${COLOR_RED}  - Failed to set +x on $file${COLOR_NC}"
+                    log_message "Failed to set +x on $file (exit code $?)"
+                    error_count=$((error_count + 1))
+                fi
+            done
+
+            echo
+            echo "Summary:"
+            echo -e "  ${COLOR_GREEN}Successfully set +x on $success_count file(s).${COLOR_NC}"
+            if [ "$error_count" -gt 0 ]; then
+                echo -e "  ${COLOR_RED}Failed to set +x on $error_count file(s).${COLOR_NC}"
+                echo -e "${COLOR_YELLOW}You may need to run this command with sudo or check file ownership if permissions were denied.${COLOR_NC}"
+            fi
             ;;
-        *)
-            echo "Unknown module action: $action"
-            echo "Usage: sentinel module [list|load <module>|unload <module>]"
+        *     )
+            # User declined
+            echo "Operation cancelled by user."
+            log_message "User cancelled chmod +x operation."
+            return
             ;;
     esac
 }
 
-# Parse global options first
-ARGS=()
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --verbose)
-            VERBOSE=true
-            shift
-            ;;
-        --config)
-            if [[ -n "$2" ]]; then
-                CONFIG_FILE="$2"
-                shift 2
-            else
-                echo "Error: --config requires an argument."
-                exit 1
-            fi
-            ;;
-        *)
-            ARGS+=("$1") # Store positional arguments
-            shift
-            ;;
-    esac
-done
-
-# Restore positional arguments
-set -- "${ARGS[@]}"
-
-# Main command dispatcher
-if [[ -z "$1" ]]; then
-    echo "Usage: sentinel [--verbose] [--config <file>] <subcommand> [args...]"
-    echo "Subcommands:"
-    echo "  module    Manage modules"
-    echo "  process   Process a file"
-    exit 1
-fi
-
-SUBCOMMAND="$1"
-shift
-
-case "$SUBCOMMAND" in
-    "$MODULE_SUBCOMMAND")
-        handle_module "$@"
-        ;;
-    "$PROCESS_SUBCOMMAND")
-        # In a real scenario, ensure sentinel_process.py is executable and in PATH
-        # For this prototype, we'll assume it's in the same directory
-        ./sentinel_process.py "$@"
-        ;;
-    *)
-        echo "Unknown subcommand: $SUBCOMMAND"
-        echo "Usage: sentinel <subcommand> [args...]"
-        exit 1
-        ;;
-esac
-
-if [[ "$VERBOSE" = true ]]; then
-    echo "Verbose mode is ON."
-    if [[ -n "$CONFIG_FILE" ]]; then
-        echo "Config file: $CONFIG_FILE"
-    fi
-fi
+log_message "Sentinel script finished."
+exit 0
