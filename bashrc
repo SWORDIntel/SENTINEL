@@ -7,7 +7,6 @@ export SENTINEL_DISABLE_FANCY_OUTPUT=1
 # Disable debug messages completely
 export SENTINEL_DEBUG=0
 alias gradle='/usr/local/bin/gradle'
-#!/usr/bin/env bash
 # MINIMAL BASHRC with Step 1: Environment Variables and Path Handling
 # This is a minimal .bashrc file with basic functionality
 
@@ -71,6 +70,28 @@ if [[ -d "$HOME/go/go/bin" ]]; then
 fi
 
 # Clean up any duplicate entries
+sanitize_path
+
+# Ensure Python paths are available
+if [[ -d "/usr/bin" ]] && [[ -x "/usr/bin/python3" ]]; then
+    # Create python alias to python3 if python command doesn't exist
+    if ! command -v python &>/dev/null; then
+        alias python=python3
+        echo "Aliased python to python3." >&1
+    fi
+fi
+
+# Add common Python locations to PATH if they exist and are not already included
+for python_dir_to_check in \
+    "/usr/local/bin" \
+    "/opt/python/bin" \
+    "${HOME}/.local/bin"; do
+    if [[ -d "$python_dir_to_check" ]] && [[ ":$PATH:" != *":$python_dir_to_check:"* ]]; then
+        export PATH="$python_dir_to_check:$PATH"
+        echo "Added $python_dir_to_check to PATH." >&1
+    fi
+done
+# Re-sanitize PATH after potential additions
 sanitize_path
 
 # Basic prompt
@@ -260,19 +281,6 @@ if [[ -f ~/.bashrc.precustom ]]; then
   echo "Loading precustom configuration..."
   safe_source ~/.bashrc.precustom
 fi
-
-# Add hook for post-customization at the end of the file
-# This will be sourced at the very end to ensure it has the final say
-_load_postcustom() {
-  # Check if the file exists before trying to source it
-  if [[ -f ~/.bashrc.postcustom ]]; then
-    echo "Loading postcustom configuration..."
-    safe_source ~/.bashrc.postcustom
-  fi
-}
-
-# Register the function to be called at the very end
-trap _load_postcustom EXIT
 
 # Safe module loading system
 # Create directories for module cache if they don't exist
@@ -528,4 +536,104 @@ if [[ -f "$HOME/bash_functions.d/venv_helpers" ]]; then
     safe_source "$HOME/bash_functions.d/venv_helpers" 2>/dev/null || true
 fi
 
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# Safely evaluate brew shellenv only if brew exists
+if [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
+  eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+else
+  echo "Warning: Homebrew not found at /home/linuxbrew/.linuxbrew/bin/brew. Skipping brew shellenv."
+fi
+
+# Data Science Environment Shortcut
+datascience() {
+    echo "Activating optimized data science environment..."
+
+    # Activate virtual environment
+    # Ensure the path to activate script is correct and accessible
+    if [ -f ~/datascience/envs/dsenv/bin/activate ]; then
+        source ~/datascience/envs/dsenv/bin/activate
+    else
+        echo "Warning: Data science virtual environment not found at ~/datascience/envs/dsenv/bin/activate"
+    fi
+
+    # Set optimization flags for AVX-512
+    export CC=gcc
+    export CXX=g++
+    export FC=gfortran
+    export CFLAGS="-march=native -O3 -pipe -fomit-frame-pointer -flto"
+    export CXXFLAGS="$CFLAGS"
+    export FCFLAGS="$CFLAGS"
+    export LDFLAGS="-Wl,-O3 -Wl,--as-needed -flto"
+    # Ensure nproc is available, otherwise default to 1
+    if command -v nproc &> /dev/null; then
+        export NPY_NUM_BUILD_JOBS=$(nproc)
+    else
+        export NPY_NUM_BUILD_JOBS=1
+    fi
+    export RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C lto=fat"
+
+    # Set Arrow library path
+    export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+    # Change to code directory
+    if [ -d /opt/code ]; then
+        cd /opt/code
+    else
+        echo "Warning: Code directory /opt/code not found."
+    fi
+
+    # Attempt to get Python version safely
+    local python_version_info="Not found"
+    if command -v python3 &> /dev/null; then # Check for python3 first
+        python_version_info=$(python3 --version 2>&1 | cut -d' ' -f2 || echo "Error getting version")
+    elif command -v python &> /dev/null; then # Fallback to python if python3 not found (e.g. if alias is not set yet or in a different env)
+        python_version_info=$(python --version 2>&1 | cut -d' ' -f2 || echo "Error getting version")
+    fi
+
+    # Attempt to get NumPy version safely using python3
+    local numpy_version_info="Not found"
+    if command -v python3 &> /dev/null && python3 -c 'import numpy' &> /dev/null; then
+        numpy_version_info=$(python3 -c 'import numpy; print(numpy.__version__)' 2>/dev/null || echo "Error getting version")
+    fi
+
+    echo "Environment activated! Python $python_version_info"
+    echo "NumPy: $numpy_version_info"
+    echo "Working directory: $(pwd)"
+}
+
+# OpenVINO 2025.2.0 Environment
+# Ensure setupvars.sh exists before sourcing
+if [ -f /usr/local/setupvars.sh ]; then
+    source /usr/local/setupvars.sh
+else
+    echo "Warning: OpenVINO setup script not found at /usr/local/setupvars.sh"
+fi
+
+# Also set NPU environment variable for Meteor Lake
+export ZE_ENABLE_NPU_DRIVER=1
+
+# Add Level Zero library path
+export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
+# Load postcustom configuration if it exists
+# Check multiple locations for flexibility
+# Ensure this is one of the last things done in bashrc
+echo "Checking for bashrc.postcustom..." >&1
+for postcustom_file in \
+    "$(dirname "${BASH_SOURCE[0]}")/bashrc.postcustom" \
+    "${HOME}/bashrc.postcustom" \
+    "${HOME}/.bashrc.postcustom"; do
+    if [[ -f "$postcustom_file" ]]; then
+        echo "Loading postcustom configuration from: $postcustom_file" >&1
+        # Use safe_source if available, otherwise regular source
+        if command -v safe_source &> /dev/null; then
+            safe_source "$postcustom_file"
+        else
+            source "$postcustom_file"
+        fi
+        # Create a signal file for testing
+        touch /tmp/postcustom_loaded.signal 2>/dev/null || true
+        echo "bashrc.postcustom loaded. Signal file /tmp/postcustom_loaded.signal created." >&1
+        break
+    fi
+done
+echo "Finished checking for bashrc.postcustom." >&1
