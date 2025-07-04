@@ -211,11 +211,31 @@ if [[ ! -f "${HOME}/bashrc.postcustom" ]]; then
 fi
 
 # Source with robust error handling
-{
-  source "${HOME}/bashrc.postcustom" >/dev/null 2>&1 && echo "SOURCE_SUCCESS=true"
-} || {
+SOURCE_STDERR_OUTPUT=""
+SOURCE_STDOUT_OUTPUT=""
+if SOURCE_STDERR_OUTPUT=$(source "${HOME}/bashrc.postcustom" 2>&1); then
+  echo "SOURCE_SUCCESS=true"
+  SOURCE_STDOUT_OUTPUT="$SOURCE_STDERR_OUTPUT" # if successful, output is stdout
+  SOURCE_STDERR_OUTPUT="" # clear stderr if successful
+else
   echo "SOURCE_FAILED=true"
-}
+  # stderr is already in SOURCE_STDERR_OUTPUT
+fi
+
+echo "--- Captured STDOUT from sourcing bashrc.postcustom ---"
+echo "${SOURCE_STDOUT_OUTPUT}"
+echo "--- End Captured STDOUT ---"
+
+echo "--- Captured STDERR from sourcing bashrc.postcustom ---"
+echo "${SOURCE_STDERR_OUTPUT}"
+echo "--- End Captured STDERR ---"
+
+# Check for the signal file created by the main bashrc
+if [[ -f "/tmp/postcustom_loaded.signal" ]]; then
+    echo "SIGNAL_FILE_EXISTS=true"
+else
+    echo "SIGNAL_FILE_EXISTS=false"
+fi
 
 # Output environment variables for verification - safely check if they exist
 echo "BLESH_LOADED=${SENTINEL_BLESH_LOADED:-not_set}"
@@ -246,12 +266,22 @@ EOT
 chmod +x "${TESTDIR}/source_test.sh"
 
 # Capture output with proper error handling to prevent installer from aborting
-SOURCE_OUTPUT=$(bash "${TESTDIR}/source_test.sh" 2>/dev/null || echo "SOURCE_FAILED=true")
+TMP_SOURCE_OUTPUT_FILE="${TESTDIR}/source_output.txt"
+bash "${TESTDIR}/source_test.sh" > "${TMP_SOURCE_OUTPUT_FILE}" 2>&1
+SOURCE_OUTPUT=$(<"${TMP_SOURCE_OUTPUT_FILE}") # Read it for grep
 
 if echo "$SOURCE_OUTPUT" | grep -q "SOURCE_FAILED=true"; then
     fail "Failed to source bashrc.postcustom"
+    # Log the captured output for debugging
+    log "--- BEGIN CAPTURED OUTPUT FROM source_test.sh ---"
+    tee -a "${VERIFICATION_LOG}" < "${TMP_SOURCE_OUTPUT_FILE}"
+    # Add a newline to the log after tee, as tee itself might not add one depending on input
+    echo "" >> "${VERIFICATION_LOG}"
+    log "--- END CAPTURED OUTPUT FROM source_test.sh ---"
 else
     pass "Successfully sourced bashrc.postcustom"
+    # Optionally log full output even on success for detailed tracing
+    # echo "$SOURCE_OUTPUT" >> "${VERIFICATION_LOG}"
     
     # Check for essential components in output with better error handling
     if echo "$SOURCE_OUTPUT" | grep -q "AUTOCOMPLETE=available"; then
@@ -271,6 +301,15 @@ else
     else
         warn "Logging functions are missing or not properly loaded"
     fi
+fi
+
+# Check for the signal file from the test script's perspective
+if echo "$SOURCE_OUTPUT" | grep -q "SIGNAL_FILE_EXISTS=true"; then
+    pass "Signal file /tmp/postcustom_loaded.signal was created during test script execution."
+elif echo "$SOURCE_OUTPUT" | grep -q "SIGNAL_FILE_EXISTS=false"; then
+    warn "Signal file /tmp/postcustom_loaded.signal was NOT created during test script execution."
+else
+    warn "Could not determine status of signal file /tmp/postcustom_loaded.signal from test script output."
 fi
 
 ###############################################################################
