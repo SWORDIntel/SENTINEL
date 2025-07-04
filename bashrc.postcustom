@@ -283,6 +283,7 @@ mkvenv() {
         "$python_cmd" -m venv "$venv_dir"
         if [[ $? -ne 0 ]]; then
             echo "[✗] Failed to create virtual environment"
+        fi # Added missing fi for the inner if
     fi
 }
 
