@@ -210,7 +210,18 @@ if [[ ! -f "${HOME}/bashrc.postcustom" ]]; then
   echo "POSTCUSTOM_CREATED=true"
 fi
 
-# Source with robust error handling
+# First source the main bashrc to set up the environment
+# This ensures all required functions and variables are available
+SOURCE_BASHRC_OUTPUT=""
+if [[ -f "${HOME}/.bashrc" ]]; then
+  # Source bashrc to get the full environment including safe_source function
+  SOURCE_BASHRC_OUTPUT=$(source "${HOME}/.bashrc" 2>&1) || true
+  echo "BASHRC_SOURCED=true"
+else
+  echo "BASHRC_SOURCED=false"
+fi
+
+# Now source postcustom with the proper environment set up
 SOURCE_STDERR_OUTPUT=""
 SOURCE_STDOUT_OUTPUT=""
 if SOURCE_STDERR_OUTPUT=$(source "${HOME}/bashrc.postcustom" 2>&1); then
