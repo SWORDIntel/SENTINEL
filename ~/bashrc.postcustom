@@ -326,3 +326,155 @@ fi
 export CFLAGS="-march=native -O3 -pipe -fomit-frame-pointer -flto"
 export CXXFLAGS="$CFLAGS"
 export RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C lto=fat"
+
+# =============================
+# File Ownership & Permissions Management
+# =============================
+
+# Enhanced takeown command with safety features and options
+takeownall() {
+    local current_user
+    local target_path="."
+    local recursive=true
+    local dry_run=false
+    local verbose=false
+    local force=false
+    
+    # Get current user dynamically
+    current_user=$(whoami)
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -p|--path)
+                target_path="$2"
+                shift 2
+                ;;
+            --no-recursive)
+                recursive=false
+                shift
+                ;;
+            -n|--dry-run)
+                dry_run=true
+                shift
+                ;;
+            -v|--verbose)
+                verbose=true
+                shift
+                ;;
+            -f|--force)
+                force=true
+                shift
+                ;;
+            -h|--help)
+                cat << 'EOF'
+Usage: takeownall [OPTIONS] [PATH]
+
+Take ownership of files and directories with enhanced safety features.
+
+Options:
+  -p, --path PATH       Target path (default: current directory)
+  --no-recursive        Don't process subdirectories
+  -n, --dry-run         Show what would be done without making changes
+  -v, --verbose         Show detailed output
+  -f, --force           Skip confirmation prompts
+  -h, --help            Show this help message
+
+Examples:
+  takeownall                    # Take ownership of current directory recursively
+  takeownall -p /path/to/dir    # Take ownership of specific directory
+  takeownall --dry-run          # Preview changes without applying them
+  takeownall -v --no-recursive  # Take ownership of current dir only, with verbose output
+
+Security: Always uses current user ($(whoami)) for safety.
+EOF
+                return 0
+                ;;
+            *)
+                if [[ -z "$2" && -d "$1" ]]; then
+                    target_path="$1"
+                else
+                    echo "Error: Unknown option '$1'"
+                    echo "Use 'takeownall --help' for usage information."
+                    return 1
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # Validate target path
+    if [[ ! -e "$target_path" ]]; then
+        echo "[✗] Error: Path '$target_path' does not exist"
+        return 1
+    fi
+    
+    # Build command options
+    local chown_opts=""
+    local chmod_opts=""
+    
+    if [[ "$recursive" == true ]]; then
+        chown_opts="-R"
+        chmod_opts="-R"
+    fi
+    
+    if [[ "$verbose" == true ]]; then
+        chown_opts="$chown_opts -v"
+        chmod_opts="$chmod_opts -v"
+    fi
+    
+    # Show what will be done
+    echo "[i] Operation Summary:"
+    echo "    User:        $current_user"
+    echo "    Target:      $target_path"
+    echo "    Recursive:   $recursive"
+    echo "    Dry Run:     $dry_run"
+    
+    if [[ "$dry_run" == true ]]; then
+        echo ""
+        echo "[i] DRY RUN - Commands that would be executed:"
+        echo "    sudo chown $chown_opts $current_user:$current_user '$target_path'"
+        echo "    sudo chmod $chmod_opts u+rwX '$target_path'"
+        return 0
+    fi
+    
+    # Confirmation prompt (unless forced)
+    if [[ "$force" != true ]]; then
+        echo ""
+        read -p "[?] Proceed with ownership change? [y/N]: " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "[i] Operation cancelled"
+            return 0
+        fi
+    fi
+    
+    echo ""
+    echo "[+] Taking ownership of '$target_path'..."
+    
+    # Execute chown command
+    if sudo chown $chown_opts "$current_user:$current_user" "$target_path"; then
+        echo "[✓] Ownership changed successfully"
+    else
+        echo "[✗] Failed to change ownership"
+        return 1
+    fi
+    
+    # Execute chmod command
+    echo "[+] Setting permissions..."
+    if sudo chmod $chmod_opts u+rwX "$target_path"; then
+        echo "[✓] Permissions updated successfully"
+    else
+        echo "[✗] Failed to update permissions"
+        return 1
+    fi
+    
+    echo "[✓] Operation completed successfully"
+}
+
+# Quick alias for basic usage (maintains backward compatibility)
+alias takeown='takeownall'
+
+# Additional file management aliases
+alias fixperms='takeownall --dry-run'  # Preview permission changes
+alias ownme='takeownall -f .'          # Quick take ownership without prompts
