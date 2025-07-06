@@ -1,5 +1,5 @@
-export LANG=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
+export LANG=en_US.utf8
+export LC_ALL=en_US.utf8
 
 #!/usr/bin/env bash
 # ~/bashrc.postcustom
@@ -233,6 +233,18 @@ export SENTINEL_QUIET_STATUS=1
 
 # Enable Small LLM module
 export SENTINEL_SMALLLLM_ENABLED=1
+
+# OpenVINO Check (after Python venv setup)
+if [ -d "${HOME}/venv/bin" ]; then
+  if "${HOME}/venv/bin/python" -c "import openvino" >/dev/null 2>&1; then
+    echo "[SENTINEL] OpenVINO Python package is available in the virtual environment."
+    echo "[SENTINEL] For Python-based OpenVINO tasks, this should be sufficient."
+    echo "[SENTINEL] If you need the full OpenVINO SDK environment (e.g., for C++ development or command-line tools),"
+    echo "[SENTINEL] ensure it's installed separately and its setupvars.sh is sourced."
+  else
+    echo "[SENTINEL] Warning: OpenVINO Python package not found in the virtual environment, though it was listed in requirements.txt."
+  fi
+fi
 
 # Python virtual environment management
 mkvenv() {
