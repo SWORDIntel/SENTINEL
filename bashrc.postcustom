@@ -1,47 +1,71 @@
+**ARCHITECT ONLINE**
+
+Welcome back Commander
+
+Here is the merged and cleaned `bashrc.postcustom` file.
+
+[2025-07-07 09:01:15 GMT]
+
+```bash
 #!/usr/bin/env bash
 # ~/bashrc.postcustom
 #
-# This file is included very last after running bashrc. 
+# This file is included very last after running bashrc.
 # You can use this to change things like environment variables set
 # without needing to edit the distributed version
 
-#========================================================================
-#========================================================================
+export LANG=en_US.utf8
+export LC_ALL=en_US.utf8
 
+#========================================================================
+#========================================================================
 # Module System Behavior - Global Settings
-# ----------------------------------------
+#----------------------------------------
 # These settings control how the module system operates
 
 # Module Security Configuration
 # ----------------------------
 # These settings control module security verification
 
+# Configuration Caching System
+# ------------------------
+# Controls how configuration files are cached for faster shell startup
+export SENTINEL_CONFIG_CACHE_ENABLED=1
+export SENTINEL_CONFIG_FORCE_REFRESH=0
+export SENTINEL_CONFIG_CACHE_RETENTION_DAYS=30
+export SENTINEL_CONFIG_VERIFY_HASH=1
+
+# Module System Optimization
+# -------------------------
+# Controls module dependency resolution and loading behavior
+export SENTINEL_MODULE_DEBUG=0
+export SENTINEL_MODULE_AUTOLOAD=1
+export SENTINEL_MODULE_CACHE_ENABLED=1
+export SENTINEL_MODULE_VERIFY=1
+
+
 #========================================================================
 # MODULE-SPECIFIC CONFIGURATIONS
 #========================================================================
 
+# SENTINEL Feature Module Toggles
+# -------------------------------
+# Uncomment to enable/disable specific SENTINEL feature modules:
+export SENTINEL_OBFUSCATE_ENABLED=1
+export SENTINEL_FZF_ENABLED=1
+export SENTINEL_ML_ENABLED=1
+export SENTINEL_OSINT_ENABLED=1
+export SENTINEL_CYBERSEC_ENABLED=1
+export SENTINEL_GITSTAR_ENABLED=1
+export SENTINEL_CHAT_ENABLED=1
+export SENTINEL_SMALLLLM_ENABLED=1
+
+
 # Obfuscation Module
 # ------------------
-export SENTINEL_OBFUSCATE_ENABLED=1
 export OBFUSCATE_OUTPUT_DIR="${HOME}/secure/obfuscated_files"
 # Optional: set a custom temp directory for obfuscation
 # export OBFUSCATE_TEMP_DIR="/tmp/obfuscate_temp"
-
-# OSINT Module
-# ------------
-export SENTINEL_OSINT_ENABLED=1
-
-# ML Modules
-# ----------
-export SENTINEL_ML_ENABLED=1
-
-# Chat Module
-# -----------
-export SENTINEL_CHAT_ENABLED=1
-
-# GitHub Star Analyzer
-# -------------------
-export SENTINEL_GITSTAR_ENABLED=1
 
 # Hashcat Configuration
 # --------------------
@@ -49,14 +73,10 @@ export HASHCAT_BIN="/usr/bin/hashcat"
 export HASHCAT_WORDLISTS_DIR="/usr/share/wordlists"
 export HASHCAT_OUTPUT_DIR="${HOME}/.hashcat/cracked"
 
-# Secure Logout Configuration
-# --------------------------
-export SENTINEL_CYBERSEC_ENABLED=1
-
 # Distcc Configuration
 # -------------------
-export DISTCC_HOSTS="localhost"          # Space-separated list of compilation hosts
-export CCACHE_SIZE="5G"                  # Maximum size of ccache
+export DISTCC_HOSTS="localhost"       # Space-separated list of compilation hosts
+export CCACHE_SIZE="5G"               # Maximum size of ccache
 
 #========================================================================
 # CUSTOM PROMPT CONFIGURATION (OPTIONAL)
@@ -71,22 +91,17 @@ export CCACHE_SIZE="5G"                  # Maximum size of ccache
 
 # Source centralized configuration
 
-# =============================
-# =============================
-
-# =============================
-# =============================
 # SAFER module loading with ultra-robust error handling
 # This completely prevents terminal crashes even if modules are broken
-{ 
+{
     # Only attempt module loading if the file exists
     if [[ -f "${HOME}/.bash_modules" ]]; then
         # Read modules in a protected way that can't crash the terminal
-        { 
+        {
             while IFS= read -r module || [[ -n "$module" ]]; do
                 # Skip empty lines and comments with proper quoting
                 [[ -z "$module" || "$module" =~ ^[[:space:]]*# ]] && continue
-                
+
                 # Extremely safe module loading with multiple layers of protection
                 {
                     # Try module_enable if it exists
@@ -126,19 +141,16 @@ export CCACHE_SIZE="5G"                  # Maximum size of ccache
 #
 # Example:
 # function __load_custom_tool() {
-#    source /path/to/custom/tool/setup.sh
+#     source /path/to/custom/tool/setup.sh
 # }
 # lazy_load custom_tool __load_custom_tool
 #
 # See bash_functions for more predefined loader functions
 # ========================================================================
 
-# Add your customizations below this line
+export U_LAZY_LOAD=1
 
-# =============================
 # Lazy loading for development tools
-# =============================
-# Check if CONFIG array exists, if not use default value
 if [[ -n "${CONFIG[LAZY_LOAD]+set}" && "${CONFIG[LAZY_LOAD]}" == "1" ]] || [[ "${U_LAZY_LOAD:-1}" == "1" ]]; then
     function pyenv() {
         { unset -f pyenv; } 2>/dev/null || true
@@ -187,57 +199,30 @@ if [[ -n "${CONFIG[LAZY_LOAD]+set}" && "${CONFIG[LAZY_LOAD]}" == "1" ]] || [[ "$
     }
 fi
 
-export U_LAZY_LOAD=1
-
-# =============================
-# End of bashrc.postcustom
-# =============================
-
-# BLE.sh loading removed as part of autocomplete refactoring.
-
-# =============================
-# SENTINEL Feature Module Toggles
-# =============================
-# Uncomment to enable/disable specific SENTINEL feature modules:
-export SENTINEL_OBFUSCATE_ENABLED=1
-export SENTINEL_FZF_ENABLED=1
-export SENTINEL_ML_ENABLED=1
-export SENTINEL_OSINT_ENABLED=1
-export SENTINEL_CYBERSEC_ENABLED=1
-export SENTINEL_GITSTAR_ENABLED=1
-export SENTINEL_CHAT_ENABLED=1
-# =============================
-
-# Configuration Caching System
-# ------------------------
-# Controls how configuration files are cached for faster shell startup
-export SENTINEL_CONFIG_CACHE_ENABLED=1
-export SENTINEL_CONFIG_FORCE_REFRESH=0
-export SENTINEL_CONFIG_CACHE_RETENTION_DAYS=30
-export SENTINEL_CONFIG_VERIFY_HASH=1
-
-# Module System Optimization
-# -------------------------
-# Controls module dependency resolution and loading behavior
-export SENTINEL_MODULE_DEBUG=0
-export SENTINEL_MODULE_AUTOLOAD=1
-export SENTINEL_MODULE_CACHE_ENABLED=1
-export SENTINEL_MODULE_VERIFY=1
 
 # Add your customizations below this line
 
 # Silence module status messages
 export SENTINEL_QUIET_STATUS=1
 
-# Enable Small LLM module
-export SENTINEL_SMALLLLM_ENABLED=1
+# OpenVINO Check (after Python venv setup)
+if [ -d "${HOME}/venv/bin" ]; then
+  if "${HOME}/venv/bin/python" -c "import openvino" >/dev/null 2>&1; then
+    echo "[SENTINEL] OpenVINO Python package is available in the virtual environment."
+    echo "[SENTINEL] For Python-based OpenVINO tasks, this should be sufficient."
+    echo "[SENTINEL] If you need the full OpenVINO SDK environment (e.g., for C++ development or command-line tools),"
+    echo "[SENTINEL] ensure it's installed separately and its setupvars.sh is sourced."
+  else
+    echo "[SENTINEL] Warning: OpenVINO Python package not found in the virtual environment, though it was listed in requirements.txt."
+  fi
+fi
 
 # Python virtual environment management
 mkvenv() {
     local venv_dir=".venv"
     local python_cmd="python3"
     local requirements_file="requirements.txt"
-    
+
     # Handle optional arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -258,10 +243,10 @@ mkvenv() {
                 echo "Create and activate a Python virtual environment in the current directory."
                 echo ""
                 echo "Options:"
-                echo "  -d, --dir DIR          Specify the virtual environment directory (default: .venv)"
-                echo "  -p, --python PYTHON    Specify the Python executable to use (default: python3)"
+                echo "  -d, --dir DIR           Specify the virtual environment directory (default: .venv)"
+                echo "  -p, --python PYTHON     Specify the Python executable to use (default: python3)"
                 echo "  -r, --requirements FILE Install packages from requirements file after creation"
-                echo "  -h, --help             Show this help message and exit"
+                echo "  -h, --help              Show this help message and exit"
                 return 0
                 ;;
             *)
@@ -271,13 +256,13 @@ mkvenv() {
                 ;;
         esac
     done
-    
+
     # Check if Python is available
     if ! command -v "$python_cmd" &>/dev/null; then
         echo "[✗] Error: $python_cmd not found"
         return 1
     fi
-    
+
     # Create the virtual environment if it doesn't exist
     if [[ ! -d "$venv_dir" ]]; then
         echo "[+] Creating virtual environment in: $venv_dir"
@@ -285,9 +270,11 @@ mkvenv() {
         if [[ $? -ne 0 ]]; then
             echo "[✗] Failed to create virtual environment"
         fi
-    fi # Added missing fi for the outer if
+    fi
 }
 
-# Note: The 'export VENV_AUTO=1' line that was added to /home/jules/bashrc.postcustom
-# is NOT included here as this overwrite targets the repo's version of the file.
-# The VENV_AUTO logic should be handled by the main bashrc or install scripts if needed.
+
+# =============================
+# End of bashrc.postcustom
+# =============================
+```

@@ -300,13 +300,35 @@ setup_python_venv() {
     
     if [[ ! -d "$VENV_DIR" ]]; then
         # Check if python3-venv is available
-        if ! python3 -c "import venv" &>/dev/null; then
+        if ! /usr/bin/python3 -c "import venv" &>/dev/null; then
             fail "Python venv module not available. Please install python3-venv package (e.g. 'sudo apt install python3-venv' on Debian/Ubuntu)"
         fi
         
-        if ! python3 -m venv "$VENV_DIR"; then
+        # Temporarily rename local venv.py to avoid conflict
+        local local_venv_py_path="${PROJECT_ROOT}/venv.py"
+        local temp_venv_py_path="${PROJECT_ROOT}/venv.py.tmp_rename"
+        local renamed_local_venv_py=0
+        if [[ -f "$local_venv_py_path" ]]; then
+            mv "$local_venv_py_path" "$temp_venv_py_path"
+            renamed_local_venv_py=1
+            log "Temporarily renamed local venv.py to venv.py.tmp_rename"
+        fi
+
+        if ! /usr/bin/python3 -m venv "$VENV_DIR"; then
+            # Restore local venv.py if it was renamed
+            if [[ $renamed_local_venv_py -eq 1 ]]; then
+                mv "$temp_venv_py_path" "$local_venv_py_path"
+                log "Restored local venv.py"
+            fi
             fail "Failed to create Python virtual environment"
         fi
+
+        # Restore local venv.py if it was renamed
+        if [[ $renamed_local_venv_py -eq 1 ]]; then
+            mv "$temp_venv_py_path" "$local_venv_py_path"
+            log "Restored local venv.py"
+        fi
+
         if [[ ! -f "$VENV_DIR/bin/activate" ]]; then
             fail "Virtual environment creation failed - activate script not found"
         fi
@@ -333,6 +355,12 @@ setup_python_venv() {
     mark_done "PYTHON_VENV_READY"
     ok "Python dependencies installed in venv"
 }
+
+###############################################################################
+# ACTUAL CALLS for Steps 2 & 3
+###############################################################################
+setup_directories
+setup_python_venv
 
 ###############################################################################
 # 4. Install BLE.sh (for enhanced autocomplete)
