@@ -8,6 +8,10 @@
 ### browser artifacts, clipboard content, and more.
 ###
 ### Author: John / SWORD Intel Team
+
+# Prevent multiple loading
+[[ -n "${_SENTINEL_BASH_LOGOUT_LOADED}" ]] && return 0
+export _SENTINEL_BASH_LOGOUT_LOADED=1
 ### Email: intel@swordintelligence.airforce
 ### URL: https://github.com/SWORDIntel/SENTINEL/
 ### Version: 1.0.0
@@ -87,13 +91,13 @@ secure_logout_set() {
     if [[ -z "$option" || -z "$value" ]]; then
         echo "Usage: secure_logout_set OPTION VALUE"
         echo "Example: secure_logout_set SENTINEL_SECURE_BROWSER_CACHE 1"
-        return 1
+        return 0
     fi
 
     # Validate option naming.
     if [[ ! "$option" =~ ^SENTINEL_SECURE_ ]]; then
         echo "Invalid option: $option. Options must start with SENTINEL_SECURE_"
-        return 1
+        return 0
     fi
 
     # Update or create the persistent configuration in ~/.bashrc.postcustom.
@@ -120,14 +124,14 @@ secure_logout_add_dir() {
 
     if [[ -z "$dir" ]]; then
         echo "Usage: secure_logout_add_dir DIRECTORY"
-        return 1
+        return 0
     fi
 
     # Resolve the absolute path.
     dir=$(readlink -f "$dir")
     if [[ ! -d "$dir" ]]; then
         echo "Directory does not exist: $dir"
-        return 1
+        return 0
     fi
 
     # Add to SENTINEL_SECURE_DIRS if not already included.

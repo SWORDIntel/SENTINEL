@@ -14,6 +14,7 @@ import shutil
 from datetime import datetime
 import signal
 import hmac
+import shlex
 
 # Third-party imports (with robust error handling)
 try:
@@ -42,6 +43,7 @@ EXECUTION_KEY = hashlib.sha256(os.urandom(32)).hexdigest() if not os.path.exists
 # Ensure directories exist
 Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
 Path(os.path.dirname(HISTORY_FILE)).mkdir(parents=True, exist_ok=True)
+Path(os.path.dirname(CONFIG_FILE)).mkdir(parents=True, exist_ok=True)
 
 # Terminal colors
 
@@ -221,13 +223,17 @@ def execute_command(command, signature, config):
         return "Error: Command not executed due to security verification failure"
 
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        # Parse command safely using shlex
+        cmd_parts = shlex.split(command)
+        result = subprocess.run(cmd_parts, capture_output=True, text=True)
         output = result.stdout
         error = result.stderr
 
         if error:
             return f"Error (exit code {result.returncode}):\n{error}\n\nOutput:\n{output}"
         return output or "Command executed successfully (no output)"
+    except ValueError as e:
+        return f"Error parsing command: {str(e)}"
     except Exception as e:
         return f"Error executing command: {str(e)}"
 

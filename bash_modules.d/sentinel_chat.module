@@ -2,6 +2,10 @@
 ### BEGIN MODULE INFO
 ### END MODULE INFO 
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_CHAT_LOADED}" ]] && return 0
+export _SENTINEL_CHAT_LOADED=1
+
 # Check if module is enabled via environment variable with robust error handling
 # and silent status check that doesn't print messages
 if [[ "${SENTINEL_CHAT_ENABLED:-0}" != "1" ]]; then

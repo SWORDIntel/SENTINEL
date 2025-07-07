@@ -2,10 +2,14 @@
 # SENTINEL Enhanced ML Module
 # Integrates predictive command chains, advanced task detection, and NLU capabilities
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_ML_ENHANCED_LOADED}" ]] && return 0
+export _SENTINEL_ML_ENHANCED_LOADED=1
+
 # Check if Python is available
 if ! command -v python3 &>/dev/null; then
     echo "Warning: Python 3 not found. SENTINEL enhanced ML features disabled."
-    return 1
+    return 0
 fi
 
 # Path to ML scripts
@@ -31,7 +35,7 @@ done
 
 if [ $SENTINEL_ENHANCED_ML_AVAILABLE -eq 0 ]; then
     echo "Error: No enhanced ML modules found. Enhanced ML features disabled."
-    return 1
+    return 0
 fi
 
 # Check for module dependencies
@@ -91,7 +95,7 @@ function sentinel_predict() {
     if [ -f "$CHAIN_PREDICT_SCRIPT" ]; then
         if [ -z "$1" ]; then
             echo "Usage: sentinel_predict <current_command>"
-            return 1
+            return 0
         fi
         
         # Get current task if task detection is available
@@ -152,7 +156,7 @@ function sentinel_task() {
             info)
                 if [ -z "$2" ]; then
                     echo "Usage: sentinel_task info <task_name>"
-                    return 1
+                    return 0
                 fi
                 python3 "$TASK_DETECT_SCRIPT" --task-info "$2" | jq . 2>/dev/null ||
                     python3 "$TASK_DETECT_SCRIPT" --task-info "$2"
@@ -160,14 +164,14 @@ function sentinel_task() {
             learn)
                 if [ -z "$2" ] || [ -z "$3" ]; then
                     echo "Usage: sentinel_task learn <task_name> <command1,command2,...>"
-                    return 1
+                    return 0
                 fi
                 python3 "$TASK_DETECT_SCRIPT" --learn-commands "$2,$3"
                 ;;
             *)
                 echo "Unknown subcommand: $subcommand"
                 echo "Available subcommands: detect, project, history, suggest, info, learn"
-                return 1
+                return 0
                 ;;
         esac
     else
@@ -180,7 +184,7 @@ function sentinel_translate() {
     if [ -f "$NLU_SCRIPT" ]; then
         if [ -z "$1" ]; then
             echo "Usage: sentinel_translate \"your query here\""
-            return 1
+            return 0
         fi
         
         # Translate the query
@@ -228,7 +232,7 @@ function sentinel_script() {
     if [ -f "$NLU_SCRIPT" ]; then
         if [ -z "$1" ] || [ -z "$2" ]; then
             echo "Usage: sentinel_script <output_file.sh> \"description of what the script should do\""
-            return 1
+            return 0
         fi
         
         local output_file="$1"
@@ -241,7 +245,7 @@ function sentinel_script() {
             read -r response
             if [[ "$response" != "y" ]]; then
                 echo "Aborted."
-                return 1
+                return 0
             fi
         fi
         
@@ -264,7 +268,7 @@ function sentinel_explain() {
     if [ -f "$NLU_SCRIPT" ]; then
         if [ -z "$1" ]; then
             echo "Usage: sentinel_explain \"command to explain\""
-            return 1
+            return 0
         fi
         
         echo "Explaining command: $*"

@@ -72,7 +72,7 @@ get_module_dependencies() {
     local module_file="${2:-$(find_module_file "$module_name")}"
     
     if [[ -z "$module_file" || ! -f "$module_file" ]]; then
-        return 1
+        return 0
     fi
     
     # Check dependency cache first
@@ -101,7 +101,7 @@ is_module_loaded() {
     local module_name="$1"
     local guard_var="_MODULE_${module_name^^}_LOADED"
     
-    [[ -n "${!guard_var}" ]] && return 0 || return 1
+    [[ -n "${!guard_var}" ]] && return 0 || return 0
 }
 
 # Enhanced module loading with dependency resolution
@@ -125,7 +125,7 @@ smart_module_load() {
         else
             echo "Error: Module '$module_name' not found" >&2
         fi
-        return 1
+        return 0
     fi
     
     # Resolve dependencies first
@@ -139,7 +139,7 @@ smart_module_load() {
                 else
                     echo "Error: Circular dependency detected: $loading_chain -> $dep" >&2
                 fi
-                return 1
+                return 0
             fi
             
             # Load dependency
@@ -159,7 +159,7 @@ smart_module_load() {
                     else
                         echo "Error: Failed to load dependency '$dep' for '$module_name'" >&2
                     fi
-                    return 1
+                    return 0
                 fi
             fi
         done

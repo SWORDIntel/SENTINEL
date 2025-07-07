@@ -10,6 +10,13 @@ alias gradle='/usr/local/bin/gradle'
 # MINIMAL BASHRC with Step 1: Environment Variables and Path Handling
 # This is a minimal .bashrc file with basic functionality
 
+# Configuration options - Required for bashrc.postcustom
+declare -A CONFIG=(
+  # Core options
+  [DEBUG]="${U_DEBUG:-0}"                   # Debug mode
+  [LAZY_LOAD]="${U_LAZY_LOAD:-1}"          # Enable lazy loading
+)
+
 # Fast exit for non-interactive shells
 case $- in
   *i*) ;;
@@ -318,6 +325,7 @@ load_module() {
     # Find the module file in standard locations
     local module_file=""
     local locations=(
+      "/opt/github/SENTINEL/bash_modules.d/${module}.module"
       "$HOME/bash_modules.d/${module}.module"
       "$HOME/.bash_modules.d/${module}.module"
       "$HOME/Documents/GitHub/SENTINEL/bash_modules.d/${module}.module"
@@ -388,14 +396,21 @@ export SENTINEL_FZF_ENABLED=1
 export _SENTINEL_MODULES_LOADED=0
 
 # Source the main bash_modules file to make module_list and other commands available
-if [[ -f "$HOME/Documents/GitHub/SENTINEL/bash_modules" ]]; then
-  # Loading SENTINEL module management system silently
-  # Set flag to prevent bash_modules from loading modules itself
-  export SENTINEL_SKIP_AUTO_LOAD=1
-  { source "$HOME/Documents/GitHub/SENTINEL/bash_modules"; } 2>/dev/null || {
-    echo "Warning: Error loading bash_modules, some module commands may not be available" >&2
-  }
-fi
+# Check multiple possible locations for bash_modules
+for bash_modules_path in \
+    "/opt/github/SENTINEL/bash_modules" \
+    "$HOME/Documents/GitHub/SENTINEL/bash_modules" \
+    "$HOME/bash_modules"; do
+  if [[ -f "$bash_modules_path" ]]; then
+    # Loading SENTINEL module management system silently
+    # Set flag to prevent bash_modules from loading modules itself
+    export SENTINEL_SKIP_AUTO_LOAD=1
+    { source "$bash_modules_path"; } 2>/dev/null || {
+      echo "Warning: Error loading bash_modules from $bash_modules_path" >&2
+    }
+    break
+  fi
+done
 
 # Load critical modules with robust error handling - ONLY if not already loaded
 if [[ "$_SENTINEL_MODULES_LOADED" == "0" ]]; then
@@ -408,6 +423,7 @@ if [[ "$_SENTINEL_MODULES_LOADED" == "0" ]]; then
     
     # Create an array of module directories to search in order
     module_dirs=(
+      "/opt/github/SENTINEL/bash_modules.d"
       "$HOME/bash_modules.d"
       "$HOME/.bash_modules.d"
       "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"
@@ -451,6 +467,7 @@ fi
 safe_load_direct_module() {
   local module="$1"
   local paths=(
+    "/opt/github/SENTINEL/bash_modules.d/${module}.module"
     "$HOME/bash_modules.d/${module}.module"
     "$HOME/.bash_modules.d/${module}.module"
     "$HOME/Documents/GitHub/SENTINEL/bash_modules.d/${module}.module"
@@ -494,7 +511,7 @@ safe_load_module_once() {
   fi
   
   # Find and load the module
-  for dir in "$HOME/bash_modules.d" "$HOME/.bash_modules.d" "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"; do
+  for dir in "/opt/github/SENTINEL/bash_modules.d" "$HOME/bash_modules.d" "$HOME/.bash_modules.d" "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"; do
     if [[ -f "$dir/${module}.module" ]]; then
       echo "Loading module: $module (first time)"
       

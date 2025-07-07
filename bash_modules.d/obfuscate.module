@@ -2,6 +2,10 @@
 ### BEGIN MODULE INFO
 ### END MODULE INFO 
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_OBFUSCATE_LOADED}" ]] && return 0
+export _SENTINEL_OBFUSCATE_LOADED=1
+
 # Check if module is enabled via environment variable with robust error handling
 # and silent status check that doesn't print messages
 if [[ "${SENTINEL_OBFUSCATE_ENABLED:-0}" != "1" ]]; then
@@ -147,7 +151,7 @@ obfuscate_string() {
     
     if [[ -z "$input" ]]; then
         echo "Usage: obfuscate_string <string>"
-        return 1
+        return 0
     fi
     
     echo -e "${GREEN}String Obfuscation Results:${NC}"
@@ -230,13 +234,13 @@ obfuscate_base64() {
     
     if [[ -z "$input" ]]; then
         echo "Usage: obfuscate_base64 <string> [layers]"
-        return 1
+        return 0
     fi
     
     # Validate layers
     if ! [[ "$layers" =~ ^[1-9][0-9]*$ ]]; then
         echo "Error: Layers must be a positive integer"
-        return 1
+        return 0
     fi
     
     local result="$input"
@@ -305,7 +309,7 @@ obfuscate_hex() {
     
     if [[ -z "$input" ]]; then
         echo "Usage: obfuscate_hex <string>"
-        return 1
+        return 0
     fi
     
     # Convert to hex
@@ -349,7 +353,7 @@ obfuscate_url() {
     
     if [[ -z "$input" ]]; then
         echo "Usage: obfuscate_url <string>"
-        return 1
+        return 0
     fi
     
     # Perform URL encoding
@@ -391,7 +395,7 @@ obfuscate_bash() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_bash <bash_script_file>"
-        return 1
+        return 0
     fi
     
     # Check if it's a bash script
@@ -399,7 +403,7 @@ obfuscate_bash() {
     if ! echo "$file_type" | grep -i "shell" > /dev/null && ! echo "$file_type" | grep -i "bash" > /dev/null; then
         echo -e "${YELLOW}Warning: File does not appear to be a shell script.${NC}"
         read -p "Continue anyway? [y/N] " continue_anyway
-        [[ "$continue_anyway" != [yY]* ]] && return 1
+        [[ "$continue_anyway" != [yY]* ]] && return 0
     fi
     
     local base_name=$(basename "$input_file")
@@ -565,14 +569,14 @@ obfuscate_powershell() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_powershell <powershell_script_file>"
-        return 1
+        return 0
     fi
     
     # Check if it's a powershell script
     if [[ "${input_file}" != *".ps1" ]]; then
         echo -e "${YELLOW}Warning: File does not have a .ps1 extension.${NC}"
         read -p "Continue anyway? [y/N] " continue_anyway
-        [[ "$continue_anyway" != [yY]* ]] && return 1
+        [[ "$continue_anyway" != [yY]* ]] && return 0
     fi
     
     local base_name=$(basename "$input_file")
@@ -656,20 +660,20 @@ obfuscate_python() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_python <python_script_file>"
-        return 1
+        return 0
     fi
     
     # Check if it's a python script
     if [[ "${input_file}" != *".py" ]]; then
         echo -e "${YELLOW}Warning: File does not have a .py extension.${NC}"
         read -p "Continue anyway? [y/N] " continue_anyway
-        [[ "$continue_anyway" != [yY]* ]] && return 1
+        [[ "$continue_anyway" != [yY]* ]] && return 0
     fi
     
     # Check if python is installed
     if ! command -v python3 &>/dev/null; then
         echo -e "${RED}Error: python3 not found. Required for Python obfuscation.${NC}"
-        return 1
+        return 0
     fi
     
     local base_name=$(basename "$input_file")
@@ -772,14 +776,14 @@ obfuscate_js() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_js <javascript_file>"
-        return 1
+        return 0
     fi
     
     # Check if it's a JavaScript file
     if [[ "${input_file}" != *".js" ]]; then
         echo -e "${YELLOW}Warning: File does not have a .js extension.${NC}"
         read -p "Continue anyway? [y/N] " continue_anyway
-        [[ "$continue_anyway" != [yY]* ]] && return 1
+        [[ "$continue_anyway" != [yY]* ]] && return 0
     fi
     
     local base_name=$(basename "$input_file")
@@ -936,7 +940,7 @@ obfuscate_pe() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_pe <executable_file>"
-        return 1
+        return 0
     fi
     
     # Check if it's a PE file
@@ -944,7 +948,7 @@ obfuscate_pe() {
     if ! echo "$file_type" | grep -E "PE32|PE32\+" > /dev/null; then
         echo -e "${YELLOW}Warning: File does not appear to be a Windows PE executable.${NC}"
         read -p "Continue anyway? [y/N] " continue_anyway
-        [[ "$continue_anyway" != [yY]* ]] && return 1
+        [[ "$continue_anyway" != [yY]* ]] && return 0
     fi
     
     local base_name=$(basename "$input_file")
@@ -1001,7 +1005,7 @@ obfuscate_elf() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_elf <executable_file>"
-        return 1
+        return 0
     fi
     
     # Check if it's an ELF file
@@ -1009,7 +1013,7 @@ obfuscate_elf() {
     if ! echo "$file_type" | grep "ELF" > /dev/null; then
         echo -e "${YELLOW}Warning: File does not appear to be an ELF executable.${NC}"
         read -p "Continue anyway? [y/N] " continue_anyway
-        [[ "$continue_anyway" != [yY]* ]] && return 1
+        [[ "$continue_anyway" != [yY]* ]] && return 0
     fi
     
     local base_name=$(basename "$input_file")
@@ -1092,7 +1096,7 @@ obfuscate_split() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_split <file> [chunk_size_in_KB]"
-        return 1
+        return 0
     fi
     
     local base_name=$(basename "$input_file")
@@ -1212,13 +1216,13 @@ obfuscate_hide() {
     
     if [[ -z "$hidden_file" || ! -f "$hidden_file" ]]; then
         echo "Usage: obfuscate_hide <file_to_hide> <carrier_file>"
-        return 1
+        return 0
     fi
     
     if [[ -z "$carrier_file" || ! -f "$carrier_file" ]]; then
         echo "Error: Carrier file not found"
         echo "Usage: obfuscate_hide <file_to_hide> <carrier_file>"
-        return 1
+        return 0
     fi
     
     local hidden_name=$(basename "$hidden_file")
@@ -1305,13 +1309,13 @@ obfuscate_compress() {
     
     if [[ -z "$input_file" || ! -f "$input_file" ]]; then
         echo "Usage: obfuscate_compress <file> [compression_strength]"
-        return 1
+        return 0
     fi
     
     # Validate compression strength
     if ! [[ "$strength" =~ ^[1-9]$ ]]; then
         echo "Error: Compression strength must be between 1-9"
-        return 1
+        return 0
     fi
     
     local base_name=$(basename "$input_file")

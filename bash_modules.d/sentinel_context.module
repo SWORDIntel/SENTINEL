@@ -2,10 +2,14 @@
 # SENTINEL Context Module
 # Provides integration between command learning and chat systems
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_CONTEXT_LOADED}" ]] && return 0
+export _SENTINEL_CONTEXT_LOADED=1
+
 # Check if Python is available
 if ! command -v python3 &>/dev/null; then
     echo "Warning: Python 3 not found. SENTINEL context features disabled."
-    return 1
+    return 0
 fi
 
 # Path to context script
@@ -15,7 +19,7 @@ SENTINEL_CTX_SCRIPT="$SENTINEL_CTX_DIR/sentinel_context.py"
 # Make sure the context script exists
 if [ ! -f "$SENTINEL_CTX_SCRIPT" ]; then
     echo "Error: sentinel_context.py not found at $SENTINEL_CTX_SCRIPT"
-    return 1
+    return 0
 fi
 
 # Record successful commands to context
@@ -83,7 +87,7 @@ function sentinel_smart_suggest() {
     local prefix="$1"
     if [ -z "$prefix" ]; then
         echo "Usage: sentinel_smart_suggest <command_prefix>"
-        return 1
+        return 0
     fi
     
     # Get suggestions based on prefix

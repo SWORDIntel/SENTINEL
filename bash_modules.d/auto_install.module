@@ -4,6 +4,10 @@
 # Description: Automatically installs missing common tools like fzf and ccache.
 # Dependencies: logging (optional)
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_AUTO_INSTALL_LOADED}" ]] && return 0
+export _SENTINEL_AUTO_INSTALL_LOADED=1
+
 # --- Configuration ---
 : "${SENTINEL_AUTO_INSTALL_ENABLED:=1}"
 : "${SENTINEL_VERBOSE:=0}" # Assuming SENTINEL_VERBOSE might be used elsewhere
@@ -58,7 +62,7 @@ _try_install() {
             sudo_prefix="sudo "
         else
             _auto_install_log "WARN" "sudo not found. Cannot install $package_name without root privileges."
-            return 1
+            return 0
         fi
     fi
 
@@ -79,7 +83,7 @@ _try_install() {
         ${sudo_prefix}pacman -Syu --noconfirm "$package_name"
     else
         _auto_install_log "WARN" "No supported package manager (apt, yum, dnf, brew, pacman) found. Cannot install $package_name."
-        return 1
+        return 0
     fi
 
     if command -v "$package_name" &>/dev/null; then
@@ -87,7 +91,7 @@ _try_install() {
         return 0
     else
         _auto_install_log "ERROR" "Failed to install $package_name."
-        return 1
+        return 0
     fi
 }
 

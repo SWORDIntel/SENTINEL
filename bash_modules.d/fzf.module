@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
  
+# Prevent multiple loading
+[[ -n "${_SENTINEL_FZF_LOADED}" ]] && return 0
+export _SENTINEL_FZF_LOADED=1
 
 # Check if module is enabled via environment variable with robust error handling
 # and silent status check that doesn't print messages

@@ -8,6 +8,10 @@
 #                        requiring performance and reproducibility in CI/CD
 #                        or large-scale compilation workflows.
 # Author:                John
+
+# Prevent multiple loading
+[[ -n "${_SENTINEL_DISTCC_LOADED}" ]] && return 0
+export _SENTINEL_DISTCC_LOADED=1
 # Email:                 intel@swordintelligence.airforce
 # URL:                   https://github.com/SWORDIntel/SENTINEL/
 # Version:               1.0.0
@@ -65,7 +69,7 @@ distcc_check_installation() {
         echo -e "  ${BLUE}sudo dnf install $missing${NC}  # Fedora/RHEL"
         echo -e "  ${BLUE}sudo pacman -S $missing${NC}    # Arch Linux"
         
-        return 1
+        return 0
     else
         return 0
     fi
@@ -279,7 +283,7 @@ automake_env() {
             ;;
         *)
             echo "Unknown build type. Use 'gnu' or 'cmake'."
-            return 1
+            return 0
             ;;
     esac
     

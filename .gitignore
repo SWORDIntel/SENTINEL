@@ -9,3 +9,4 @@
 *.bak
 CLAUDEMASTER.md
 CLAUDE.md
+*.pyc

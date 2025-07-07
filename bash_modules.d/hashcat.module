@@ -8,6 +8,10 @@
 # Author:                John
 # Email:                 intel@swordintelligence.airforce
 # URL:                   https://github.com/SWORDIntel/SENTINEL/
+
+# Prevent multiple loading
+[[ -n "${_SENTINEL_HASHCAT_LOADED}" ]] && return 0
+export _SENTINEL_HASHCAT_LOADED=1
 # Version:               1.0.0
 # Stability:             stable
 # Tags:                  cracking, hashcat, automation, password-recovery, opsec
@@ -47,7 +51,7 @@ mkdir -p "${HASHCAT_CUSTOM_WORDLISTS_DIR}" 2>/dev/null
 if [[ -z "${HASHCAT_BIN}" ]]; then
     echo -e "${RED}Error: Hashcat not found.${NC}"
     echo "Please install hashcat: sudo apt install hashcat"
-    return 1
+    return 0
 fi
 
 # Function to detect hash type
@@ -155,7 +159,7 @@ detect_hash_type() {
     
     # If we can't determine the hash type
     echo "Unknown hash type. Please specify with --hash-type or -m"
-    return 1
+    return 0
 }
 
 # Function to extract hash ID from detection output
@@ -169,7 +173,7 @@ extract_hash_id() {
         return 0
     fi
     
-    return 1
+    return 0
 }
 
 # Function to list available wordlists
@@ -303,7 +307,7 @@ find_wordlist() {
         echo "$found_wordlist"
         return 0
     else
-        return 1
+        return 0
     fi
 }
 
@@ -355,7 +359,7 @@ find_rule() {
         echo "$found_rule"
         return 0
     else
-        return 1
+        return 0
     fi
 }
 
@@ -411,13 +415,13 @@ download_wordlist() {
         curl -L --progress-bar -o "$output_path" "$url"
     else
         echo -e "${RED}Error: Neither wget nor curl is available.${NC}"
-        return 1
+        return 0
     fi
     
     # Check if download was successful
     if [[ $? -ne 0 ]]; then
         echo -e "${RED}Error downloading wordlist.${NC}"
-        return 1
+        return 0
     fi
     
     # Handle compressed files
@@ -460,7 +464,7 @@ hashcrack() {
                 wordlist=$(find_wordlist "$2")
                 if [[ -z "$wordlist" ]]; then
                     echo -e "${RED}Error: Wordlist not found: $2${NC}"
-                    return 1
+                    return 0
                 fi
                 shift 2
                 ;;
@@ -468,7 +472,7 @@ hashcrack() {
                 rule=$(find_rule "$2")
                 if [[ -z "$rule" ]]; then
                     echo -e "${RED}Error: Rule not found: $2${NC}"
-                    return 1
+                    return 0
                 fi
                 shift 2
                 ;;
@@ -504,7 +508,7 @@ hashcrack() {
     if [[ -z "$hash" ]]; then
         echo -e "${RED}Error: No hash provided.${NC}"
         echo "Usage: hashcrack <hash or hash file> [options]"
-        return 1
+        return 0
     fi
     
     # Check if hash is a file
@@ -527,7 +531,7 @@ hashcrack() {
             read -p "Enter hash type ID manually or press Enter to abort: " hash_type
             if [[ -z "$hash_type" ]]; then
                 echo -e "${RED}Aborting.${NC}"
-                return 1
+                return 0
             fi
         fi
     fi
@@ -552,7 +556,7 @@ hashcrack() {
                 echo -e "${YELLOW}Using wordlist:${NC} $(basename "$wordlist")"
             else
                 echo -e "${RED}Error: No wordlists found!${NC}"
-                return 1
+                return 0
             fi
         else
             echo -e "${GREEN}Using wordlist:${NC} rockyou.txt"
@@ -650,7 +654,7 @@ hashcrack_targeted() {
     if [[ -z "$hash" ]]; then
         echo -e "${RED}Error: No hash provided.${NC}"
         echo "Usage: hashcrack_targeted <hash or hash file> [additional options]"
-        return 1
+        return 0
     fi
     
     # Output file based on input name or timestamp
@@ -679,7 +683,7 @@ hashcrack_targeted() {
         read -p "Enter hash type ID manually or press Enter to abort: " hash_type
         if [[ -z "$hash_type" ]]; then
             echo -e "${RED}Aborting.${NC}"
-            return 1
+            return 0
         fi
     else
         echo -e "${GREEN}Detected hash type:${NC} $hash_type"
@@ -760,7 +764,7 @@ hashcrack_thorough() {
     if [[ -z "$hash" ]]; then
         echo -e "${RED}Error: No hash provided.${NC}"
         echo "Usage: hashcrack_thorough <hash or hash file> [additional options]"
-        return 1
+        return 0
     fi
     
     echo -e "${YELLOW}Warning: This is a thorough cracking process that may take a long time.${NC}"
@@ -796,7 +800,7 @@ hashcrack_thorough() {
         read -p "Enter hash type ID manually or press Enter to abort: " hash_type
         if [[ -z "$hash_type" ]]; then
             echo -e "${RED}Aborting.${NC}"
-            return 1
+            return 0
         fi
     else
         echo -e "${GREEN}Detected hash type:${NC} $hash_type"

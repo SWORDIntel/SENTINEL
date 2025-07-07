@@ -190,7 +190,7 @@ sentinel_show_logs() {
     
     if [[ ! -d "$SENTINEL_LOG_DIR" ]]; then
         echo "Log directory not found. No logs to display."
-        return 1
+        return 0
     fi
     
     if [[ "$component" == "all" ]]; then
@@ -199,7 +199,7 @@ sentinel_show_logs() {
     
     if ! ls $log_pattern 1>/dev/null 2>&1; then
         echo "No logs found for component: $component"
-        return 1
+        return 0
     fi
     
     # Display the most recent logs

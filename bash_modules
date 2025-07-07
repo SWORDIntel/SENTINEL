@@ -11,14 +11,17 @@ export MAGENTA="\033[0;35m"
 export CYAN="\033[0;36m"
 export NC="\033[0m" # No Color
 
-# Module directory path
-export SENTINEL_MODULES_PATH="$HOME/bash_modules.d"
-
-# Ensure module directory is properly set and exists
-if [[ -z "$SENTINEL_MODULES_PATH" ]]; then
+# Module directory path - check multiple locations
+if [[ -d "/opt/github/SENTINEL/bash_modules.d" ]]; then
+    export SENTINEL_MODULES_PATH="/opt/github/SENTINEL/bash_modules.d"
+elif [[ -d "$HOME/Documents/GitHub/SENTINEL/bash_modules.d" ]]; then
+    export SENTINEL_MODULES_PATH="$HOME/Documents/GitHub/SENTINEL/bash_modules.d"
+elif [[ -d "$HOME/bash_modules.d" ]]; then
+    export SENTINEL_MODULES_PATH="$HOME/bash_modules.d"
+else
     # Fallback to standard location
     export SENTINEL_MODULES_PATH="$HOME/bash_modules.d"
-    ewarn "SENTINEL_MODULES_PATH was empty, reset to default $SENTINEL_MODULES_PATH"
+    ewarn "SENTINEL_MODULES_PATH: No existing module directory found, using default $SENTINEL_MODULES_PATH"
 fi
 
 # Registry of loaded modules
@@ -57,8 +60,13 @@ find_all_modules() {
     
     [[ "$debug_mode" == "1" ]] && echo "DEBUG: Searching for modules in $search_path and subdirectories" >&2
     
-    # Find all .module and .sh files in the path and subdirectories
-    find "$search_path" -type f \( -name "*.module" -o -name "*.sh" \) 2>/dev/null | sort
+    # Find all .module and .sh files with security constraints
+    # Use -maxdepth to prevent deep recursion and potential security issues
+    # Use timeout to prevent hanging on circular symlinks
+    timeout 10s find "$search_path" -maxdepth 3 -type f \( -name "*.module" -o -name "*.sh" \) 2>/dev/null | sort || {
+        # Fallback to simple ls if find fails or times out
+        ls "$search_path"/*.module "$search_path"/*.sh 2>/dev/null || true
+    }
 }
 
 # Function to convert a file path to a module name
@@ -356,8 +364,11 @@ _load_enabled_modules() {
             return 0  # Return success to prevent terminal crashes
         }
         
-        # Process each line safely
-        echo "$module_list" | while IFS= read -r module_name 2>/dev/null || true; do
+        # Process each line safely using array instead of pipe to avoid subshell issues
+        local module_array
+        IFS=$'\n' read -d '' -r -a module_array <<< "$module_list" 2>/dev/null || true
+        
+        for module_name in "${module_array[@]}"; do
             # Skip empty lines and comments
             [[ -z "$module_name" || "$module_name" =~ ^# ]] && continue
             

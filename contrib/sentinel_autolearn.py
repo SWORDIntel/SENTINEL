@@ -46,8 +46,11 @@ if os.path.exists(STATS_FILE):
 
 
 def save_stats():
-    with open(STATS_FILE, 'w') as f:
-        json.dump(command_stats, f)
+    try:
+        with open(STATS_FILE, 'w') as f:
+            json.dump(command_stats, f)
+    except Exception as e:
+        print(f"Warning: Could not save stats: {e}")
 
 
 atexit.register(save_stats)
@@ -116,8 +119,12 @@ class SentinelModel:
             self.markov_model = new_model
 
         # Save model
-        with open(MODEL_FILE, 'w') as f:
-            f.write(self.markov_model.to_json())
+        try:
+            with open(MODEL_FILE, 'w') as f:
+                f.write(self.markov_model.to_json())
+        except Exception as e:
+            print(f"Warning: Could not save model: {e}")
+            return False
 
         return True
 

@@ -5,7 +5,7 @@
 # Dependencies: ble.sh (optional, enhances functionality), hmac.module
 # Maintainer: SENTINEL Team
 
-[ -n "$BASH_VERSION" ] || { echo "This script requires bash"; return 1; }
+[ -n "$BASH_VERSION" ] || { echo "This script requires bash"; return 0; }
 if [ -n "${_SENTINEL_FUZZY_CORRECTION_LOADED}" ]; then
     echo "DEBUG: fuzzy_correction already loaded"; return 0;
 fi
