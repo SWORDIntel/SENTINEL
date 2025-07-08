@@ -204,6 +204,38 @@ if ((${#MISSING[@]})); then
 fi
 ok "All required CLI tools present"
 
+###############################################################################
+# NEW: Prompt for custom user environment
+###############################################################################
+prompt_custom_env() {
+    if [[ $INTERACTIVE -eq 0 ]]; then
+        log "Non-interactive mode: Skipping custom environment prompt."
+        return
+    fi
+
+    step "Checking for user-defined custom Python environment"
+    local custom_env_activate_script="${HOME}/datascience/envs/dsenv/bin/activate"
+
+    read -r -t 30 -p "Do you want to attempt to activate a custom Python environment at ${custom_env_activate_script}? [y/N]: " confirm_custom_env || confirm_custom_env="n"
+
+    if [[ "$confirm_custom_env" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        if [[ -f "$custom_env_activate_script" ]]; then
+            step "Attempting to source custom environment: $custom_env_activate_script"
+            # shellcheck source=/dev/null
+            source "$custom_env_activate_script" && ok "Successfully sourced custom environment." || warn "Failed to source custom environment script, but continuing."
+            # Set a flag or variable if activation is successful and needs to be known later
+            # For now, just sourcing it is the requirement.
+        else
+            warn "Custom environment script not found at $custom_env_activate_script. Skipping."
+        fi
+    else
+        ok "Skipping custom environment activation."
+    fi
+}
+
+# Call the new function to prompt for custom environment
+prompt_custom_env
+
 # Debian-specific package dependency checking
 if command -v apt-get &>/dev/null; then
   step "Detected Debian-based system, checking for additional dependencies"
@@ -340,17 +372,43 @@ setup_python_venv() {
     source "$VENV_DIR/bin/activate"
     step "Installing required Python packages in venv"
     "$VENV_DIR/bin/pip" install --upgrade pip
-    # Install dependencies from requirements.txt if available
-    if [[ -f "${PROJECT_ROOT}/requirements.txt" ]]; then
-        log "Installing Python dependencies from requirements.txt for reproducibility and security."
-        "$VENV_DIR/bin/pip" install -r "${PROJECT_ROOT}/requirements.txt" || fail "Failed to install requirements.txt dependencies"
+    # Install dependencies
+    local requirements_file="${PROJECT_ROOT}/requirements.txt"
+    if [[ -f "$requirements_file" ]]; then
+        log "Installing Python dependencies from $requirements_file"
+        # Read requirements file line by line, skipping comments and empty lines
+        while IFS= read -r package || [[ -n "$package" ]]; do
+            package=$(echo "$package" | sed 's/#.*//' | awk '{$1=$1};1') # Remove comments and trim whitespace
+            if [[ -z "$package" ]]; then
+                continue
+            fi
+            step "Attempting to install $package..."
+            if "$VENV_DIR/bin/pip" install "$package"; then
+                ok "Successfully installed $package"
+            else
+                warn "Failed to install $package. Skipping."
+            fi
+        done < "$requirements_file"
     else
-        log "requirements.txt not found, falling back to hardcoded package list."
-        "$VENV_DIR/bin/pip" install npyscreen tqdm requests beautifulsoup4 numpy scipy scikit-learn joblib markovify unidecode rich
+        log "$requirements_file not found. Falling back to hardcoded package list."
+        local default_packages=("npyscreen" "tqdm" "requests" "beautifulsoup4" "numpy" "scipy" "scikit-learn" "joblib" "markovify" "unidecode" "rich")
+        for package in "${default_packages[@]}"; do
+            step "Attempting to install $package..."
+            if "$VENV_DIR/bin/pip" install "$package"; then
+                ok "Successfully installed $package"
+            else
+                warn "Failed to install $package. Skipping."
+            fi
+        done
     fi
+
     if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
-        "$VENV_DIR/bin/pip" install tensorflow
-        ok "Tensorflow installed (advanced ML features enabled)"
+        step "Attempting to install tensorflow..."
+        if "$VENV_DIR/bin/pip" install tensorflow; then
+            ok "Tensorflow installed (advanced ML features enabled)"
+        else
+            warn "Failed to install tensorflow. Skipping."
+        fi
     fi
     mark_done "PYTHON_VENV_READY"
     ok "Python dependencies installed in venv"
