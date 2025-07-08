@@ -31,3 +31,6 @@ zfssnapshot() {
 
   return 0
 }
+
+source ~/datascience/envs/dsenv/bin/activate
+alias @aliases='alias'
