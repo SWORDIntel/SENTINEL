@@ -382,6 +382,16 @@ setup_python_venv() {
             if [[ -z "$package" ]]; then
                 continue
             fi
+
+            # Check for OpenVINO constraint
+            if [[ "$package" == openvino* ]]; then
+                local constraints_file="${PROJECT_ROOT}/constraints.txt"
+                if [[ -f "$constraints_file" ]] && grep -qxF "openvino==0.0.0" "$constraints_file"; then
+                    log "Skipping OpenVINO installation due to constraint in $constraints_file"
+                    continue
+                fi
+            fi
+
             step "Attempting to install $package..."
             if "$VENV_DIR/bin/pip" install "$package"; then
                 ok "Successfully installed $package"
