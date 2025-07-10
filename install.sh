@@ -2,7 +2,7 @@
 ###############################################################################
 # SENTINEL – Framework installer
 # -----------------------------------------------
-# Hardened edition  •  v2.3.0  •  2025-05-16
+# Hardened edition  •  v2.4.0  •  2025-01-16
 # Installs/repairs directly to user's home directory
 # and patches the user's Bash startup chain in an idempotent way.
 ###############################################################################
@@ -12,6 +12,7 @@
 #   • No eval; never rely on $IFS splitting
 #   • Verbose log + coloured status lines
 #   • Resumable: skips steps already done
+#   • Rollback capability for safety
 ###############################################################################
 
 # Detect if script is being sourced instead of executed
@@ -29,9 +30,15 @@ set -euo pipefail
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 LOG_DIR="${HOME}/logs"
 STATE_FILE="${HOME}/install.state"
+ROLLBACK_SCRIPT="${HOME}/.sentinel_rollback.sh"
 BLESH_DIR="${HOME}/.local/share/blesh"
 BLESH_LOADER="${HOME}/blesh_loader.sh"
 MODULES_DIR="${HOME}/bash_modules.d"
+
+# Version and integrity information
+INSTALLER_VERSION="2.4.0"
+EXPECTED_BLESH_COMMIT="1234567890abcdef"  # Update with actual commit hash
+BLESH_TAG="v0.3.4"
 
 # Ensure logs directory exists before any logging
 if [[ ! -d "$LOG_DIR" ]]; then
@@ -57,17 +64,17 @@ safe_cp() {
 safe_mkdir() {
     local dir="$1"
     local perm="${2:-700}"  # Default permission 700 (user rwx only)
-    
+
     if ! mkdir -p "$dir"; then
         fail "Failed to create directory: $dir"
         return 1
     fi
-    
+
     # Set proper permissions
     chmod "$perm" "$dir" 2>/dev/null || {
         warn "Failed to set permissions $perm on directory: $dir"
     }
-    
+
     ok "Created directory: $dir with permissions: $perm"
     return 0
 }
@@ -75,6 +82,7 @@ safe_mkdir() {
 # Robust error handler for fatal errors (security: prevents silent failures)
 fail() {
     echo "${c_red}✖${c_reset}  $*" | tee -a "${LOG_DIR}/install.log" >&2
+    echo "Run '${ROLLBACK_SCRIPT}' to restore previous configuration" >&2
     exit 1
 }
 
@@ -101,12 +109,120 @@ log() {
     echo "[$timestamp] $*" | tee -a "$log_file"
 }
 
-# Secure git clone function with safety checks
+# Create rollback script before making any changes
+create_rollback_script() {
+    step "Creating rollback script at ${ROLLBACK_SCRIPT}"
+    cat > "${ROLLBACK_SCRIPT}" <<'EOF'
+#!/bin/bash
+# SENTINEL Rollback Script
+# Created: $(date)
+# This script will restore your system to pre-SENTINEL state
+
+echo "Starting SENTINEL rollback..."
+
+# Restore bashrc from most recent backup
+LATEST_BACKUP=$(ls -t "${HOME}"/.bashrc.sentinel.bak.* 2>/dev/null | head -1)
+if [[ -n "$LATEST_BACKUP" && -f "$LATEST_BACKUP" ]]; then
+    cp "$LATEST_BACKUP" "${HOME}/.bashrc"
+    echo "✔ Restored .bashrc from $LATEST_BACKUP"
+else
+    echo "✖ No .bashrc backup found"
+fi
+
+# Remove SENTINEL directories
+for dir in bash_modules.d autocomplete logs; do
+    if [[ -d "${HOME}/$dir" ]]; then
+        rm -rf "${HOME}/$dir"
+        echo "✔ Removed $dir"
+    fi
+done
+
+# Remove SENTINEL files
+for file in .bashrc.sentinel bashrc.postcustom blesh_loader.sh .bash_modules install.state; do
+    if [[ -f "${HOME}/$file" ]]; then
+        rm -f "${HOME}/$file"
+        echo "✔ Removed $file"
+    fi
+done
+
+# Remove Python venv
+if [[ -d "${HOME}/venv" ]]; then
+    rm -rf "${HOME}/venv"
+    echo "✔ Removed Python virtual environment"
+fi
+
+# Remove BLE.sh
+if [[ -d "${HOME}/.local/share/blesh" ]]; then
+    rm -rf "${HOME}/.local/share/blesh"
+    echo "✔ Removed BLE.sh"
+fi
+
+echo "Rollback complete. Please restart your terminal."
+EOF
+    chmod 700 "${ROLLBACK_SCRIPT}"
+    ok "Rollback script created"
+}
+
+# Python version check using Python itself (more reliable)
+check_python_version() {
+    step "Checking Python version"
+    if ! command -v python3 &>/dev/null; then
+        fail "Python 3 is not installed"
+    fi
+
+    if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,6) else 1)"; then
+        local py_version=$(python3 --version 2>&1 | cut -d' ' -f2)
+        fail "Python 3.6+ is required (found ${py_version})"
+    fi
+
+    local py_version=$(python3 --version 2>&1 | cut -d' ' -f2)
+    ok "Python ${py_version} meets requirements"
+}
+
+# Find Python executable (prioritize datascience environment)
+find_python() {
+    # First check if we're already in the datascience environment
+    if [[ -n "${VIRTUAL_ENV:-}" ]] && [[ "$VIRTUAL_ENV" == *"datascience"* ]]; then
+        if command -v python &>/dev/null; then
+            echo "python"
+            return 0
+        fi
+    fi
+
+    # Check for custom compiled Python in datascience directory
+    local datascience_pythons=(
+        "${HOME}/datascience/envs/dsenv/bin/python"
+        "${HOME}/datascience/envs/dsenv/bin/python3"
+        "${HOME}/datascience/bin/python"
+        "${HOME}/datascience/bin/python3"
+    )
+
+    for python_cmd in "${datascience_pythons[@]}"; do
+        if [[ -x "$python_cmd" ]] && "$python_cmd" -c "import sys; sys.exit(0 if sys.version_info >= (3,6) else 1)" 2>/dev/null; then
+            echo "$python_cmd"
+            return 0
+        fi
+    done
+
+    # Then check for the latest system Python versions
+    for python_cmd in python3.12 python3.11 python3.10 python3.9 python3.8 python3.7 python3.6 python3; do
+        if command -v "$python_cmd" &>/dev/null; then
+            if "$python_cmd" -c "import sys; sys.exit(0 if sys.version_info >= (3,6) else 1)"; then
+                echo "$python_cmd"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+# Secure git clone function with integrity checking
 safe_git_clone() {
     local depth_arg=""
     local url=""
     local target_dir=""
-    
+    local expected_commit=""
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -118,6 +234,10 @@ safe_git_clone() {
                 depth_arg="--depth=$2"
                 shift 2
                 ;;
+            --verify-commit=*)
+                expected_commit="${1#*=}"
+                shift
+                ;;
             *)
                 if [[ -z "$url" ]]; then
                     url="$1"
@@ -128,30 +248,42 @@ safe_git_clone() {
                 ;;
         esac
     done
-    
+
     # Validate inputs
     if [[ -z "$url" || -z "$target_dir" ]]; then
         fail "safe_git_clone: URL and target directory are required"
     fi
-    
+
     # Validate URL (basic security check)
     if ! [[ "$url" =~ ^https:// ]]; then
         fail "safe_git_clone: Only HTTPS URLs are allowed for security"
     fi
-    
+
     # Validate target directory
     if [[ "$target_dir" =~ [[:space:]] ]]; then
         fail "safe_git_clone: Target directory cannot contain spaces"
     fi
-    
+
     # If target exists and is a git repo, try to update it
     if [[ -d "$target_dir/.git" ]]; then
         step "Updating existing repository in $target_dir"
         git -C "$target_dir" fetch origin || fail "Failed to fetch updates"
         git -C "$target_dir" reset --hard origin/HEAD || fail "Failed to reset to origin"
+
+        # Verify commit if specified
+        if [[ -n "$expected_commit" ]]; then
+            local actual_commit=$(git -C "$target_dir" rev-parse HEAD)
+            if [[ "$actual_commit" != "$expected_commit"* ]]; then
+                warn "Repository commit mismatch. Expected: $expected_commit, Got: $actual_commit"
+                warn "This may indicate the repository has been updated. Proceeding with caution."
+            else
+                ok "Repository integrity verified"
+            fi
+        fi
+
         return 0
     fi
-    
+
     # Clone the repository
     step "Cloning $url to $target_dir"
     if [[ -n "$depth_arg" ]]; then
@@ -159,12 +291,23 @@ safe_git_clone() {
     else
         git clone "$url" "$target_dir" || fail "Clone failed"
     fi
-    
+
     # Verify the clone
     if [[ ! -d "$target_dir/.git" ]]; then
         fail "Repository was not cloned correctly"
     fi
-    
+
+    # Verify commit if specified
+    if [[ -n "$expected_commit" ]]; then
+        local actual_commit=$(git -C "$target_dir" rev-parse HEAD)
+        if [[ "$actual_commit" != "$expected_commit"* ]]; then
+            warn "Repository commit mismatch. Expected: $expected_commit, Got: $actual_commit"
+            warn "This may indicate the repository has been updated. Proceeding with caution."
+        else
+            ok "Repository integrity verified"
+        fi
+    fi
+
     ok "Repository cloned successfully"
 }
 
@@ -183,20 +326,27 @@ for arg in "$@"; do
       INTERACTIVE=0
       ;;
   esac
- done
+done
 
-# Python version check before venv setup
-PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-if [[ ! "${PYTHON_VERSION}" =~ ^3\.[6-9] ]] && [[ ! "${PYTHON_VERSION}" =~ ^3\.[1-9][0-9] ]]; then
-    fail "Python 3.6+ is required (found ${PYTHON_VERSION})"
-fi
+# Create rollback script before any changes
+create_rollback_script
+
+# Check Python version
+check_python_version
+
+# Find best Python executable
+PYTHON_CMD=$(find_python) || fail "No suitable Python 3.6+ found"
+ok "Using Python: $PYTHON_CMD"
 
 ###############################################################################
 # 1. Dependency check
 ###############################################################################
-REQUIRED_CMDS=(git make awk sed rsync python3 pip3)
+REQUIRED_CMDS=(git make awk sed rsync "$PYTHON_CMD" pip3)
 MISSING=()
 for cmd in "${REQUIRED_CMDS[@]}"; do
+  if [[ "$cmd" == "$PYTHON_CMD" ]]; then
+    continue  # Already checked
+  fi
   command -v "${cmd}" &>/dev/null || MISSING+=("${cmd}")
 done
 if ((${#MISSING[@]})); then
@@ -216,20 +366,38 @@ prompt_custom_env() {
     step "Checking for user-defined custom Python environment"
     local custom_env_activate_script="${HOME}/datascience/envs/dsenv/bin/activate"
 
-    read -r -t 30 -p "Do you want to attempt to activate a custom Python environment at ${custom_env_activate_script}? [y/N]: " confirm_custom_env || confirm_custom_env="n"
+    # Check if already in the datascience environment
+    if [[ -n "${VIRTUAL_ENV:-}" ]] && [[ "$VIRTUAL_ENV" == *"datascience"* ]]; then
+        ok "Already using datascience environment: $VIRTUAL_ENV"
+        export USING_DATASCIENCE_ENV=1
+        return
+    fi
 
-    if [[ "$confirm_custom_env" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-        if [[ -f "$custom_env_activate_script" ]]; then
-            step "Attempting to source custom environment: $custom_env_activate_script"
+    # Auto-detect if datascience environment exists
+    if [[ -f "$custom_env_activate_script" ]]; then
+        step "Found datascience environment at $custom_env_activate_script"
+        read -r -t 30 -p "Use optimized datascience environment? This is recommended. [Y/n]: " confirm_custom_env || confirm_custom_env="y"
+
+        if [[ ! "$confirm_custom_env" =~ ^[Nn]([Oo])?$ ]]; then
+            step "Activating datascience environment"
             # shellcheck source=/dev/null
-            source "$custom_env_activate_script" && ok "Successfully sourced custom environment." || warn "Failed to source custom environment script, but continuing."
-            # Set a flag or variable if activation is successful and needs to be known later
-            # For now, just sourcing it is the requirement.
+            if source "$custom_env_activate_script"; then
+                ok "Successfully activated datascience environment"
+                export USING_DATASCIENCE_ENV=1
+
+                # Show environment info
+                if command -v python &>/dev/null; then
+                    local py_version=$(python --version 2>&1 | cut -d' ' -f2)
+                    log "Using Python $py_version from datascience environment"
+                fi
+            else
+                warn "Failed to activate datascience environment, continuing with system Python"
+            fi
         else
-            warn "Custom environment script not found at $custom_env_activate_script. Skipping."
+            log "User declined to use datascience environment"
         fi
     else
-        ok "Skipping custom environment activation."
+        log "No datascience environment found at $custom_env_activate_script"
     fi
 }
 
@@ -239,12 +407,12 @@ prompt_custom_env
 # Debian-specific package dependency checking
 if command -v apt-get &>/dev/null; then
   step "Detected Debian-based system, checking for additional dependencies"
-  
+
   # Check for python3-venv which is not installed by default on Debian
   if ! dpkg -l python3-venv &>/dev/null; then
     warn "python3-venv package not detected. It's required for Python virtual environment creation."
     echo "Please install it with: sudo apt-get install python3-venv"
-    
+
     if [[ $INTERACTIVE -eq 1 ]]; then
       read -r -t 30 -p "Would you like to install python3-venv package now? (requires sudo) [y/N]: " confirm || confirm="n"
       if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
@@ -257,12 +425,12 @@ if command -v apt-get &>/dev/null; then
       fail "python3-venv is required. Please install it and re-run the installer."
     fi
   fi
-  
+
   # Check for other helpful packages
   OPTIONAL_PKGS=()
   command -v openssl &>/dev/null || OPTIONAL_PKGS+=("openssl")
   command -v fzf &>/dev/null || OPTIONAL_PKGS+=("fzf")
-  
+
   if ((${#OPTIONAL_PKGS[@]})); then
     warn "Optional packages not found: ${OPTIONAL_PKGS[*]}"
     echo "These packages improve functionality but aren't strictly required."
@@ -283,7 +451,7 @@ setup_directories() {
         fi
     fi
     step "Creating directory tree under ${HOME}"
-    
+
     # Create directories with error checking
     local dirs=(
         "${HOME}/autocomplete/snippets"
@@ -297,17 +465,18 @@ setup_directories() {
         "${HOME}/bash_completion.d"
         "${HOME}/bash_functions.d"
         "${HOME}/contrib"
+        "${HOME}/.local/bin"  # Added for pip installations
     )
-    
+
     for dir in "${dirs[@]}"; do
         safe_mkdir "$dir"
     done
-    
+
     # Set secure permissions
     chmod 700 "${LOG_DIR}" \
         "${HOME}/"{bash_aliases.d,bash_completion.d,bash_functions.d,contrib} || \
         fail "Failed to set directory permissions"
-    
+
     mark_done "DIRS_CREATED"
     ok "Directory tree ready"
 }
@@ -326,16 +495,16 @@ setup_python_venv() {
     fi
     step "Setting up Python virtual environment and dependencies"
     VENV_DIR="${HOME}/venv"
-    
+
     # Ensure parent directory exists
     safe_mkdir "$(dirname "$VENV_DIR")"
-    
+
     if [[ ! -d "$VENV_DIR" ]]; then
         # Check if python3-venv is available
-        if ! /usr/bin/python3 -c "import venv" &>/dev/null; then
-            fail "Python venv module not available. Please install python3-venv package (e.g. 'sudo apt install python3-venv' on Debian/Ubuntu)"
+        if ! "$PYTHON_CMD" -c "import venv" &>/dev/null; then
+            fail "Python venv module not available. Please install python3-venv package"
         fi
-        
+
         # Temporarily rename local venv.py to avoid conflict
         local local_venv_py_path="${PROJECT_ROOT}/venv.py"
         local temp_venv_py_path="${PROJECT_ROOT}/venv.py.tmp_rename"
@@ -346,7 +515,7 @@ setup_python_venv() {
             log "Temporarily renamed local venv.py to venv.py.tmp_rename"
         fi
 
-        if ! /usr/bin/python3 -m venv "$VENV_DIR"; then
+        if ! "$PYTHON_CMD" -m venv "$VENV_DIR"; then
             # Restore local venv.py if it was renamed
             if [[ $renamed_local_venv_py -eq 1 ]]; then
                 mv "$temp_venv_py_path" "$local_venv_py_path"
@@ -372,33 +541,45 @@ setup_python_venv() {
     source "$VENV_DIR/bin/activate"
     step "Installing required Python packages in venv"
     "$VENV_DIR/bin/pip" install --upgrade pip
-    # Install dependencies
+
+    # Install dependencies more efficiently
     local requirements_file="${PROJECT_ROOT}/requirements.txt"
+    local failed_packages=()
+
     if [[ -f "$requirements_file" ]]; then
         log "Installing Python dependencies from $requirements_file"
-        # Read requirements file line by line, skipping comments and empty lines
-        while IFS= read -r package || [[ -n "$package" ]]; do
-            package=$(echo "$package" | sed 's/#.*//' | awk '{$1=$1};1') # Remove comments and trim whitespace
-            if [[ -z "$package" ]]; then
-                continue
-            fi
 
-            # Check for OpenVINO constraint
-            if [[ "$package" == openvino* ]]; then
-                local constraints_file="${PROJECT_ROOT}/constraints.txt"
-                if [[ -f "$constraints_file" ]] && grep -qxF "openvino==0.0.0" "$constraints_file"; then
-                    log "Skipping OpenVINO installation due to constraint in $constraints_file"
+        # First try to install all packages at once
+        if ! "$VENV_DIR/bin/pip" install -r "$requirements_file" 2>/dev/null; then
+            warn "Bulk installation failed, trying packages individually"
+
+            # Read requirements file line by line, skipping comments and empty lines
+            while IFS= read -r package || [[ -n "$package" ]]; do
+                package=$(echo "$package" | sed 's/#.*//' | awk '{$1=$1};1') # Remove comments and trim whitespace
+                if [[ -z "$package" ]]; then
                     continue
                 fi
-            fi
 
-            step "Attempting to install $package..."
-            if "$VENV_DIR/bin/pip" install "$package"; then
-                ok "Successfully installed $package"
-            else
-                warn "Failed to install $package. Skipping."
-            fi
-        done < "$requirements_file"
+                # Check for OpenVINO constraint
+                if [[ "$package" == openvino* ]]; then
+                    local constraints_file="${PROJECT_ROOT}/constraints.txt"
+                    if [[ -f "$constraints_file" ]] && grep -qxF "openvino==0.0.0" "$constraints_file"; then
+                        log "Skipping OpenVINO installation due to constraint in $constraints_file"
+                        continue
+                    fi
+                fi
+
+                step "Attempting to install $package..."
+                if "$VENV_DIR/bin/pip" install "$package"; then
+                    ok "Successfully installed $package"
+                else
+                    warn "Failed to install $package"
+                    failed_packages+=("$package")
+                fi
+            done < "$requirements_file"
+        else
+            ok "All packages installed successfully from requirements.txt"
+        fi
     else
         log "$requirements_file not found. Falling back to hardcoded package list."
         local default_packages=("npyscreen" "tqdm" "requests" "beautifulsoup4" "numpy" "scipy" "scikit-learn" "joblib" "markovify" "unidecode" "rich")
@@ -407,9 +588,16 @@ setup_python_venv() {
             if "$VENV_DIR/bin/pip" install "$package"; then
                 ok "Successfully installed $package"
             else
-                warn "Failed to install $package. Skipping."
+                warn "Failed to install $package"
+                failed_packages+=("$package")
             fi
         done
+    fi
+
+    # Report failed packages if any
+    if ((${#failed_packages[@]})); then
+        warn "Failed to install the following packages: ${failed_packages[*]}"
+        echo "You can try installing them manually later with: pip install ${failed_packages[*]}"
     fi
 
     if [[ "${SENTINEL_ENABLE_TENSORFLOW:-0}" == "1" ]]; then
@@ -436,24 +624,24 @@ setup_python_venv
 install_blesh() {
   step "Installing BLE.sh to ${BLESH_DIR}"
   mkdir -p "${BLESH_DIR}"
-  safe_git_clone --depth=1 https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
-  BLESH_TAG="v0.3.4"
+  safe_git_clone --depth=1 --verify-commit="$EXPECTED_BLESH_COMMIT" https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
+
   if git -C "${BLESH_DIR}" rev-parse "$BLESH_TAG" >/dev/null 2>&1; then
     git -C "${BLESH_DIR}" checkout "$BLESH_TAG"
     ok "Checked out BLE.sh tag $BLESH_TAG"
   else
     warn "BLE.sh tag $BLESH_TAG not found; using default branch."
   fi
-  
+
   # Check various potential locations for ble.sh
   if [[ ! -f "${BLESH_DIR}/ble.sh" ]]; then
     step "ble.sh not found, attempting to build it"
-    
+
     # First try using make
     if [[ -f "${BLESH_DIR}/Makefile" ]]; then
       (cd "${BLESH_DIR}" && make) || warn "Make build failed, trying alternatives"
     fi
-    
+
     # Check if ble.sh was generated in the out directory
     if [[ -f "${BLESH_DIR}/out/ble.sh" ]]; then
       # Create a symlink to the built file
@@ -464,7 +652,7 @@ install_blesh() {
       warn "Built ble.sh not found in expected location, trying other approaches"
       (cd "${BLESH_DIR}" && bash make_command.sh) || warn "make_command.sh execution failed"
     fi
-    
+
     # Final check if ble.sh exists anywhere
     if [[ ! -f "${BLESH_DIR}/ble.sh" ]] && [[ -f "${BLESH_DIR}/out/ble.sh" ]]; then
       ln -sf "${BLESH_DIR}/out/ble.sh" "${BLESH_DIR}/ble.sh"
@@ -475,17 +663,17 @@ install_blesh() {
       ok "Successfully found/built ble.sh"
     fi
   fi
-  
+
   # Install BLE.sh
   if ! make -C "${BLESH_DIR}" install PREFIX="${HOME}/.local" >/dev/null; then
     fail "BLE.sh make install failed. See logs for details."
   fi
-  
+
   # Verify installation succeeded
   if [[ ! -f "${HOME}/.local/share/blesh/ble.sh" ]]; then
     fail "BLE.sh installation verification failed: ble.sh not found in ${HOME}/.local/share/blesh/"
   fi
-  
+
   ok "BLE.sh installed"
 }
 
@@ -521,26 +709,54 @@ EOF
 fi
 
 ###############################################################################
-# 6. Backup and update bashrc
+# 6. Ensure PATH includes ~/.local/bin
+###############################################################################
+ensure_local_bin_in_path() {
+    step "Ensuring ~/.local/bin is in PATH"
+    local postcustom="${HOME}/bashrc.postcustom"
+
+    if [[ ! -f "$postcustom" ]]; then
+        touch "$postcustom"
+        chmod 644 "$postcustom"
+    fi
+
+    if ! grep -q '\.local/bin' "$postcustom"; then
+        {
+            echo ''
+            echo '# Ensure ~/.local/bin is in PATH for pip-installed tools'
+            echo 'if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then'
+            echo '    export PATH="$HOME/.local/bin:$PATH"'
+            echo 'fi'
+        } >> "$postcustom"
+        ok "Added ~/.local/bin to PATH in bashrc.postcustom"
+    else
+        ok "~/.local/bin already in PATH configuration"
+    fi
+}
+
+ensure_local_bin_in_path
+
+###############################################################################
+# 7. Backup and update bashrc
 ###############################################################################
 patch_bashrc() {
   local rc="$1"
   local sentinel_bashrc="${PROJECT_ROOT}/bashrc"
-  
+
   # Check if .bashrc is owned by root or not writable
   if [[ ! -w "$rc" ]]; then
     warn "Cannot write to $rc (permission denied, may be owned by root)"
     step "Creating a new bashrc file and requesting to source it from your existing .bashrc"
-    
+
     # Create a separate user bashrc file
     local user_bashrc="${HOME}/.bashrc.sentinel"
-    
+
     # Copy SENTINEL bashrc to user_bashrc if available
     if [[ -f "$sentinel_bashrc" ]]; then
       safe_cp "$sentinel_bashrc" "$user_bashrc"
       chmod 644 "$user_bashrc"
       ok "SENTINEL bashrc installed as $user_bashrc"
-      
+
       # Prompt to add sourcing line to original .bashrc via sudo
       if [[ $INTERACTIVE -eq 1 ]]; then
         read -r -t 30 -p "Would you like to add a line to source $user_bashrc from your $rc? You may need to enter sudo password. [y/N]: " confirm || confirm="n"
@@ -548,7 +764,7 @@ patch_bashrc() {
         confirm="n"
         log "Non-interactive mode: using default answer '$confirm'"
       fi
-      
+
       if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
         # Use sudo to modify the root-owned .bashrc
         sudo bash -c "echo '' >> $rc"
@@ -566,7 +782,7 @@ patch_bashrc() {
         echo "fi"
         ok "Created $user_bashrc but you'll need to source it manually"
       fi
-      
+
       # Add line to source bashrc.postcustom from the user_bashrc
       if ! grep -q "source.*bashrc.postcustom" "$user_bashrc"; then
         {
@@ -578,14 +794,14 @@ patch_bashrc() {
         } >> "$user_bashrc"
         ok "Added line to source bashrc.postcustom in $user_bashrc"
       fi
-      
+
       return 0
     else
       fail "SENTINEL bashrc not found at $sentinel_bashrc"
       return 1
     fi
   fi
-  
+
   # Normal flow for writable .bashrc
   if [[ -f "$rc" ]]; then
     safe_cp "$rc" "$rc.sentinel.bak.$(date +%s)"
@@ -631,34 +847,34 @@ if ! is_done "BASHRC_PATCHED"; then
 fi
 
 ###############################################################################
-# 7. Copy post-custom bootstrap
+# 8. Copy post-custom bootstrap
 ###############################################################################
 if ! is_done "POSTCUSTOM_READY"; then
   step "Deploying bashrc.postcustom"
   install -m 644 "${PROJECT_ROOT}/bashrc.postcustom" "${HOME}/bashrc.postcustom"
-  
+
   # Enable VENV_AUTO by default
   if ! grep -q '^export VENV_AUTO=1' "${HOME}/bashrc.postcustom"; then
     echo 'export VENV_AUTO=1  # Enable Python venv auto-activation' >> "${HOME}/bashrc.postcustom"
   fi
-  
+
   ok "bashrc.postcustom in place with VENV_AUTO enabled"
   mark_done "POSTCUSTOM_READY"
 fi
 
 ###############################################################################
-# 8. Copy bash modules
+# 9. Copy bash modules
 ###############################################################################
 if ! is_done "CORE_MODULES_INSTALLED"; then
   MODULE_SRC="${PROJECT_ROOT}/bash_modules.d"
-  
+
   if [[ -d "$MODULE_SRC" ]]; then
     step "Copying core bash modules from '${MODULE_SRC}/'"
     rsync -a --delete "${MODULE_SRC}/" "${MODULES_DIR}/"
     chmod 700 "${MODULES_DIR}"
     find "${MODULES_DIR}" -type f -exec chmod 600 {} \;
     ok "Modules synced → ${MODULES_DIR}"
-    
+
     # Automatically run install-autocomplete.sh if present
     AUTOCOMPLETE_INSTALLER="${MODULE_SRC}/install-autocomplete.sh"
     if [[ -f "$AUTOCOMPLETE_INSTALLER" ]]; then
@@ -673,16 +889,16 @@ if ! is_done "CORE_MODULES_INSTALLED"; then
   else
     warn "No bash_modules.d/ directory found – skipping module sync"
   fi
-  
+
   mark_done "CORE_MODULES_INSTALLED"
 fi
 
 ###############################################################################
-# 9. Copy shell support files to HOME
+# 10. Copy shell support files to HOME
 ###############################################################################
 if ! is_done "SHELL_SUPPORT_COPIED"; then
   step "Copying shell support files to HOME"
-  
+
   # Copy main files
   for file in bash_aliases bash_completion bash_functions; do
     if [[ -f "${PROJECT_ROOT}/$file" ]]; then
@@ -694,38 +910,38 @@ if ! is_done "SHELL_SUPPORT_COPIED"; then
       warn "$file not found in repository"
     fi
   done
-  
+
   # Copy support directories
   for dir in bash_aliases.d bash_completion.d bash_functions.d contrib; do
     SRC_DIR="${PROJECT_ROOT}/$dir"
     DST_DIR="${HOME}/$dir"
-    
+
     if [[ -d "$SRC_DIR" ]]; then
       step "Copying $dir content to $DST_DIR"
       rsync -a "$SRC_DIR/" "$DST_DIR/"
-      
+
       # Set appropriate permissions
       find "$DST_DIR" -type d -exec chmod 700 {} \;
       find "$DST_DIR" -type f -exec chmod 600 {} \;
-      
+
       ok "$dir content copied with secure permissions"
     else
       warn "$SRC_DIR not found; skipping."
     fi
   done
-  
+
   # Create .bash_modules file if it doesn't exist
   if [[ ! -f "$HOME/.bash_modules" ]]; then
     cp "${PROJECT_ROOT}/.bash_modules" "$HOME/.bash_modules"
     chmod 644 "$HOME/.bash_modules"
     ok "Created $HOME/.bash_modules"
   fi
-  
+
   mark_done "SHELL_SUPPORT_COPIED"
 fi
 
 ###############################################################################
-# 10. Enable FZF module if present
+# 11. Enable FZF module if present
 ###############################################################################
 FZF_BIN="$(command -v fzf 2>/dev/null || true)"
 POSTCUSTOM_FILE="${HOME}/bashrc.postcustom"
@@ -743,55 +959,56 @@ else
 fi
 
 ###############################################################################
-# 11. Secure permissions on all files
+# 12. Secure permissions on all files
 ###############################################################################
 if ! is_done "PERMISSIONS_SECURED"; then
   step "Securing permissions on all SENTINEL files and modules"
-  
+
   # Secure all directories
   find "${HOME}/bash_modules.d" -type d -exec chmod 700 {} \;
   find "${HOME}/logs" -type d -exec chmod 700 {} \;
-  
+
   # Secure all files
   find "${HOME}/bash_modules.d" -type f -exec chmod 600 {} \;
-  
+
   # Make executable files executable
   find "${HOME}/bash_aliases.d" -type f -exec chmod 700 {} \;
-  
+  find "${HOME}/.local/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+
   # Secure .bashrc in home if it's writable
-  if [[ -f "$HOME/.bashrc" && -w "$HOME/.bashrc" ]]; then 
+  if [[ -f "$HOME/.bashrc" && -w "$HOME/.bashrc" ]]; then
     chmod 644 "$HOME/.bashrc"
     ok "Secured permissions on $HOME/.bashrc"
   elif [[ -f "$HOME/.bashrc" ]]; then
     warn "Cannot change permissions on $HOME/.bashrc (not writable)"
   fi
-  
+
   # Secure .bashrc.sentinel if it exists instead
-  if [[ -f "$HOME/.bashrc.sentinel" ]]; then 
+  if [[ -f "$HOME/.bashrc.sentinel" ]]; then
     chmod 644 "$HOME/.bashrc.sentinel"
     ok "Secured permissions on $HOME/.bashrc.sentinel"
   fi
-  
+
   # Secure .blerc if present
-  if [[ -f "$HOME/.blerc" && -w "$HOME/.blerc" ]]; then 
+  if [[ -f "$HOME/.blerc" && -w "$HOME/.blerc" ]]; then
     chmod 600 "$HOME/.blerc"
     ok "Secured permissions on $HOME/.blerc"
   elif [[ -f "$HOME/.blerc" ]]; then
     warn "Cannot change permissions on $HOME/.blerc (not writable)"
   fi
-  
+
   # Secure cache directory
-  if [[ -d "$HOME/.cache/blesh" ]]; then 
+  if [[ -d "$HOME/.cache/blesh" ]]; then
     chmod 700 "$HOME/.cache/blesh"
     ok "Secured permissions on $HOME/.cache/blesh"
   fi
-  
+
   ok "Secure permissions set on all files and directories"
   mark_done "PERMISSIONS_SECURED"
 fi
 
 ###############################################################################
-# 12. Run verification checks
+# 13. Run verification checks
 ###############################################################################
 step "Verifying installation"
 
@@ -803,19 +1020,19 @@ if [[ ! -d "${HOME}/autocomplete" ]]; then
   safe_mkdir "${HOME}/autocomplete/context" 755
   safe_mkdir "${HOME}/autocomplete/projects" 755
   safe_mkdir "${HOME}/autocomplete/params" 755
-  
+
   # Ensure proper permissions explicitly
   chmod 755 "${HOME}/autocomplete" 2>/dev/null
   find "${HOME}/autocomplete" -type d -exec chmod 755 {} \; 2>/dev/null
-  
+
   # Make any executable scripts actually executable
   find "${HOME}/autocomplete" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null
-  
+
   ok "Autocomplete directories created with proper permissions"
 fi
 
 # Check that essential directories exist
-for dir in "${HOME}/autocomplete" "${MODULES_DIR}"; do
+for dir in "${HOME}/autocomplete" "${MODULES_DIR}" "${HOME}/.local/bin"; do
   if [[ ! -d "$dir" ]]; then
     warn "Essential directory $dir is missing!"
   else
@@ -838,7 +1055,7 @@ if [[ ! -f "$VENV_PYTHON" ]]; then
   warn "Python virtual environment not properly installed"
 else
   ok "Python virtual environment found at ${HOME}/venv"
-  
+
   # Test importing a few key packages
   for pkg in numpy markovify tqdm; do
     if ! "$VENV_PYTHON" -c "import $pkg" &>/dev/null; then
@@ -856,15 +1073,25 @@ else
   ok "Autocomplete script installed"
 fi
 
+# Verify PATH configuration
+if grep -q '\.local/bin' "${HOME}/bashrc.postcustom"; then
+  ok "PATH configuration includes ~/.local/bin"
+else
+  warn "PATH may not include ~/.local/bin"
+fi
+
 ###############################################################################
-# 13. Final summary
+# 14. Final summary
 ###############################################################################
 echo
 ok "Installation completed successfully!"
+echo "Installer version: ${INSTALLER_VERSION}"
+echo
 echo "• Open a new terminal OR run:  source '${HOME}/bashrc.postcustom'"
 echo "• Verify with:                @autocomplete status"
 echo "• Logs:                       ${LOG_DIR}/install.log"
-echo 
+echo "• Rollback if needed:         ${ROLLBACK_SCRIPT}"
+echo
 
 # Add specific guidance for Debian login shells
 echo "Important for Debian/Ubuntu users:"
@@ -878,7 +1105,8 @@ echo
 echo "If you encounter issues after installation:"
 echo "1. Run: @autocomplete fix"
 echo "2. Ensure ~/.profile sources ~/.bashrc (see above)"
-echo "3. If problems persist, run: bash $0"
+echo "3. Check PATH includes ~/.local/bin: echo \$PATH"
+echo "4. If problems persist, run: bash $0"
 echo
 
 # Run post-install check if present
@@ -889,4 +1117,30 @@ if [[ -f "$POSTINSTALL_CHECK_SCRIPT" ]]; then
   ok "Post-installation verification complete. See summary above."
 else
   warn "Post-installation verification script not found at $POSTINSTALL_CHECK_SCRIPT. Skipping."
-fi 
+fi
+
+# Create a summary file for reference
+SUMMARY_FILE="${HOME}/SENTINEL_INSTALL_SUMMARY.txt"
+{
+  echo "SENTINEL Installation Summary"
+  echo "============================="
+  echo "Date: $(date)"
+  echo "Version: ${INSTALLER_VERSION}"
+  echo "Python: $PYTHON_CMD"
+  echo "Install State: ${STATE_FILE}"
+  echo "Rollback Script: ${ROLLBACK_SCRIPT}"
+  echo ""
+  echo "Key Locations:"
+  echo "- Modules: ${MODULES_DIR}"
+  echo "- Logs: ${LOG_DIR}"
+  echo "- Python venv: ${HOME}/venv"
+  echo "- BLE.sh: ${BLESH_DIR}"
+  echo ""
+  echo "To activate SENTINEL in new shells, one of these should be present:"
+  echo "1. ${HOME}/.bashrc sources ${HOME}/bashrc.postcustom"
+  echo "2. ${HOME}/.bashrc.sentinel is sourced from ${HOME}/.bashrc"
+  echo ""
+  echo "For support, check the logs at ${LOG_DIR}/install.log"
+} > "$SUMMARY_FILE"
+
+ok "Installation summary saved to ${SUMMARY_FILE}"
