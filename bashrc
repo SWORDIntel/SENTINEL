@@ -1,6 +1,6 @@
 #!/bin/bash
 # MINIMAL BASHRC with proper organization and no duplicates
-# Version: 2.0 - Cleaned and optimized
+# Version: 2.1 - With AI/NPU Stack Integration
 
 # ============================================================================
 # SECTION 1: EARLY EXITS AND CORE SETUP
@@ -75,6 +75,10 @@ export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 [[ -d "$HOME/bin" ]] && PATH="$HOME/bin:$PATH"
 [[ -d "$HOME/.local/bin" ]] && PATH="$HOME/.local/bin:$PATH"
 [[ -d "$HOME/go/go/bin" ]] && PATH="$HOME/go/go/bin:$PATH"
+
+# Add custom AI/ML build paths
+[[ -d "$HOME/datascience/mtl/bin" ]] && PATH="$HOME/datascience/mtl/bin:$PATH"
+[[ -d "$HOME/datascience" ]] && PATH="$HOME/datascience:$PATH"
 
 # Add common Python locations
 for python_dir in "/usr/local/bin" "/opt/python/bin" "${HOME}/.local/bin"; do
@@ -164,6 +168,23 @@ alias free='free -m'
 # Special aliases
 alias gradle='/usr/local/bin/gradle'
 alias @aliases='alias'
+
+# AI/ML Stack aliases
+alias ai-env='source ~/datascience/activate_ai_env.sh'
+alias npu-test='python ~/datascience/test_custom_openvino_npu.py'
+alias ai-bench='python ~/datascience/benchmark_ai_stack.py'
+alias numpy-p='~/datascience/numpy_select.py p'
+alias numpy-e='~/datascience/numpy_select.py e'
+alias numpy-auto='~/datascience/numpy_select.py auto'
+
+# Benchmark shortcuts
+alias bench-p='~/datascience/numpy_select.py p ~/datascience/benchmark_ai_stack.py'
+alias bench-e='~/datascience/numpy_select.py e ~/datascience/benchmark_ai_stack.py'
+alias bench-both='echo "[P-Core Benchmark]" && bench-p && echo -e "\n[E-Core Benchmark]" && bench-e'
+
+# NPU monitoring
+alias npu-status='ls -la /dev/accel/accel0 2>/dev/null && lsmod | grep intel_vpu'
+alias npu-log='sudo dmesg | tail -50 | grep -E "(vpu|npu|accel)" | grep -v Bluetooth'
 
 # ============================================================================
 # SECTION 7: CORE FUNCTIONS
@@ -269,7 +290,7 @@ safe_load_directory() {
   return 0
 }
 
-# Data Science Environment Shortcut
+# Data Science Environment Shortcut (Enhanced with AI Stack)
 datascience() {
     echo "Activating optimized data science environment..."
 
@@ -281,14 +302,14 @@ datascience() {
         return 1
     fi
 
-    # Set optimization flags for AVX-512
+    # Set optimization flags for Meteor Lake
     export CC=gcc
     export CXX=g++
     export FC=gfortran
-    export CFLAGS="-march=native -O3 -pipe -fomit-frame-pointer -flto"
+    export CFLAGS="-march=alderlake -O3 -pipe -fomit-frame-pointer -flto"
     export CXXFLAGS="$CFLAGS"
     export FCFLAGS="$CFLAGS"
-    export LDFLAGS="-Wl,-O3 -Wl,--as-needed -flto"
+    export LDFLAGS="-Wl,-O3 -Wl,--as-needed -flto -fuse-ld=mold"
 
     # Set build jobs
     if command -v nproc &> /dev/null; then
@@ -298,8 +319,15 @@ datascience() {
     fi
     export RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C lto=fat"
 
-    # Set Arrow library path
-    export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+    # Custom AI/ML library paths
+    export LD_LIBRARY_PATH="$HOME/datascience/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
+    export PYTHONPATH="$HOME/datascience/mtl/lib/python3.13/site-packages:$PYTHONPATH"
+
+    # NPU environment
+    export ZE_ENABLE_NPU_DRIVER=1
+    export NEO_CACHE_PERSISTENT=1
+    export OV_NPU_COMPILER_TYPE=DRIVER
+    export OV_NPU_PLATFORM=3800  # Meteor Lake
 
     # Change to code directory
     if [ -d /opt/code ]; then
@@ -322,9 +350,69 @@ datascience() {
         numpy_version_info=$(python3 -c 'import numpy; print(numpy.__version__)' 2>/dev/null || echo "Error getting version")
     fi
 
-    echo "Environment activated! Python $python_version_info"
+    # Get OpenVINO version safely
+    local openvino_version_info="Not found"
+    if command -v python3 &> /dev/null && python3 -c 'import openvino' &> /dev/null; then
+        openvino_version_info=$(python3 -c 'import openvino; print(openvino.__version__)' 2>/dev/null || echo "Not installed")
+    fi
+
+    echo "Environment activated!"
+    echo "Python: $python_version_info"
     echo "NumPy: $numpy_version_info"
+    echo "OpenVINO: $openvino_version_info"
+    echo "NPU: $([ -e /dev/accel/accel0 ] && echo 'Device present' || echo 'Not found')"
     echo "Working directory: $(pwd)"
+}
+
+# AI Stack Test Function
+aitest() {
+    echo "=== AI Stack Test ==="
+    echo "[1] NPU Status Check"
+    ls -la /dev/accel/accel0 2>/dev/null || echo "NPU device not found"
+    lsmod | grep intel_vpu || echo "Intel VPU module not loaded"
+    
+    echo -e "\n[2] Library Check"
+    echo -n "Custom Level Zero: "
+    [ -f "$HOME/datascience/mtl/lib/libze_loader.so" ] && echo "Found" || echo "Not found"
+    echo -n "NPU Plugin: "
+    [ -f "$HOME/datascience/mtl/lib/libze_intel_npu.so" ] && echo "Found" || echo "Not found"
+    
+    echo -e "\n[3] Python Environment"
+    python --version
+    python -c "import numpy; print(f'NumPy: {numpy.__version__}')" 2>/dev/null || echo "NumPy not found"
+    python -c "import openvino; print(f'OpenVINO: {openvino.__version__}')" 2>/dev/null || echo "OpenVINO not found"
+    
+    echo -e "\n[4] NPU Detection"
+    python -c "import openvino as ov; print(f'Devices: {ov.Core().available_devices}')" 2>/dev/null || echo "Failed to detect devices"
+}
+
+# Benchmark helper function
+aibench() {
+    local mode="${1:-both}"
+    
+    case "$mode" in
+        p|P|pcores)
+            echo "[Running P-Core Benchmark (AVX-512)]"
+            ~/datascience/numpy_select.py p ~/datascience/benchmark_ai_stack.py
+            ;;
+        e|E|ecores)
+            echo "[Running E-Core Benchmark (AVX2)]"
+            ~/datascience/numpy_select.py e ~/datascience/benchmark_ai_stack.py
+            ;;
+        both|all)
+            echo "[Running Both P-Core and E-Core Benchmarks]"
+            echo "=== P-Core (AVX-512) ==="
+            ~/datascience/numpy_select.py p ~/datascience/benchmark_ai_stack.py
+            echo -e "\n=== E-Core (AVX2) ==="
+            ~/datascience/numpy_select.py e ~/datascience/benchmark_ai_stack.py
+            ;;
+        *)
+            echo "Usage: aibench [p|e|both]"
+            echo "  p/P/pcores - Run on P-cores only"
+            echo "  e/E/ecores - Run on E-cores only"
+            echo "  both/all   - Run on both (default)"
+            ;;
+    esac
 }
 
 # ZFS snapshot function
@@ -521,11 +609,22 @@ if [ -f /usr/local/setupvars.sh ]; then
     source /usr/local/setupvars.sh
 fi
 
+# Custom AI Stack Environment Setup
+if [ -f ~/datascience/mtl/setup_npu_env.sh ]; then
+    source ~/datascience/mtl/setup_npu_env.sh 2>/dev/null || true
+fi
+
+if [ -f ~/datascience/mtl/setup_openvino.sh ]; then
+    source ~/datascience/mtl/setup_openvino.sh 2>/dev/null || true
+fi
+
 # Set NPU environment variable for Meteor Lake
 export ZE_ENABLE_NPU_DRIVER=1
+export NEO_CACHE_PERSISTENT=1
+export OV_NPU_COMPILER_TYPE=DRIVER
 
-# Add Level Zero library path (already added above, but ensuring it's set)
-export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+# Add Level Zero library path
+export LD_LIBRARY_PATH="$HOME/datascience/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
 
 # Activate data science environment by default (as in original)
 source ~/datascience/envs/dsenv/bin/activate 2>/dev/null || true
