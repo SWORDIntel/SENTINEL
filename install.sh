@@ -825,13 +825,13 @@ patch_bashrc() {
     fi
   else
     step "Patching existing bashrc to load SENTINEL"
-    if ! grep -q "source.*bashrc.postcustom" "$rc"; then
+    if ! grep -q "source.*waveterm.rc" "$rc"; then
       {
         echo ''
         echo '# SENTINEL Framework Integration'
-        echo "if [[ -f \"\${HOME}/bashrc.postcustom\" ]]; then"
+        echo "if [[ -f \"\${HOME}/waveterm.rc\" ]]; then"
         echo "    # Safe loading mechanism that won't crash the terminal"
-        echo "    source \"\${HOME}/bashrc.postcustom\" 2>/dev/null || echo \"[bashrc] Warning: Failed to load bashrc.postcustom\" >&2"
+        echo "    source \"\${HOME}/waveterm.rc\" 2>/dev/null || echo \"[bashrc] Warning: Failed to load waveterm.rc\" >&2"
         echo 'fi'
       } >> "$rc"
       ok "Patched $rc to load SENTINEL"
@@ -850,15 +850,20 @@ fi
 # 8. Copy post-custom bootstrap
 ###############################################################################
 if ! is_done "POSTCUSTOM_READY"; then
-  step "Deploying bashrc.postcustom"
+  step "Deploying bashrc.postcustom and waveterm.rc"
   install -m 644 "${PROJECT_ROOT}/bashrc.postcustom" "${HOME}/bashrc.postcustom"
+  install -m 644 "${PROJECT_ROOT}/waveterm.rc" "${HOME}/waveterm.rc"
 
   # Enable VENV_AUTO by default
   if ! grep -q '^export VENV_AUTO=1' "${HOME}/bashrc.postcustom"; then
     echo 'export VENV_AUTO=1  # Enable Python venv auto-activation' >> "${HOME}/bashrc.postcustom"
   fi
 
-  ok "bashrc.postcustom in place with VENV_AUTO enabled"
+  if ! grep -q '^export VENV_AUTO=1' "${HOME}/waveterm.rc"; then
+    echo 'export VENV_AUTO=1  # Enable Python venv auto-activation' >> "${HOME}/waveterm.rc"
+  fi
+
+  ok "bashrc.postcustom and waveterm.rc in place with VENV_AUTO enabled"
   mark_done "POSTCUSTOM_READY"
 fi
 
