@@ -24,8 +24,48 @@ else
     ewarn "SENTINEL_MODULES_PATH: No existing module directory found, using default $SENTINEL_MODULES_PATH"
 fi
 
+# Also export MODULES_DIR for compatibility with installer scripts
+export MODULES_DIR="$SENTINEL_MODULES_PATH"
+
 # Registry of loaded modules
 declare -A SENTINEL_LOADED_MODULES
+
+# Registry of lazy-loaded modules
+declare -A SENTINEL_LAZY_MODULES
+
+# Configuration for module loading strategy
+declare -A SENTINEL_MODULE_LOADING_STRATEGY
+
+# Load lazy loading configuration if it exists
+if [[ -f "$SENTINEL_MODULES_PATH/lazy_loading.conf" ]]; then
+    source "$SENTINEL_MODULES_PATH/lazy_loading.conf"
+else
+    # Default list of core modules that should always be loaded eagerly
+    SENTINEL_CORE_MODULES=(
+        "blesh_installer"
+        "autocomplete"
+        "logging"
+        "shell_security"
+        "config_cache"
+        "module_manager"
+        "bash_logout"
+    )
+
+    # Default list of heavy modules that should be lazy loaded
+    SENTINEL_LAZY_LOAD_MODULES=(
+        "sentinel_ml"
+        "sentinel_ml_enhanced"
+        "sentinel_osint"
+        "sentinel_cybersec_ml"
+        "sentinel_chat"
+        "sentinel_gitstar"
+        "sentinel_context"
+        "sentinel_markov"
+        "sentinel_smallllm"
+        "hashcat"
+        "obfuscate"
+    )
+fi
 
 # Initialize modules directory if it doesn't exist
 if [[ ! -d "$SENTINEL_MODULES_PATH" ]]; then
@@ -76,6 +116,162 @@ get_module_name_from_path() {
     
     # Strip extension and return
     echo "${module_file%.*}"
+}
+
+# Function to determine if a module should be lazy loaded
+is_lazy_load_module() {
+    local module_name="$1"
+    
+    # Check if lazy loading is disabled globally
+    if [[ "${SENTINEL_LAZY_LOADING_ENABLED:-1}" == "0" ]]; then
+        return 1
+    fi
+    
+    # Check module-specific override
+    local override_var="SENTINEL_${module_name^^}_LAZY_LOAD"
+    if [[ -n "${!override_var}" ]]; then
+        [[ "${!override_var}" == "1" ]] && return 0 || return 1
+    fi
+    
+    # Check if module is in the lazy load list
+    for lazy_module in "${SENTINEL_LAZY_LOAD_MODULES[@]}"; do
+        if [[ "$module_name" == "$lazy_module" ]]; then
+            return 0
+        fi
+    done
+    
+    # Check if module is in the core modules list (should NOT be lazy loaded)
+    for core_module in "${SENTINEL_CORE_MODULES[@]}"; do
+        if [[ "$module_name" == "$core_module" ]]; then
+            return 1
+        fi
+    done
+    
+    # Default to eager loading for unspecified modules
+    return 1
+}
+
+# Function to create a lazy loading proxy for a module
+create_lazy_proxy() {
+    local module_name="$1"
+    local module_file="$2"
+    
+    # Mark module as lazy-loaded (but not actually loaded yet)
+    SENTINEL_LAZY_MODULES["$module_name"]="$module_file"
+    
+    # Create proxy functions for common module patterns
+    # This is a generic approach - specific modules might need custom proxies
+    
+    # If the module provides a main function with its name, create a proxy
+    eval "
+    ${module_name}() {
+        # First time this function is called, load the actual module
+        if [[ \"\${SENTINEL_LAZY_MODULES[$module_name]:-}\" != \"loaded\" ]]; then
+            local module_file=\"\${SENTINEL_LAZY_MODULES[$module_name]}\"
+            emsg \"[LAZY] Loading module '$module_name' on first use...\"
+            
+            # Remove the proxy function
+            unset -f ${module_name}
+            
+            # Load the actual module
+            module_enable \"$module_name\" \"0\" \"lazy\"
+            
+            # Mark as loaded
+            SENTINEL_LAZY_MODULES[\"$module_name\"]=\"loaded\"
+        fi
+        
+        # Call the real function if it exists
+        if type ${module_name} &>/dev/null; then
+            ${module_name} \"\$@\"
+        else
+            eerror \"Function ${module_name} not found after loading module\"
+            return 1
+        fi
+    }
+    "
+    
+    # Create proxy commands from configuration
+    if [[ -n "${SENTINEL_LAZY_COMMANDS[@]}" ]]; then
+        for cmd in "${!SENTINEL_LAZY_COMMANDS[@]}"; do
+            if [[ "${SENTINEL_LAZY_COMMANDS[$cmd]}" == "$module_name" ]]; then
+                eval "
+                $cmd() {
+                    if [[ \"\${SENTINEL_LAZY_MODULES[$module_name]:-}\" != \"loaded\" ]]; then
+                        [[ \"\${SENTINEL_LAZY_SHOW_LOADING:-1}\" == \"1\" ]] && emsg \"[LAZY] Loading module '$module_name' for command '$cmd'...\"
+                        module_enable \"$module_name\" \"0\" \"lazy\"
+                        SENTINEL_LAZY_MODULES[\"$module_name\"]=\"loaded\"
+                    fi
+                    if type $cmd &>/dev/null; then
+                        $cmd \"\$@\"
+                    else
+                        eerror \"Command $cmd not found after loading module $module_name\"
+                        return 1
+                    fi
+                }
+                "
+            fi
+        done
+    fi
+    
+    # For ML modules, create common proxy functions
+    case "$module_name" in
+        sentinel_ml*)
+            eval "
+            ml_suggest() {
+                if [[ \"\${SENTINEL_LAZY_MODULES[$module_name]:-}\" != \"loaded\" ]]; then
+                    [[ \"\${SENTINEL_LAZY_SHOW_LOADING:-1}\" == \"1\" ]] && emsg \"[LAZY] Loading ML module for suggestions...\"
+                    module_enable \"$module_name\" \"0\" \"lazy\"
+                    SENTINEL_LAZY_MODULES[\"$module_name\"]=\"loaded\"
+                fi
+                if type ml_suggest &>/dev/null; then
+                    ml_suggest \"\$@\"
+                fi
+            }
+            "
+            ;;
+        sentinel_osint*)
+            eval "
+            osint() {
+                if [[ \"\${SENTINEL_LAZY_MODULES[$module_name]:-}\" != \"loaded\" ]]; then
+                    [[ \"\${SENTINEL_LAZY_SHOW_LOADING:-1}\" == \"1\" ]] && emsg \"[LAZY] Loading OSINT module...\"
+                    module_enable \"$module_name\" \"0\" \"lazy\"
+                    SENTINEL_LAZY_MODULES[\"$module_name\"]=\"loaded\"
+                fi
+                if type osint &>/dev/null; then
+                    osint \"\$@\"
+                fi
+            }
+            "
+            ;;
+        sentinel_chat*)
+            eval "
+            chat() {
+                if [[ \"\${SENTINEL_LAZY_MODULES[$module_name]:-}\" != \"loaded\" ]]; then
+                    [[ \"\${SENTINEL_LAZY_SHOW_LOADING:-1}\" == \"1\" ]] && emsg \"[LAZY] Loading chat module...\"
+                    module_enable \"$module_name\" \"0\" \"lazy\"
+                    SENTINEL_LAZY_MODULES[\"$module_name\"]=\"loaded\"
+                fi
+                if type chat &>/dev/null; then
+                    chat \"\$@\"
+                fi
+            }
+            "
+            ;;
+        sentinel_gitstar*)
+            eval "
+            gitstar() {
+                if [[ \"\${SENTINEL_LAZY_MODULES[$module_name]:-}\" != \"loaded\" ]]; then
+                    [[ \"\${SENTINEL_LAZY_SHOW_LOADING:-1}\" == \"1\" ]] && emsg \"[LAZY] Loading GitStar module...\"
+                    module_enable \"$module_name\" \"0\" \"lazy\"
+                    SENTINEL_LAZY_MODULES[\"$module_name\"]=\"loaded\"
+                fi
+                if type gitstar &>/dev/null; then
+                    gitstar \"\$@\"
+                fi
+            }
+            "
+            ;;
+    esac
 }
 
 # Module loading function with enhanced error handling and dependency resolution
@@ -131,6 +327,19 @@ module_enable() {
         [[ "$called_by" == "direct" && "${SENTINEL_QUIET_MODULES:-0}" != "1" ]] && \
             emsg "Module '$module_name' is already loaded." 2>/dev/null || true
         return 0
+    fi
+    
+    # Check if this module should be lazy loaded (only during startup)
+    if [[ "$called_by" == "startup" ]] && is_lazy_load_module "$module_name"; then
+        [[ "$debug_mode" == "1" ]] && echo "DEBUG: Module '$module_name' marked for lazy loading" >&2 2>/dev/null || true
+        
+        # Find the module file for lazy loading
+        if [[ -n "$module_file" ]]; then
+            create_lazy_proxy "$module_name" "$module_file"
+            # Mark in loaded modules as "lazy" to prevent duplicate loading
+            SENTINEL_LOADED_MODULES["$module_name"]="lazy"
+            return 0
+        fi
     fi
     
     # Check if module file exists - with error handling
@@ -478,6 +687,33 @@ module_sign() {
     return 0
 }
 
+# List lazy loading status
+module_lazy_status() {
+    echo "SENTINEL Lazy Loading Status"
+    echo "============================"
+    echo
+    echo "Lazy Loading: ${SENTINEL_LAZY_LOADING_ENABLED:-1}"
+    echo
+    echo "Lazy-Loaded Modules:"
+    for module in "${!SENTINEL_LAZY_MODULES[@]}"; do
+        local status="${SENTINEL_LAZY_MODULES[$module]}"
+        if [[ "$status" == "loaded" ]]; then
+            echo "  [$module] - Loaded on demand"
+        else
+            echo "  [$module] - Ready (not loaded yet)"
+        fi
+    done
+    echo
+    echo "Core Modules (always eager):"
+    for module in "${SENTINEL_CORE_MODULES[@]}"; do
+        if [[ "${SENTINEL_LOADED_MODULES[$module]:-}" == "1" ]]; then
+            echo "  [$module] - Loaded"
+        else
+            echo "  [$module] - Not loaded"
+        fi
+    done
+}
+
 # List all available and loaded modules, including those in subdirectories
 module_list() {
     local debug_mode="${SENTINEL_DEBUG_MODULES:-0}"
@@ -547,6 +783,15 @@ module_list() {
                 status="*"
                 status_color="${GREEN}"
             fi
+        elif [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "lazy" ]]; then
+            # Module is set up for lazy loading
+            if [[ "${SENTINEL_LAZY_MODULES[$module_name]}" == "loaded" ]]; then
+                status="Z"  # Lazy loaded and now active
+                status_color="${YELLOW}"
+            else
+                status="z"  # Lazy loaded but not yet active
+                status_color="${CYAN}"
+            fi
         fi
         
         # Format the output - include directory if in a subdirectory
@@ -559,7 +804,7 @@ module_list() {
     
     # Print statistics
     echo
-    echo "Status: [E]=Enabled at startup, [L]=Loaded now, [*]=Both"
+    echo "Status: [E]=Enabled at startup, [L]=Loaded now, [*]=Both, [z]=Lazy (ready), [Z]=Lazy (loaded)"
     echo "Total modules: $total_modules, Enabled: $enabled_modules, Currently loaded: $loaded_modules"
 }
 

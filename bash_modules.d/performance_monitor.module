@@ -1,0 +1,331 @@
+#!/usr/bin/env bash
+# SENTINEL Module: Performance Monitor
+# Tracks module loading performance and provides analytics
+
+SENTINEL_MODULE_DESCRIPTION="Performance monitoring and analytics for module system"
+SENTINEL_MODULE_VERSION="1.0.0"
+SENTINEL_MODULE_DEPENDENCIES="logging"
+
+# Performance data storage
+SENTINEL_PERF_LOG_DIR="${SENTINEL_PERF_LOG_DIR:-$HOME/.cache/sentinel/performance}"
+mkdir -p "$SENTINEL_PERF_LOG_DIR"
+
+# Current session performance data
+declare -A SENTINEL_PERF_MODULE_TIMES
+declare -A SENTINEL_PERF_MODULE_MEMORY
+SENTINEL_PERF_SESSION_START=""
+SENTINEL_PERF_SESSION_ID=""
+
+# Initialize performance monitoring
+_init_performance_monitor() {
+    SENTINEL_PERF_SESSION_START=$(date +%s%N 2>/dev/null || date +%s)
+    SENTINEL_PERF_SESSION_ID=$(date +%Y%m%d_%H%M%S)_$$
+    
+    # Hook into module loading
+    if declare -f module_enable >/dev/null; then
+        # Wrap the original module_enable function
+        eval "$(echo "original_module_enable()"; declare -f module_enable | tail -n +2)"
+        
+        module_enable() {
+            local module_name="$1"
+            local start_time=$(date +%s%N 2>/dev/null || date +%s)
+            local start_mem=$(ps -o rss= -p $$ 2>/dev/null | tr -d ' ')
+            
+            # Call original function
+            original_module_enable "$@"
+            local result=$?
+            
+            # Record performance data
+            local end_time=$(date +%s%N 2>/dev/null || date +%s)
+            local end_mem=$(ps -o rss= -p $$ 2>/dev/null | tr -d ' ')
+            
+            local duration=$((($end_time - $start_time) / 1000000))
+            local mem_delta=$((end_mem - start_mem))
+            
+            SENTINEL_PERF_MODULE_TIMES["$module_name"]=$duration
+            SENTINEL_PERF_MODULE_MEMORY["$module_name"]=$mem_delta
+            
+            return $result
+        }
+    fi
+}
+
+# Function to save performance data
+save_performance_data() {
+    local perf_file="$SENTINEL_PERF_LOG_DIR/session_${SENTINEL_PERF_SESSION_ID}.log"
+    
+    {
+        echo "# SENTINEL Performance Log"
+        echo "# Session: $SENTINEL_PERF_SESSION_ID"
+        echo "# Date: $(date)"
+        echo "# Shell: $BASH_VERSION"
+        echo
+        echo "## Module Load Times (ms)"
+        for module in "${!SENTINEL_PERF_MODULE_TIMES[@]}"; do
+            echo "$module,${SENTINEL_PERF_MODULE_TIMES[$module]}"
+        done | sort -t',' -k2 -nr
+        echo
+        echo "## Module Memory Impact (KB)"
+        for module in "${!SENTINEL_PERF_MODULE_MEMORY[@]}"; do
+            echo "$module,${SENTINEL_PERF_MODULE_MEMORY[$module]}"
+        done | sort -t',' -k2 -nr
+        echo
+        echo "## Summary"
+        local total_time=0
+        for time in "${SENTINEL_PERF_MODULE_TIMES[@]}"; do
+            ((total_time += time))
+        done
+        echo "Total modules: ${#SENTINEL_PERF_MODULE_TIMES[@]}"
+        echo "Total time: ${total_time}ms"
+        echo "Average time: $((total_time / ${#SENTINEL_PERF_MODULE_TIMES[@]}))ms"
+    } > "$perf_file"
+}
+
+# Function to analyze performance trends
+analyze_performance_trends() {
+    local days="${1:-7}"
+    echo "=== SENTINEL Performance Analysis (Last $days days) ==="
+    
+    # Find recent performance logs
+    local logs=$(find "$SENTINEL_PERF_LOG_DIR" -name "session_*.log" -mtime -"$days" 2>/dev/null | sort)
+    
+    if [[ -z "$logs" ]]; then
+        echo "No performance data found for the last $days days"
+        return 1
+    fi
+    
+    # Aggregate data
+    declare -A module_times_sum
+    declare -A module_times_count
+    declare -A module_times_min
+    declare -A module_times_max
+    
+    while IFS= read -r log_file; do
+        while IFS=',' read -r module time; do
+            [[ "$module" =~ ^[a-zA-Z] ]] || continue
+            
+            # Initialize if needed
+            if [[ -z "${module_times_sum[$module]}" ]]; then
+                module_times_sum["$module"]=0
+                module_times_count["$module"]=0
+                module_times_min["$module"]=999999
+                module_times_max["$module"]=0
+            fi
+            
+            # Update stats
+            ((module_times_sum["$module"] += time))
+            ((module_times_count["$module"]++))
+            
+            if ((time < module_times_min["$module"])); then
+                module_times_min["$module"]=$time
+            fi
+            if ((time > module_times_max["$module"])); then
+                module_times_max["$module"]=$time
+            fi
+        done < <(grep -A 100 "## Module Load Times" "$log_file" | grep -E '^[a-zA-Z_]+,[0-9]+$')
+    done <<< "$logs"
+    
+    # Display results
+    echo
+    echo "Module Performance Statistics:"
+    echo "Module              | Avg (ms) | Min (ms) | Max (ms) | Samples"
+    echo "------------------- | -------- | -------- | -------- | -------"
+    
+    for module in "${!module_times_sum[@]}"; do
+        local avg=$((module_times_sum["$module"] / module_times_count["$module"]))
+        printf "%-18s | %8d | %8d | %8d | %7d\n" \
+            "$module" "$avg" "${module_times_min[$module]}" \
+            "${module_times_max[$module]}" "${module_times_count[$module]}"
+    done | sort -t'|' -k2 -nr
+}
+
+# Function to compare performance between configurations
+compare_performance() {
+    local config1="$1"
+    local config2="$2"
+    
+    echo "=== Performance Comparison ==="
+    echo "Config 1: $config1"
+    echo "Config 2: $config2"
+    echo
+    
+    # This would compare two different configurations
+    # For now, show current vs average
+    echo "Current session vs. 7-day average:"
+    echo
+    
+    # Get averages
+    local avg_data=$(analyze_performance_trends 7 2>/dev/null | grep -E '^[a-zA-Z_]+ \|')
+    
+    echo "Module              | Current  | Average  | Diff %"
+    echo "------------------- | -------- | -------- | ------"
+    
+    for module in "${!SENTINEL_PERF_MODULE_TIMES[@]}"; do
+        local current="${SENTINEL_PERF_MODULE_TIMES[$module]}"
+        local avg=$(echo "$avg_data" | grep "^$module " | awk -F'|' '{print $2}' | tr -d ' ')
+        
+        if [[ -n "$avg" && "$avg" -gt 0 ]]; then
+            local diff=$(( (current - avg) * 100 / avg ))
+            printf "%-18s | %8d | %8d | %+5d%%\n" "$module" "$current" "$avg" "$diff"
+        fi
+    done
+}
+
+# Function to generate performance report
+generate_performance_report() {
+    local report_file="$SENTINEL_PERF_LOG_DIR/performance_report_$(date +%Y%m%d).html"
+    
+    {
+        cat << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SENTINEL Performance Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1, h2 { color: #333; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .slow { color: red; font-weight: bold; }
+        .fast { color: green; font-weight: bold; }
+        .chart { margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>SENTINEL Performance Report</h1>
+    <p>Generated: 
+EOF
+        date
+        cat << 'EOF'
+</p>
+    <h2>Current Session Performance</h2>
+    <table>
+        <tr>
+            <th>Module</th>
+            <th>Load Time (ms)</th>
+            <th>Memory Impact (KB)</th>
+            <th>Status</th>
+        </tr>
+EOF
+        
+        # Add module data
+        for module in "${!SENTINEL_PERF_MODULE_TIMES[@]}"; do
+            local time="${SENTINEL_PERF_MODULE_TIMES[$module]}"
+            local memory="${SENTINEL_PERF_MODULE_MEMORY[$module]:-0}"
+            local status="normal"
+            local class=""
+            
+            if ((time > 100)); then
+                status="slow"
+                class="slow"
+            elif ((time < 20)); then
+                status="fast"
+                class="fast"
+            fi
+            
+            echo "        <tr>"
+            echo "            <td>$module</td>"
+            echo "            <td class='$class'>$time</td>"
+            echo "            <td>$memory</td>"
+            echo "            <td>$status</td>"
+            echo "        </tr>"
+        done
+        
+        cat << 'EOF'
+    </table>
+    
+    <h2>Performance Trends</h2>
+    <div class="chart">
+        <!-- Chart would go here -->
+        <p>See command line for detailed trend analysis.</p>
+    </div>
+    
+    <h2>Recommendations</h2>
+    <ul>
+EOF
+        
+        # Add recommendations based on data
+        local slow_modules=0
+        for module in "${!SENTINEL_PERF_MODULE_TIMES[@]}"; do
+            local time="${SENTINEL_PERF_MODULE_TIMES[$module]}"
+            if ((time > 100)); then
+                ((slow_modules++))
+                echo "        <li>Consider lazy loading for module: $module (${time}ms)</li>"
+            fi
+        done
+        
+        if ((slow_modules == 0)); then
+            echo "        <li>All modules are loading efficiently!</li>"
+        fi
+        
+        cat << 'EOF'
+    </ul>
+</body>
+</html>
+EOF
+    } > "$report_file"
+    
+    echo "Performance report generated: $report_file"
+}
+
+# Function to monitor real-time performance
+monitor_performance_realtime() {
+    echo "=== SENTINEL Real-time Performance Monitor ==="
+    echo "Press Ctrl+C to stop"
+    echo
+    
+    while true; do
+        clear
+        echo "=== SENTINEL Real-time Performance Monitor ==="
+        echo "Time: $(date)"
+        echo
+        
+        # Show current session stats
+        local total_time=0
+        local loaded_count=0
+        
+        for module in "${!SENTINEL_PERF_MODULE_TIMES[@]}"; do
+            ((total_time += SENTINEL_PERF_MODULE_TIMES[$module]))
+            ((loaded_count++))
+        done
+        
+        echo "Modules loaded: $loaded_count"
+        echo "Total time: ${total_time}ms"
+        if ((loaded_count > 0)); then
+            echo "Average time: $((total_time / loaded_count))ms"
+        fi
+        echo
+        
+        # Show top 5 slowest modules
+        echo "Slowest modules:"
+        for module in "${!SENTINEL_PERF_MODULE_TIMES[@]}"; do
+            echo "$module: ${SENTINEL_PERF_MODULE_TIMES[$module]}ms"
+        done | sort -t':' -k2 -nr | head -5
+        
+        sleep 2
+    done
+}
+
+# Export functions
+export -f save_performance_data
+export -f analyze_performance_trends
+export -f compare_performance
+export -f generate_performance_report
+export -f monitor_performance_realtime
+
+# Aliases for convenience
+alias perf-save='save_performance_data'
+alias perf-analyze='analyze_performance_trends'
+alias perf-compare='compare_performance'
+alias perf-report='generate_performance_report'
+alias perf-monitor='monitor_performance_realtime'
+
+# Initialize performance monitoring
+_init_performance_monitor
+
+# Save performance data on exit
+trap 'save_performance_data 2>/dev/null' EXIT
+
+echo "SENTINEL Performance Monitor initialized" >&2

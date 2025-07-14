@@ -24,48 +24,54 @@ if ! command -v fzf &>/dev/null; then
     return 0  # Return success even when fzf is missing to prevent terminal crashes
 fi
 
-# --- Check for BLE.sh with comprehensive error handling ---
+# --- Check for BLE.sh (being phased out) ---
+# BLE.sh is being removed from SENTINEL, so we'll skip the check and warning
+# to avoid confusion during the transition period.
 {
-    BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
-    if ! type -t bleopt &>/dev/null && [[ -f "$BLESH_MAIN" ]]; then
-        # Fix for 'unrecognized attach method' error with robust protection
-        { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true
-        
-        # Try multiple sourcing methods with full error protection
-        {
-            # First try with source and parameters
-            { source "$BLESH_MAIN" --attach=attach; } 2>/dev/null || {
-                # If that fails, try dot operator
-                { . "$BLESH_MAIN"; } 2>/dev/null || {
-                    # If all sourcing fails, log but continue silently
-                    { echo "${YELLOW}[fzf] Warning: Failed to load ble.sh${NC}" >&2; } 2>/dev/null || true
+    # Only check for BLE.sh if verbose mode is enabled
+    if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]]; then
+        BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
+        if ! type -t bleopt &>/dev/null && [[ -f "$BLESH_MAIN" ]]; then
+            # Fix for 'unrecognized attach method' error with robust protection
+            { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true
+            
+            # Try multiple sourcing methods with full error protection
+            {
+                # First try with source and parameters
+                { source "$BLESH_MAIN" --attach=attach; } 2>/dev/null || {
+                    # If that fails, try dot operator
+                    { . "$BLESH_MAIN"; } 2>/dev/null || {
+                        # If all sourcing fails, log but continue silently
+                        { echo "${YELLOW}[fzf] Note: BLE.sh loading skipped (being phased out)${NC}" >&2; } 2>/dev/null || true
+                    }
                 }
-            }
-        } 2>/dev/null || true
+            } 2>/dev/null || true
+        fi
     fi
     
-    # Check loading status but don't crash if it failed
-    if ! type -t bleopt &>/dev/null; then
-        { echo "${YELLOW}Warning: BLE.sh not loaded. FZF integration will be limited.${NC}"; } 2>/dev/null || true
-    fi
+    # Skip the warning about BLE.sh not being loaded since it's being removed
+    # This prevents confusing warnings during normal operation
 } 2>/dev/null || true
 
-# --- FZF Integration Scripts with robust error handling ---
+# --- FZF Integration Scripts (BLE.sh dependent - being phased out) ---
+# Since BLE.sh is being removed, we'll skip trying to load its FZF integration
+# scripts to avoid warnings and errors.
 {
-    FZF_INIT=~/.local/share/blesh/contrib/integration/fzf-initialize.bash
-    if [[ -f "$FZF_INIT" ]]; then
-        # Source with comprehensive error handling
-        { source "$FZF_INIT"; } 2>/dev/null || {
-            # Try alternative sourcing if the first fails
-            { . "$FZF_INIT"; } 2>/dev/null || true
-        }
-        
-        # Only show success message if verbose mode is enabled
-        [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] && { echo "${GREEN}FZF integration loaded via $FZF_INIT${NC}"; } 2>/dev/null || true
-    else
-        # Silent warning in normal mode
-        [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] && { echo "${YELLOW}Warning: FZF integration script not found at $FZF_INIT${NC}"; } 2>/dev/null || true
+    # Only attempt BLE.sh FZF integration if BLE.sh is actually loaded and verbose mode
+    if type -t bleopt &>/dev/null && [[ "${SENTINEL_VERBOSE:-0}" == "1" ]]; then
+        FZF_INIT=~/.local/share/blesh/contrib/integration/fzf-initialize.bash
+        if [[ -f "$FZF_INIT" ]]; then
+            # Source with comprehensive error handling
+            { source "$FZF_INIT"; } 2>/dev/null || {
+                # Try alternative sourcing if the first fails
+                { . "$FZF_INIT"; } 2>/dev/null || true
+            }
+            
+            # Only show success message if verbose mode is enabled
+            { echo "${GREEN}FZF integration loaded via BLE.sh${NC}"; } 2>/dev/null || true
+        fi
     fi
+    # No warnings about missing BLE.sh integration since it's being removed
 } 2>/dev/null || true
 
 # --- Environment Customization with error protection ---
@@ -80,10 +86,9 @@ fi
     if command -v logger &>/dev/null; then
         # Get version info safely
         local fzf_version="$(fzf --version 2>/dev/null || echo 'unknown')"
-        local blesh_version="$(type -t bleopt &>/dev/null && { bleopt --version 2>/dev/null || echo 'error'; } || echo 'not loaded')"
         
         # Log only if logger command exists
-        { logger -t SENTINEL "[INFO] FZF module loaded (fzf: $fzf_version, ble.sh: $blesh_version)"; } 2>/dev/null || true
+        { logger -t SENTINEL "[INFO] FZF module loaded (version: $fzf_version)"; } 2>/dev/null || true
     fi
 } 2>/dev/null || true
 

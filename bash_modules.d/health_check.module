@@ -1,0 +1,700 @@
+#!/usr/bin/env bash
+# SENTINEL Module: Health Check System
+# Provides comprehensive health monitoring for SENTINEL modules
+
+SENTINEL_MODULE_DESCRIPTION="Module health check system with automatic recovery"
+SENTINEL_MODULE_VERSION="1.0.0"
+SENTINEL_MODULE_DEPENDENCIES="logging"
+
+# Prevent double loading
+[[ -n "${_SENTINEL_HEALTH_CHECK_LOADED}" ]] && return 0
+export _SENTINEL_HEALTH_CHECK_LOADED=1
+
+# Health check configuration
+SENTINEL_HEALTH_CHECK_DIR="${SENTINEL_HEALTH_CHECK_DIR:-$HOME/.cache/sentinel/health}"
+SENTINEL_HEALTH_CHECK_INTERVAL="${SENTINEL_HEALTH_CHECK_INTERVAL:-300}"  # 5 minutes default
+SENTINEL_HEALTH_CHECK_ENABLED="${SENTINEL_HEALTH_CHECK_ENABLED:-1}"
+SENTINEL_HEALTH_CHECK_AUTO_RECOVERY="${SENTINEL_HEALTH_CHECK_AUTO_RECOVERY:-1}"
+SENTINEL_HEALTH_CHECK_MAX_RETRIES="${SENTINEL_HEALTH_CHECK_MAX_RETRIES:-3}"
+
+# Health status codes
+readonly HEALTH_OK=0
+readonly HEALTH_WARNING=1
+readonly HEALTH_ERROR=2
+readonly HEALTH_CRITICAL=3
+readonly HEALTH_UNKNOWN=4
+
+# Module health registry
+declare -A SENTINEL_MODULE_HEALTH_STATUS
+declare -A SENTINEL_MODULE_HEALTH_CHECKS
+declare -A SENTINEL_MODULE_FAILURE_COUNT
+declare -A SENTINEL_MODULE_LAST_CHECK
+declare -A SENTINEL_MODULE_RECOVERY_ATTEMPTS
+
+# Performance thresholds
+SENTINEL_HEALTH_MEMORY_THRESHOLD="${SENTINEL_HEALTH_MEMORY_THRESHOLD:-100000}"  # 100MB in KB
+SENTINEL_HEALTH_LOAD_TIME_THRESHOLD="${SENTINEL_HEALTH_LOAD_TIME_THRESHOLD:-5000}"  # 5 seconds in ms
+
+# Initialize health check system
+_init_health_check() {
+    # Create health check directory
+    mkdir -p "$SENTINEL_HEALTH_CHECK_DIR"
+    
+    # Initialize health check log
+    local health_log="$SENTINEL_HEALTH_CHECK_DIR/health_$(date +%Y%m%d).log"
+    touch "$health_log"
+    
+    # Load previous health status if available
+    local status_file="$SENTINEL_HEALTH_CHECK_DIR/module_status.dat"
+    if [[ -f "$status_file" ]]; then
+        while IFS='|' read -r module status timestamp; do
+            [[ -n "$module" ]] && SENTINEL_MODULE_HEALTH_STATUS["$module"]=$status
+            [[ -n "$timestamp" ]] && SENTINEL_MODULE_LAST_CHECK["$module"]=$timestamp
+        done < "$status_file" 2>/dev/null || true
+    fi
+    
+    # Register standard health checks
+    _register_standard_health_checks
+    
+    # Start periodic health check if enabled
+    if [[ "$SENTINEL_HEALTH_CHECK_ENABLED" == "1" ]]; then
+        _start_periodic_health_check
+    fi
+}
+
+# Register standard health checks for modules
+_register_standard_health_checks() {
+    # Core module checks
+    register_health_check "logging" _check_logging_health
+    register_health_check "config_cache" _check_config_cache_health
+    register_health_check "shell_security" _check_security_health
+    
+    # ML module checks
+    register_health_check "sentinel_ml" _check_ml_module_health
+    register_health_check "sentinel_chat" _check_chat_module_health
+    register_health_check "sentinel_osint" _check_osint_module_health
+    
+    # Performance-critical modules
+    register_health_check "fuzzy_correction" _check_fuzzy_correction_health
+    register_health_check "autocomplete" _check_autocomplete_health
+}
+
+# Register a health check for a module
+register_health_check() {
+    local module_name="$1"
+    local check_function="$2"
+    
+    if [[ -z "$module_name" || -z "$check_function" ]]; then
+        sentinel_log $SENTINEL_LOG_LEVEL_ERROR "health_check" \
+            "Invalid health check registration: module=$module_name, function=$check_function"
+        return 1
+    fi
+    
+    SENTINEL_MODULE_HEALTH_CHECKS["$module_name"]="$check_function"
+    SENTINEL_MODULE_HEALTH_STATUS["$module_name"]=$HEALTH_UNKNOWN
+    SENTINEL_MODULE_FAILURE_COUNT["$module_name"]=0
+    SENTINEL_MODULE_RECOVERY_ATTEMPTS["$module_name"]=0
+    
+    sentinel_log $SENTINEL_LOG_LEVEL_DEBUG "health_check" \
+        "Registered health check for module: $module_name"
+}
+
+# Perform health check on a single module
+check_module_health() {
+    local module_name="$1"
+    local force="${2:-0}"
+    
+    # Check if module is loaded
+    if [[ "${SENTINEL_LOADED_MODULES[$module_name]:-}" != "1" ]] && \
+       [[ "${SENTINEL_LAZY_MODULES[$module_name]:-}" != "loaded" ]]; then
+        SENTINEL_MODULE_HEALTH_STATUS["$module_name"]=$HEALTH_UNKNOWN
+        return $HEALTH_UNKNOWN
+    fi
+    
+    # Check if we need to run the check (rate limiting)
+    local current_time=$(date +%s)
+    local last_check="${SENTINEL_MODULE_LAST_CHECK[$module_name]:-0}"
+    local time_diff=$((current_time - last_check))
+    
+    if [[ "$force" != "1" && $time_diff -lt 60 ]]; then
+        # Return cached status if checked within last minute
+        return ${SENTINEL_MODULE_HEALTH_STATUS["$module_name"]:-$HEALTH_UNKNOWN}
+    fi
+    
+    # Update last check time
+    SENTINEL_MODULE_LAST_CHECK["$module_name"]=$current_time
+    
+    # Run generic health checks
+    local status=$HEALTH_OK
+    local issues=()
+    
+    # Check 1: Module file still exists
+    if ! _check_module_file_exists "$module_name"; then
+        status=$HEALTH_ERROR
+        issues+=("Module file missing")
+    fi
+    
+    # Check 2: Memory usage
+    local mem_usage=$(_get_module_memory_usage "$module_name")
+    if [[ -n "$mem_usage" && $mem_usage -gt $SENTINEL_HEALTH_MEMORY_THRESHOLD ]]; then
+        status=$HEALTH_WARNING
+        issues+=("High memory usage: ${mem_usage}KB")
+    fi
+    
+    # Check 3: Module-specific health check if registered
+    local check_function="${SENTINEL_MODULE_HEALTH_CHECKS[$module_name]:-}"
+    if [[ -n "$check_function" ]] && declare -f "$check_function" >/dev/null; then
+        local check_result
+        check_result=$("$check_function" 2>&1)
+        local check_status=$?
+        
+        if [[ $check_status -ne 0 ]]; then
+            status=$HEALTH_ERROR
+            issues+=("Module check failed: $check_result")
+        fi
+    fi
+    
+    # Check 4: Dependency health
+    local deps=$(_get_module_dependencies "$module_name")
+    for dep in $deps; do
+        if [[ "${SENTINEL_MODULE_HEALTH_STATUS[$dep]:-$HEALTH_UNKNOWN}" -ge $HEALTH_ERROR ]]; then
+            status=$HEALTH_WARNING
+            issues+=("Dependency unhealthy: $dep")
+        fi
+    done
+    
+    # Update health status
+    SENTINEL_MODULE_HEALTH_STATUS["$module_name"]=$status
+    
+    # Log health status
+    local status_text=$(_health_status_to_text $status)
+    if [[ $status -ne $HEALTH_OK ]]; then
+        local issue_list=$(IFS='; ' ; echo "${issues[*]}")
+        sentinel_log $SENTINEL_LOG_LEVEL_WARNING "health_check" \
+            "Module $module_name health: $status_text - Issues: $issue_list"
+        
+        # Update failure count
+        local failures="${SENTINEL_MODULE_FAILURE_COUNT[$module_name]:-0}"
+        SENTINEL_MODULE_FAILURE_COUNT["$module_name"]=$((failures + 1))
+        
+        # Attempt recovery if enabled and threshold reached
+        if [[ "$SENTINEL_HEALTH_CHECK_AUTO_RECOVERY" == "1" && $failures -ge 3 ]]; then
+            _attempt_module_recovery "$module_name" "$status" "$issue_list"
+        fi
+    else
+        # Reset failure count on successful check
+        SENTINEL_MODULE_FAILURE_COUNT["$module_name"]=0
+        SENTINEL_MODULE_RECOVERY_ATTEMPTS["$module_name"]=0
+    fi
+    
+    # Save status to file
+    _save_health_status
+    
+    return $status
+}
+
+# Perform health check on all loaded modules
+check_all_modules_health() {
+    local unhealthy_count=0
+    local total_checked=0
+    
+    sentinel_log $SENTINEL_LOG_LEVEL_INFO "health_check" "Starting system-wide health check"
+    
+    # Check all loaded modules
+    for module_name in "${!SENTINEL_LOADED_MODULES[@]}"; do
+        if [[ "${SENTINEL_LOADED_MODULES[$module_name]}" == "1" ]]; then
+            check_module_health "$module_name"
+            local status=$?
+            ((total_checked++))
+            
+            [[ $status -ne $HEALTH_OK ]] && ((unhealthy_count++))
+        fi
+    done
+    
+    # Check lazy-loaded modules that are active
+    for module_name in "${!SENTINEL_LAZY_MODULES[@]}"; do
+        if [[ "${SENTINEL_LAZY_MODULES[$module_name]}" == "loaded" ]]; then
+            check_module_health "$module_name"
+            local status=$?
+            ((total_checked++))
+            
+            [[ $status -ne $HEALTH_OK ]] && ((unhealthy_count++))
+        fi
+    done
+    
+    sentinel_log $SENTINEL_LOG_LEVEL_INFO "health_check" \
+        "Health check complete: $total_checked modules checked, $unhealthy_count unhealthy"
+    
+    return $unhealthy_count
+}
+
+# Attempt to recover a failed module
+_attempt_module_recovery() {
+    local module_name="$1"
+    local health_status="$2"
+    local issues="$3"
+    
+    local attempts="${SENTINEL_MODULE_RECOVERY_ATTEMPTS[$module_name]:-0}"
+    
+    if [[ $attempts -ge $SENTINEL_HEALTH_CHECK_MAX_RETRIES ]]; then
+        sentinel_log $SENTINEL_LOG_LEVEL_ERROR "health_check" \
+            "Module $module_name exceeded max recovery attempts ($attempts). Manual intervention required."
+        return 1
+    fi
+    
+    SENTINEL_MODULE_RECOVERY_ATTEMPTS["$module_name"]=$((attempts + 1))
+    
+    sentinel_log $SENTINEL_LOG_LEVEL_WARNING "health_check" \
+        "Attempting recovery for module $module_name (attempt $((attempts + 1)))"
+    
+    # Recovery strategies based on health status
+    case $health_status in
+        $HEALTH_WARNING)
+            # For warnings, try soft recovery
+            _soft_recovery "$module_name"
+            ;;
+        $HEALTH_ERROR)
+            # For errors, try reload
+            _reload_module "$module_name"
+            ;;
+        $HEALTH_CRITICAL)
+            # For critical issues, disable and report
+            _disable_failed_module "$module_name"
+            ;;
+    esac
+}
+
+# Soft recovery - clear caches, reset state
+_soft_recovery() {
+    local module_name="$1"
+    
+    sentinel_log $SENTINEL_LOG_LEVEL_INFO "health_check" \
+        "Performing soft recovery for module $module_name"
+    
+    # Clear module-specific caches
+    case "$module_name" in
+        "config_cache")
+            # Clear config cache
+            [[ -d "$HOME/.cache/sentinel/config" ]] && \
+                find "$HOME/.cache/sentinel/config" -type f -mtime +1 -delete 2>/dev/null || true
+            ;;
+        "fuzzy_correction")
+            # Reset fuzzy correction history
+            unset SENTINEL_FUZZY_HISTORY 2>/dev/null || true
+            ;;
+        "sentinel_ml"*)
+            # Clear ML model cache
+            [[ -d "$HOME/.cache/sentinel/ml" ]] && \
+                find "$HOME/.cache/sentinel/ml" -type f -name "*.cache" -delete 2>/dev/null || true
+            ;;
+    esac
+    
+    # Reset failure count to give module another chance
+    SENTINEL_MODULE_FAILURE_COUNT["$module_name"]=0
+}
+
+# Reload a module
+_reload_module() {
+    local module_name="$1"
+    
+    sentinel_log $SENTINEL_LOG_LEVEL_WARNING "health_check" \
+        "Reloading module $module_name due to health issues"
+    
+    # First, try to unload module cleanly
+    _unload_module_functions "$module_name"
+    
+    # Mark as unloaded
+    unset SENTINEL_LOADED_MODULES["$module_name"]
+    
+    # Wait a moment
+    sleep 1
+    
+    # Attempt reload
+    module_enable "$module_name" "1" "recovery"
+    
+    # Check if reload was successful
+    sleep 1
+    check_module_health "$module_name" "1"
+    local new_status=$?
+    
+    if [[ $new_status -eq $HEALTH_OK ]]; then
+        sentinel_log $SENTINEL_LOG_LEVEL_INFO "health_check" \
+            "Module $module_name successfully recovered after reload"
+        SENTINEL_MODULE_RECOVERY_ATTEMPTS["$module_name"]=0
+    else
+        sentinel_log $SENTINEL_LOG_LEVEL_ERROR "health_check" \
+            "Module $module_name failed to recover after reload"
+    fi
+}
+
+# Disable a critically failed module
+_disable_failed_module() {
+    local module_name="$1"
+    
+    sentinel_log $SENTINEL_LOG_LEVEL_CRITICAL "health_check" \
+        "Disabling critically failed module $module_name"
+    
+    # Remove from loaded modules
+    unset SENTINEL_LOADED_MODULES["$module_name"]
+    
+    # Try to unload functions
+    _unload_module_functions "$module_name"
+    
+    # Create a quarantine marker
+    local quarantine_file="$SENTINEL_HEALTH_CHECK_DIR/quarantine_$module_name"
+    echo "$(date): Module quarantined due to critical failures" > "$quarantine_file"
+    
+    # Notify user
+    echo -e "${RED}CRITICAL: Module '$module_name' has been disabled due to repeated failures${NC}" >&2
+    echo -e "${YELLOW}Please check logs in $SENTINEL_HEALTH_CHECK_DIR for details${NC}" >&2
+}
+
+# Module-specific health check functions
+_check_logging_health() {
+    # Check if log directory is accessible
+    [[ -d "$SENTINEL_LOG_DIR" && -w "$SENTINEL_LOG_DIR" ]] || return 1
+    
+    # Check if logging function exists
+    declare -f sentinel_log >/dev/null || return 1
+    
+    return 0
+}
+
+_check_config_cache_health() {
+    # Check cache directory
+    local cache_dir="${SENTINEL_CONFIG_CACHE_DIR:-$HOME/.cache/sentinel/config}"
+    [[ -d "$cache_dir" && -w "$cache_dir" ]] || return 1
+    
+    # Check cache size
+    local cache_size=$(du -sk "$cache_dir" 2>/dev/null | cut -f1)
+    [[ -n "$cache_size" && $cache_size -lt 102400 ]] || return 1  # 100MB limit
+    
+    return 0
+}
+
+_check_security_health() {
+    # Check if security functions are available
+    declare -f _check_command_safety >/dev/null || return 1
+    
+    # Check security log
+    local security_log="$HOME/.sentinel/security.log"
+    if [[ -f "$security_log" ]]; then
+        # Check for recent security violations
+        local recent_violations=$(tail -100 "$security_log" 2>/dev/null | grep -c "VIOLATION" || echo 0)
+        [[ $recent_violations -lt 10 ]] || return 1
+    fi
+    
+    return 0
+}
+
+_check_ml_module_health() {
+    # Check if Python is available
+    command -v python3 >/dev/null || return 1
+    
+    # Check ML cache directory
+    local ml_cache="$HOME/.cache/sentinel/ml"
+    [[ -d "$ml_cache" ]] || mkdir -p "$ml_cache" 2>/dev/null || return 1
+    
+    # Check if ML model files exist
+    local model_dir="${SENTINEL_ML_MODEL_DIR:-$HOME/.local/share/sentinel/models}"
+    [[ -d "$model_dir" ]] || return 1
+    
+    return 0
+}
+
+_check_chat_module_health() {
+    # Check if chat function exists
+    declare -f chat >/dev/null || return 1
+    
+    # Check API configuration
+    [[ -n "${OPENAI_API_KEY:-}" || -n "${OLLAMA_HOST:-}" ]] || return 1
+    
+    return 0
+}
+
+_check_osint_module_health() {
+    # Check if OSINT tools are available
+    local required_tools=("curl" "jq")
+    for tool in "${required_tools[@]}"; do
+        command -v "$tool" >/dev/null || return 1
+    done
+    
+    return 0
+}
+
+_check_fuzzy_correction_health() {
+    # Check if fuzzy correction is not consuming too much memory
+    local fuzzy_cache_size=$(set | grep -c "SENTINEL_FUZZY_" 2>/dev/null || echo 0)
+    [[ $fuzzy_cache_size -lt 1000 ]] || return 1
+    
+    return 0
+}
+
+_check_autocomplete_health() {
+    # Check if completion directory exists
+    local comp_dir="${SENTINEL_COMPLETION_DIR:-$HOME/.local/share/sentinel/completions}"
+    [[ -d "$comp_dir" ]] || return 1
+    
+    # Check if not overloading bash completion
+    local comp_count=$(complete -p 2>/dev/null | wc -l || echo 0)
+    [[ $comp_count -lt 500 ]] || return 1
+    
+    return 0
+}
+
+# Helper functions
+_check_module_file_exists() {
+    local module_name="$1"
+    local module_path="${SENTINEL_MODULES_PATH:-$HOME/.bash_modules.d}"
+    
+    [[ -f "$module_path/$module_name.module" || -f "$module_path/$module_name.sh" ]] || \
+    find "$module_path" -name "$module_name.module" -o -name "$module_name.sh" 2>/dev/null | grep -q .
+}
+
+_get_module_memory_usage() {
+    local module_name="$1"
+    # This is an approximation - tracks variables and functions related to module
+    local var_count=$(set | grep -c "^SENTINEL_${module_name^^}_" 2>/dev/null || echo 0)
+    local func_size=$(declare -f | grep -A 1000 "^[[:alnum:]_]*${module_name}[[:alnum:]_]*\s*()" 2>/dev/null | wc -c || echo 0)
+    
+    echo $((var_count * 1 + func_size / 1024))  # Rough estimate in KB
+}
+
+_get_module_dependencies() {
+    local module_name="$1"
+    local module_file
+    
+    # Find module file
+    for ext in "module" "sh"; do
+        for path in "$SENTINEL_MODULES_PATH/$module_name.$ext" \
+                   $(find "$SENTINEL_MODULES_PATH" -name "$module_name.$ext" 2>/dev/null); do
+            if [[ -f "$path" ]]; then
+                module_file="$path"
+                break 2
+            fi
+        done
+    done
+    
+    if [[ -n "$module_file" ]]; then
+        grep "SENTINEL_MODULE_DEPENDENCIES=" "$module_file" 2>/dev/null | \
+            cut -d'"' -f2 2>/dev/null || echo ""
+    fi
+}
+
+_unload_module_functions() {
+    local module_name="$1"
+    
+    # Unset module-specific variables
+    while IFS= read -r var; do
+        unset "$var" 2>/dev/null || true
+    done < <(set | grep "^SENTINEL_${module_name^^}_" | cut -d= -f1)
+    
+    # Note: We cannot truly unset functions in bash, but we can override them
+    # This is a limitation of bash - functions cannot be fully unloaded
+}
+
+_health_status_to_text() {
+    case "$1" in
+        $HEALTH_OK) echo "OK" ;;
+        $HEALTH_WARNING) echo "WARNING" ;;
+        $HEALTH_ERROR) echo "ERROR" ;;
+        $HEALTH_CRITICAL) echo "CRITICAL" ;;
+        *) echo "UNKNOWN" ;;
+    esac
+}
+
+_save_health_status() {
+    local status_file="$SENTINEL_HEALTH_CHECK_DIR/module_status.dat"
+    
+    # Save current status
+    {
+        for module in "${!SENTINEL_MODULE_HEALTH_STATUS[@]}"; do
+            echo "${module}|${SENTINEL_MODULE_HEALTH_STATUS[$module]}|${SENTINEL_MODULE_LAST_CHECK[$module]:-0}"
+        done
+    } > "$status_file.tmp"
+    
+    mv -f "$status_file.tmp" "$status_file" 2>/dev/null || true
+}
+
+# Periodic health check runner
+_start_periodic_health_check() {
+    # Note: This is a simple implementation. For production, consider using systemd timers or cron
+    
+    # Check if we should run in background
+    if [[ "${SENTINEL_HEALTH_CHECK_BACKGROUND:-1}" == "1" ]]; then
+        # Create a marker file to track background process
+        local marker_file="$SENTINEL_HEALTH_CHECK_DIR/periodic_check.pid"
+        
+        # Check if already running
+        if [[ -f "$marker_file" ]]; then
+            local old_pid=$(cat "$marker_file" 2>/dev/null)
+            if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
+                # Already running
+                return 0
+            fi
+        fi
+        
+        # Start background health check loop
+        (
+            echo $$ > "$marker_file"
+            
+            while true; do
+                sleep "$SENTINEL_HEALTH_CHECK_INTERVAL"
+                
+                # Run health check
+                check_all_modules_health >/dev/null 2>&1
+                
+                # Check if we should continue
+                [[ -f "$marker_file" ]] || break
+            done
+            
+            rm -f "$marker_file"
+        ) &
+        
+        sentinel_log $SENTINEL_LOG_LEVEL_INFO "health_check" \
+            "Started background health monitoring (PID: $!, interval: ${SENTINEL_HEALTH_CHECK_INTERVAL}s)"
+    fi
+}
+
+# Command-line interface
+health_check_status() {
+    echo "SENTINEL Module Health Status"
+    echo "============================"
+    echo
+    printf "%-30s %-10s %-20s %-10s\n" "Module" "Status" "Last Check" "Failures"
+    printf "%-30s %-10s %-20s %-10s\n" "------" "------" "----------" "--------"
+    
+    for module in $(echo "${!SENTINEL_MODULE_HEALTH_STATUS[@]}" | tr ' ' '\n' | sort); do
+        local status=${SENTINEL_MODULE_HEALTH_STATUS[$module]}
+        local status_text=$(_health_status_to_text $status)
+        local last_check=${SENTINEL_MODULE_LAST_CHECK[$module]:-0}
+        local failures=${SENTINEL_MODULE_FAILURE_COUNT[$module]:-0}
+        
+        # Format last check time
+        local last_check_text="Never"
+        if [[ $last_check -gt 0 ]]; then
+            local current_time=$(date +%s)
+            local diff=$((current_time - last_check))
+            if [[ $diff -lt 60 ]]; then
+                last_check_text="${diff}s ago"
+            elif [[ $diff -lt 3600 ]]; then
+                last_check_text="$((diff / 60))m ago"
+            else
+                last_check_text="$((diff / 3600))h ago"
+            fi
+        fi
+        
+        # Color based on status
+        local color=""
+        case $status in
+            $HEALTH_OK) color="$GREEN" ;;
+            $HEALTH_WARNING) color="$YELLOW" ;;
+            $HEALTH_ERROR) color="$RED" ;;
+            $HEALTH_CRITICAL) color="$MAGENTA" ;;
+            *) color="$NC" ;;
+        esac
+        
+        printf "${color}%-30s %-10s${NC} %-20s %-10s\n" \
+            "$module" "$status_text" "$last_check_text" "$failures"
+    done
+    
+    echo
+    
+    # Show recovery attempts if any
+    local has_recovery=0
+    for module in "${!SENTINEL_MODULE_RECOVERY_ATTEMPTS[@]}"; do
+        local attempts=${SENTINEL_MODULE_RECOVERY_ATTEMPTS[$module]}
+        if [[ $attempts -gt 0 ]]; then
+            [[ $has_recovery -eq 0 ]] && echo "Recovery Attempts:" && has_recovery=1
+            echo "  $module: $attempts attempts"
+        fi
+    done
+    
+    # Show quarantined modules
+    if [[ -d "$SENTINEL_HEALTH_CHECK_DIR" ]]; then
+        local quarantined=$(find "$SENTINEL_HEALTH_CHECK_DIR" -name "quarantine_*" 2>/dev/null)
+        if [[ -n "$quarantined" ]]; then
+            echo
+            echo "Quarantined Modules:"
+            while IFS= read -r qfile; do
+                local module=$(basename "$qfile" | sed 's/quarantine_//')
+                echo "  $module ($(cat "$qfile" 2>/dev/null | head -1))"
+            done <<< "$quarantined"
+        fi
+    fi
+}
+
+# Health check commands
+health_check() {
+    case "${1:-status}" in
+        status)
+            health_check_status
+            ;;
+        check)
+            if [[ -n "$2" ]]; then
+                # Check specific module
+                check_module_health "$2" "1"
+                local status=$?
+                echo "Module $2 health: $(_health_status_to_text $status)"
+            else
+                # Check all modules
+                check_all_modules_health
+            fi
+            ;;
+        enable)
+            SENTINEL_HEALTH_CHECK_ENABLED=1
+            _start_periodic_health_check
+            echo "Health monitoring enabled"
+            ;;
+        disable)
+            SENTINEL_HEALTH_CHECK_ENABLED=0
+            # Stop background process if running
+            local marker_file="$SENTINEL_HEALTH_CHECK_DIR/periodic_check.pid"
+            if [[ -f "$marker_file" ]]; then
+                local pid=$(cat "$marker_file" 2>/dev/null)
+                [[ -n "$pid" ]] && kill "$pid" 2>/dev/null || true
+                rm -f "$marker_file"
+            fi
+            echo "Health monitoring disabled"
+            ;;
+        recover)
+            if [[ -n "$2" ]]; then
+                echo "Attempting recovery for module: $2"
+                _attempt_module_recovery "$2" $HEALTH_ERROR "Manual recovery requested"
+            else
+                echo "Usage: health_check recover <module_name>"
+            fi
+            ;;
+        clear)
+            # Clear quarantine for a module
+            if [[ -n "$2" ]]; then
+                local quarantine_file="$SENTINEL_HEALTH_CHECK_DIR/quarantine_$2"
+                if [[ -f "$quarantine_file" ]]; then
+                    rm -f "$quarantine_file"
+                    SENTINEL_MODULE_FAILURE_COUNT["$2"]=0
+                    SENTINEL_MODULE_RECOVERY_ATTEMPTS["$2"]=0
+                    echo "Cleared quarantine for module: $2"
+                else
+                    echo "Module $2 is not quarantined"
+                fi
+            else
+                echo "Usage: health_check clear <module_name>"
+            fi
+            ;;
+        *)
+            echo "Usage: health_check {status|check [module]|enable|disable|recover <module>|clear <module>}"
+            ;;
+    esac
+}
+
+# Initialize health check system
+_init_health_check
+
+# Make health_check command available
+export -f health_check
+export -f check_module_health
+export -f check_all_modules_health
+export -f register_health_check
+
+# Log initialization
+sentinel_log $SENTINEL_LOG_LEVEL_INFO "health_check" "Health check module initialized"

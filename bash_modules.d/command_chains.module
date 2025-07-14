@@ -5,6 +5,9 @@
 # Dependencies: ble.sh (optional, enhances functionality), hmac.module
 # Maintainer: SENTINEL Team
 
+# Module dependencies
+SENTINEL_MODULE_DEPENDENCIES="logging"
+
 [ -n "$BASH_VERSION" ] || { echo "This script requires bash"; return 0; }
 if [ -n "${_SENTINEL_COMMAND_CHAINS_LOADED}" ]; then
     echo "DEBUG: command_chains already loaded"; return 0;

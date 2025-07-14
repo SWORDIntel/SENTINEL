@@ -1,0 +1,429 @@
+#!/usr/bin/env bash
+### BEGIN MODULE INFO
+# Name:                  python_integration
+# Short-Description:     Unified Python/Bash integration for SENTINEL
+# Description:           Provides seamless integration between bash modules and Python
+#                        components with shared state, configuration, and IPC.
+# Author:                Team 5 Agent 1
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  integration, python, ipc, state-management
+# Provides:              python_integration, shared_state, ipc_bridge
+# Requires:              python3, bash
+# Conflicts:             none
+### END MODULE INFO
+
+# Module initialization
+SENTINEL_PYTHON_INTEGRATION_VERSION="1.0.0"
+SENTINEL_PYTHON_INTEGRATION_STATE_DIR="${HOME}/.config/sentinel/state"
+SENTINEL_PYTHON_INTEGRATION_CONFIG_DIR="${HOME}/.config/sentinel/config"
+SENTINEL_PYTHON_INTEGRATION_IPC_DIR="${HOME}/.config/sentinel/ipc"
+SENTINEL_PYTHON_INTEGRATION_LOG_DIR="${HOME}/.local/share/sentinel/logs"
+
+# Create necessary directories
+mkdir -p "${SENTINEL_PYTHON_INTEGRATION_STATE_DIR}"
+mkdir -p "${SENTINEL_PYTHON_INTEGRATION_CONFIG_DIR}"
+mkdir -p "${SENTINEL_PYTHON_INTEGRATION_IPC_DIR}"
+mkdir -p "${SENTINEL_PYTHON_INTEGRATION_LOG_DIR}"
+
+# Export paths for Python components
+export SENTINEL_STATE_DIR="${SENTINEL_PYTHON_INTEGRATION_STATE_DIR}"
+export SENTINEL_CONFIG_DIR="${SENTINEL_PYTHON_INTEGRATION_CONFIG_DIR}"
+export SENTINEL_IPC_DIR="${SENTINEL_PYTHON_INTEGRATION_IPC_DIR}"
+export SENTINEL_LOG_DIR="${SENTINEL_PYTHON_INTEGRATION_LOG_DIR}"
+
+# Shared configuration system
+declare -A SENTINEL_CONFIG
+
+# Load configuration from JSON file if exists
+_sentinel_load_config() {
+    local config_file="${SENTINEL_CONFIG_DIR}/sentinel.json"
+    if [[ -f "$config_file" ]]; then
+        while IFS='=' read -r key value; do
+            SENTINEL_CONFIG["$key"]="$value"
+        done < <(python3 -c "
+import json
+with open('$config_file', 'r') as f:
+    config = json.load(f)
+    for k, v in config.items():
+        print(f'{k}={v}')
+" 2>/dev/null)
+    fi
+}
+
+# Save configuration to JSON file
+_sentinel_save_config() {
+    local config_file="${SENTINEL_CONFIG_DIR}/sentinel.json"
+    python3 -c "
+import json
+config = {}
+$(for key in "${!SENTINEL_CONFIG[@]}"; do
+    echo "config['$key'] = '${SENTINEL_CONFIG[$key]}'"
+done)
+with open('$config_file', 'w') as f:
+    json.dump(config, f, indent=4)
+" 2>/dev/null
+}
+
+# Get configuration value
+sentinel_config_get() {
+    local key="$1"
+    echo "${SENTINEL_CONFIG[$key]:-}"
+}
+
+# Set configuration value
+sentinel_config_set() {
+    local key="$1"
+    local value="$2"
+    SENTINEL_CONFIG["$key"]="$value"
+    _sentinel_save_config
+}
+
+# State management functions
+sentinel_state_set() {
+    local key="$1"
+    local value="$2"
+    local state_file="${SENTINEL_STATE_DIR}/${key}.state"
+    echo "$value" > "$state_file"
+}
+
+sentinel_state_get() {
+    local key="$1"
+    local state_file="${SENTINEL_STATE_DIR}/${key}.state"
+    [[ -f "$state_file" ]] && cat "$state_file"
+}
+
+sentinel_state_delete() {
+    local key="$1"
+    local state_file="${SENTINEL_STATE_DIR}/${key}.state"
+    [[ -f "$state_file" ]] && rm -f "$state_file"
+}
+
+# IPC mechanism using named pipes and files
+sentinel_ipc_create_channel() {
+    local channel_name="$1"
+    local channel_path="${SENTINEL_IPC_DIR}/${channel_name}"
+    
+    # Create bidirectional named pipes
+    [[ ! -p "${channel_path}.in" ]] && mkfifo "${channel_path}.in"
+    [[ ! -p "${channel_path}.out" ]] && mkfifo "${channel_path}.out"
+    
+    echo "$channel_path"
+}
+
+sentinel_ipc_send() {
+    local channel_name="$1"
+    local message="$2"
+    local channel_path="${SENTINEL_IPC_DIR}/${channel_name}.in"
+    
+    if [[ -p "$channel_path" ]]; then
+        echo "$message" > "$channel_path" &
+    else
+        echo "Error: IPC channel '$channel_name' not found" >&2
+        return 1
+    fi
+}
+
+sentinel_ipc_receive() {
+    local channel_name="$1"
+    local timeout="${2:-5}"
+    local channel_path="${SENTINEL_IPC_DIR}/${channel_name}.out"
+    
+    if [[ -p "$channel_path" ]]; then
+        timeout "$timeout" cat "$channel_path"
+    else
+        echo "Error: IPC channel '$channel_name' not found" >&2
+        return 1
+    fi
+}
+
+# Python execution wrapper with error handling
+sentinel_python_exec() {
+    local script="$1"
+    shift
+    local args="$@"
+    
+    # Set Python environment variables
+    export PYTHONPATH="${PYTHONPATH}:${HOME}/.config/sentinel/lib"
+    export SENTINEL_INTEGRATION_VERSION="${SENTINEL_PYTHON_INTEGRATION_VERSION}"
+    
+    # Execute Python script with consistent error handling
+    python3 -u "$script" $args 2>&1 | while IFS= read -r line; do
+        if [[ "$line" =~ ^ERROR: ]]; then
+            echo "[PYTHON ERROR] $line" >&2
+            sentinel_log "error" "Python execution error: $line"
+        elif [[ "$line" =~ ^WARNING: ]]; then
+            echo "[PYTHON WARNING] $line" >&2
+            sentinel_log "warning" "Python execution warning: $line"
+        else
+            echo "$line"
+        fi
+    done
+    
+    return ${PIPESTATUS[0]}
+}
+
+# Logging function for consistent error handling
+sentinel_log() {
+    local level="$1"
+    local message="$2"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local log_file="${SENTINEL_LOG_DIR}/sentinel.log"
+    
+    echo "[$timestamp] [$level] $message" >> "$log_file"
+}
+
+# Python module manager integration
+sentinel_python_module_install() {
+    local module="$1"
+    local venv_path="${HOME}/.config/sentinel/venv"
+    
+    # Create virtual environment if not exists
+    if [[ ! -d "$venv_path" ]]; then
+        python3 -m venv "$venv_path"
+        sentinel_log "info" "Created Python virtual environment at $venv_path"
+    fi
+    
+    # Activate virtual environment and install module
+    source "$venv_path/bin/activate"
+    pip install "$module" 2>&1 | while IFS= read -r line; do
+        sentinel_log "info" "pip: $line"
+    done
+    deactivate
+}
+
+sentinel_python_module_list() {
+    local venv_path="${HOME}/.config/sentinel/venv"
+    
+    if [[ -d "$venv_path" ]]; then
+        source "$venv_path/bin/activate"
+        pip list
+        deactivate
+    else
+        echo "No Python virtual environment found"
+    fi
+}
+
+# ML component state synchronization
+sentinel_ml_sync_state() {
+    local component="$1"
+    local state_file="${SENTINEL_STATE_DIR}/ml_${component}.json"
+    
+    # Create sync wrapper script if not exists
+    local sync_script="${SENTINEL_CONFIG_DIR}/ml_sync.py"
+    if [[ ! -f "$sync_script" ]]; then
+        cat > "$sync_script" << 'EOFPY'
+#!/usr/bin/env python3
+import json
+import os
+import sys
+
+def sync_ml_state(component, state_file):
+    """Synchronize ML component state between bash and Python"""
+    state = {}
+    
+    # Load existing state
+    if os.path.exists(state_file):
+        with open(state_file, 'r') as f:
+            state = json.load(f)
+    
+    # Update state based on component
+    if component == 'autolearn':
+        state['last_sync'] = os.popen('date').read().strip()
+        state['command_count'] = len(os.popen('history | wc -l').read().strip())
+    elif component == 'context':
+        state['current_dir'] = os.getcwd()
+        state['user'] = os.environ.get('USER', 'unknown')
+    
+    # Save updated state
+    with open(state_file, 'w') as f:
+        json.dump(state, f, indent=4)
+    
+    return state
+
+if __name__ == '__main__':
+    if len(sys.argv) < 3:
+        print("Usage: ml_sync.py <component> <state_file>")
+        sys.exit(1)
+    
+    component = sys.argv[1]
+    state_file = sys.argv[2]
+    
+    state = sync_ml_state(component, state_file)
+    print(json.dumps(state))
+EOFPY
+        chmod +x "$sync_script"
+    fi
+    
+    # Execute sync
+    sentinel_python_exec "$sync_script" "$component" "$state_file"
+}
+
+# Initialize bash-python bridge
+_sentinel_init_python_bridge() {
+    # Create Python integration library
+    local lib_dir="${HOME}/.config/sentinel/lib"
+    mkdir -p "$lib_dir"
+    
+    # Create sentinel_integration.py module
+    cat > "$lib_dir/sentinel_integration.py" << 'EOFPY'
+#!/usr/bin/env python3
+"""
+SENTINEL Python Integration Module
+Provides unified interface for bash-python communication
+"""
+
+import os
+import json
+import logging
+import subprocess
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+class SentinelIntegration:
+    """Main integration class for SENTINEL Python components"""
+    
+    def __init__(self):
+        self.state_dir = Path(os.environ.get('SENTINEL_STATE_DIR', '~/.config/sentinel/state')).expanduser()
+        self.config_dir = Path(os.environ.get('SENTINEL_CONFIG_DIR', '~/.config/sentinel/config')).expanduser()
+        self.ipc_dir = Path(os.environ.get('SENTINEL_IPC_DIR', '~/.config/sentinel/ipc')).expanduser()
+        self.log_dir = Path(os.environ.get('SENTINEL_LOG_DIR', '~/.local/share/sentinel/logs')).expanduser()
+        
+        # Ensure directories exist
+        for dir_path in [self.state_dir, self.config_dir, self.ipc_dir, self.log_dir]:
+            dir_path.mkdir(parents=True, exist_ok=True)
+        
+        # Setup logging
+        self.setup_logging()
+        
+    def setup_logging(self):
+        """Configure consistent logging"""
+        log_file = self.log_dir / 'python_integration.log'
+        logging.basicConfig(
+            level=logging.INFO,
+            format='[%(asctime)s] [%(levelname)s] %(message)s',
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger('sentinel_integration')
+    
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Get configuration value"""
+        config_file = self.config_dir / 'sentinel.json'
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                return config.get(key, default)
+        return default
+    
+    def set_config(self, key: str, value: Any):
+        """Set configuration value"""
+        config_file = self.config_dir / 'sentinel.json'
+        config = {}
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        
+        config[key] = value
+        
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=4)
+    
+    def get_state(self, key: str) -> Optional[str]:
+        """Get state value"""
+        state_file = self.state_dir / f'{key}.state'
+        if state_file.exists():
+            return state_file.read_text().strip()
+        return None
+    
+    def set_state(self, key: str, value: str):
+        """Set state value"""
+        state_file = self.state_dir / f'{key}.state'
+        state_file.write_text(value)
+    
+    def bash_exec(self, command: str) -> Dict[str, Any]:
+        """Execute bash command and return result"""
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                env=os.environ
+            )
+            return {
+                'success': result.returncode == 0,
+                'stdout': result.stdout,
+                'stderr': result.stderr,
+                'returncode': result.returncode
+            }
+        except Exception as e:
+            self.logger.error(f"Error executing bash command: {e}")
+            return {
+                'success': False,
+                'stdout': '',
+                'stderr': str(e),
+                'returncode': -1
+            }
+    
+    def ipc_send(self, channel: str, message: str):
+        """Send message via IPC"""
+        channel_path = self.ipc_dir / f'{channel}.in'
+        if channel_path.exists():
+            with open(channel_path, 'w') as f:
+                f.write(message)
+        else:
+            self.logger.error(f"IPC channel '{channel}' not found")
+    
+    def ipc_receive(self, channel: str, timeout: int = 5) -> Optional[str]:
+        """Receive message via IPC"""
+        channel_path = self.ipc_dir / f'{channel}.out'
+        if channel_path.exists():
+            try:
+                import select
+                with open(channel_path, 'r') as f:
+                    readable, _, _ = select.select([f], [], [], timeout)
+                    if readable:
+                        return f.read().strip()
+            except Exception as e:
+                self.logger.error(f"Error receiving from IPC: {e}")
+        return None
+
+# Global instance
+sentinel = SentinelIntegration()
+EOFPY
+}
+
+# Command aliases for easier usage
+alias sentinel-config-get='sentinel_config_get'
+alias sentinel-config-set='sentinel_config_set'
+alias sentinel-state-get='sentinel_state_get'
+alias sentinel-state-set='sentinel_state_set'
+alias sentinel-py='sentinel_python_exec'
+
+# Initialize on module load
+_sentinel_load_config
+_sentinel_init_python_bridge
+
+# Export functions for use in other modules
+export -f sentinel_config_get
+export -f sentinel_config_set
+export -f sentinel_state_get
+export -f sentinel_state_set
+export -f sentinel_state_delete
+export -f sentinel_ipc_create_channel
+export -f sentinel_ipc_send
+export -f sentinel_ipc_receive
+export -f sentinel_python_exec
+export -f sentinel_log
+export -f sentinel_python_module_install
+export -f sentinel_python_module_list
+export -f sentinel_ml_sync_state
+
+echo "[SENTINEL] Python Integration Module v${SENTINEL_PYTHON_INTEGRATION_VERSION} loaded"
+echo "[SENTINEL] State directory: ${SENTINEL_STATE_DIR}"
+echo "[SENTINEL] Config directory: ${SENTINEL_CONFIG_DIR}"
+echo "[SENTINEL] IPC directory: ${SENTINEL_IPC_DIR}"

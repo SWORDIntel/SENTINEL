@@ -337,7 +337,9 @@ alias sscript="sentinel_script"
 alias sexplain="sentinel_explain"
 
 # Initial setup on module load
-echo "SENTINEL Enhanced ML Module loaded"
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+    echo "SENTINEL Enhanced ML Module loaded"
+fi
 if [ -f "$TASK_DETECT_SCRIPT" ]; then
     # Detect current task in background
     python3 "$TASK_DETECT_SCRIPT" --detect >/dev/null 2>&1 &

@@ -4,6 +4,9 @@
 # Description: Automatically installs missing common tools like fzf and ccache.
 # Dependencies: logging (optional)
 
+# Module dependencies
+SENTINEL_MODULE_DEPENDENCIES="logging"
+
 # Prevent multiple loading
 [[ -n "${_SENTINEL_AUTO_INSTALL_LOADED}" ]] && return 0
 export _SENTINEL_AUTO_INSTALL_LOADED=1

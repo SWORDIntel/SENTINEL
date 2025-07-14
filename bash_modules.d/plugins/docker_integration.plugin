@@ -1,0 +1,330 @@
+#!/usr/bin/env bash
+# SENTINEL - Docker Integration Plugin
+# Version: 1.0.0
+# Description: Enhanced Docker integration with security and monitoring
+# Dependencies: external_tools
+
+# Plugin metadata
+SENTINEL_PLUGIN_NAME="docker_integration"
+SENTINEL_PLUGIN_VERSION="1.0.0"
+SENTINEL_PLUGIN_DESCRIPTION="Docker container management with security features"
+
+# Docker configuration
+DOCKER_SCAN_ENABLED="${DOCKER_SCAN_ENABLED:-1}"
+DOCKER_RESOURCE_LIMITS="${DOCKER_RESOURCE_LIMITS:-1}"
+DOCKER_SECURITY_OPTS="${DOCKER_SECURITY_OPTS:-no-new-privileges:true}"
+DOCKER_LOG_DRIVER="${DOCKER_LOG_DRIVER:-json-file}"
+DOCKER_LOG_OPTS="${DOCKER_LOG_OPTS:-max-size=10m,max-file=3}"
+
+# Security scanning with multiple tools
+sentinel_docker_scan() {
+    local image="$1"
+    local scan_type="${2:-all}"
+    
+    [[ -z "$image" ]] && {
+        echo "Usage: sentinel_docker_scan <image> [scan-type]"
+        return 1
+    }
+    
+    sentinel_log_info "docker_integration" "Scanning image: $image"
+    
+    case "$scan_type" in
+        trivy|all)
+            if command -v trivy >/dev/null 2>&1; then
+                echo "=== Trivy Security Scan ==="
+                trivy image "$image"
+            fi
+            ;;&
+        snyk|all)
+            if command -v snyk >/dev/null 2>&1; then
+                echo "=== Snyk Security Scan ==="
+                snyk container test "$image"
+            fi
+            ;;&
+        docker|all)
+            if docker scan >/dev/null 2>&1; then
+                echo "=== Docker Native Scan ==="
+                docker scan "$image"
+            fi
+            ;;
+    esac
+}
+
+# Safe container run with security options
+sentinel_docker_run() {
+    local image="$1"
+    shift
+    local extra_args=()
+    
+    # Add security options
+    if [[ "$DOCKER_SECURITY_OPTS" ]]; then
+        extra_args+=("--security-opt" "$DOCKER_SECURITY_OPTS")
+    fi
+    
+    # Add resource limits
+    if [[ "$DOCKER_RESOURCE_LIMITS" == "1" ]]; then
+        extra_args+=("--memory" "512m")
+        extra_args+=("--cpus" "1.0")
+        extra_args+=("--pids-limit" "100")
+    fi
+    
+    # Add logging configuration
+    extra_args+=("--log-driver" "$DOCKER_LOG_DRIVER")
+    extra_args+=("--log-opt" "$DOCKER_LOG_OPTS")
+    
+    # Add read-only root filesystem by default
+    extra_args+=("--read-only")
+    
+    # Run with security options
+    docker run "${extra_args[@]}" "$@" "$image"
+}
+
+# Docker compose with validation
+sentinel_docker_compose() {
+    local command="$1"
+    shift
+    local compose_file="${COMPOSE_FILE:-docker-compose.yml}"
+    
+    # Validate compose file first
+    if [[ "$command" == "up" && -f "$compose_file" ]]; then
+        if ! docker-compose config -q; then
+            sentinel_log_error "docker_integration" "Invalid compose file"
+            return 1
+        fi
+        
+        # Security scan if enabled
+        if [[ "$DOCKER_SCAN_ENABLED" == "1" ]]; then
+            echo "Scanning compose services..."
+            docker-compose config --services | while read -r service; do
+                local image=$(docker-compose config | yq eval ".services.$service.image" -)
+                [[ "$image" != "null" ]] && sentinel_docker_scan "$image" docker
+            done
+        fi
+    fi
+    
+    # Execute compose command
+    docker-compose "$command" "$@"
+}
+
+# Container monitoring
+sentinel_docker_monitor() {
+    local container="${1:-all}"
+    local interval="${2:-5}"
+    
+    echo "=== Docker Container Monitor ==="
+    echo "Refreshing every ${interval}s (Ctrl+C to stop)"
+    echo
+    
+    while true; do
+        clear
+        echo "=== Container Status ==="
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+        
+        if [[ "$container" != "all" ]]; then
+            echo
+            echo "=== Container Details: $container ==="
+            docker stats --no-stream "$container"
+            echo
+            echo "=== Recent Logs ==="
+            docker logs --tail 10 "$container"
+        fi
+        
+        sleep "$interval"
+    done
+}
+
+# Docker cleanup utilities
+sentinel_docker_cleanup() {
+    local cleanup_type="${1:-safe}"
+    
+    case "$cleanup_type" in
+        safe)
+            echo "=== Safe Docker Cleanup ==="
+            # Remove stopped containers
+            docker container prune -f
+            # Remove unused networks
+            docker network prune -f
+            # Remove dangling images
+            docker image prune -f
+            ;;
+        volumes)
+            echo "=== Docker Volume Cleanup ==="
+            docker volume prune -f
+            ;;
+        all|aggressive)
+            echo "=== Aggressive Docker Cleanup ==="
+            read -p "This will remove all unused images. Continue? [y/N] " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                docker system prune -af --volumes
+            fi
+            ;;
+        *)
+            echo "Usage: sentinel_docker_cleanup [safe|volumes|all]"
+            return 1
+            ;;
+    esac
+    
+    # Show disk usage after cleanup
+    echo
+    echo "=== Docker Disk Usage ==="
+    docker system df
+}
+
+# Docker image builder with caching
+sentinel_docker_build() {
+    local dockerfile="${1:-Dockerfile}"
+    local tag="$2"
+    local context="${3:-.}"
+    local extra_args=()
+    
+    [[ -z "$tag" ]] && {
+        echo "Usage: sentinel_docker_build [dockerfile] <tag> [context]"
+        return 1
+    }
+    
+    # Add build arguments for security
+    extra_args+=("--pull")  # Always pull base image
+    extra_args+=("--no-cache-filter" "security_updates")  # Force security updates
+    
+    # Add labels
+    extra_args+=("--label" "sentinel.build.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+    extra_args+=("--label" "sentinel.build.user=$USER")
+    
+    # Scan Dockerfile for issues
+    if command -v hadolint >/dev/null 2>&1; then
+        echo "=== Dockerfile Linting ==="
+        hadolint "$dockerfile"
+    fi
+    
+    # Build image
+    docker build -f "$dockerfile" -t "$tag" "${extra_args[@]}" "$context"
+    
+    # Scan built image
+    if [[ "$DOCKER_SCAN_ENABLED" == "1" ]]; then
+        sentinel_docker_scan "$tag"
+    fi
+}
+
+# Container shell with security
+sentinel_docker_shell() {
+    local container="$1"
+    local shell="${2:-/bin/sh}"
+    
+    [[ -z "$container" ]] && {
+        echo "Usage: sentinel_docker_shell <container> [shell]"
+        return 1
+    }
+    
+    # Check if container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+        sentinel_log_error "docker_integration" "Container not running: $container"
+        return 1
+    fi
+    
+    # Execute shell with limited privileges
+    docker exec -it \
+        --user "$(docker exec "$container" id -u):$(docker exec "$container" id -g)" \
+        "$container" "$shell"
+}
+
+# Docker registry operations
+sentinel_docker_registry() {
+    local operation="$1"
+    shift
+    
+    case "$operation" in
+        search)
+            local term="$1"
+            docker search "$term" --limit 10 --format "table {{.Name}}\t{{.StarCount}}\t{{.IsOfficial}}"
+            ;;
+        pull)
+            local image="$1"
+            docker pull "$image"
+            [[ "$DOCKER_SCAN_ENABLED" == "1" ]] && sentinel_docker_scan "$image"
+            ;;
+        push)
+            local image="$1"
+            # Scan before push
+            if [[ "$DOCKER_SCAN_ENABLED" == "1" ]]; then
+                sentinel_docker_scan "$image" || {
+                    read -p "Security issues found. Push anyway? [y/N] " -n 1 -r
+                    echo
+                    [[ ! $REPLY =~ ^[Yy]$ ]] && return 1
+                }
+            fi
+            docker push "$image"
+            ;;
+        *)
+            echo "Usage: sentinel_docker_registry [search|pull|push] <args>"
+            return 1
+            ;;
+    esac
+}
+
+# MCP handler for Docker operations
+sentinel_docker_mcp_handler() {
+    local operation="$1"
+    shift
+    
+    case "$operation" in
+        ps)
+            docker ps --format json
+            ;;
+        images)
+            docker images --format json
+            ;;
+        run)
+            sentinel_docker_run "$@"
+            ;;
+        scan)
+            sentinel_docker_scan "$@"
+            ;;
+        cleanup)
+            sentinel_docker_cleanup "$@"
+            ;;
+        *)
+            echo '{"error": "Unknown docker operation"}'
+            ;;
+    esac
+}
+
+# Initialize Docker integration
+sentinel_docker_integration_init() {
+    # Register docker with external tools
+    if type sentinel_tool_register >/dev/null 2>&1; then
+        sentinel_tool_register "docker" "$(which docker)" '{"type": "container", "category": "infrastructure"}'
+        
+        # Create aliases
+        sentinel_tool_alias "dps" "docker" "ps"
+        sentinel_tool_alias "di" "docker" "images"
+        sentinel_tool_alias "dex" "docker" "exec -it"
+        sentinel_tool_alias "dlog" "docker" "logs -f"
+    fi
+    
+    # Register MCP handler
+    if [[ "$SENTINEL_MCP_ENABLED" == "1" ]]; then
+        echo "docker:sentinel_docker_mcp_handler" >> "$SENTINEL_TOOLS_DIR/mcp_handlers.txt"
+    fi
+    
+    # Check Docker daemon
+    if docker info >/dev/null 2>&1; then
+        sentinel_log_info "docker_integration" "Docker integration plugin loaded"
+    else
+        sentinel_log_warning "docker_integration" "Docker daemon not accessible"
+    fi
+}
+
+# Export functions
+export -f sentinel_docker_scan
+export -f sentinel_docker_run
+export -f sentinel_docker_compose
+export -f sentinel_docker_monitor
+export -f sentinel_docker_cleanup
+export -f sentinel_docker_build
+export -f sentinel_docker_shell
+export -f sentinel_docker_registry
+export -f sentinel_docker_mcp_handler
+
+# Initialize plugin
+sentinel_docker_integration_init

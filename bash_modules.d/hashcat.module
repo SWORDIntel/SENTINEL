@@ -900,5 +900,7 @@ alias rule='find_rule'
 alias hchelp='hash_help'
 
 # Display module loaded message
-echo -e "${GREEN}[+]${NC} Hashcat module loaded with auto-detection and cracking workflows."
-echo -e "    Type ${CYAN}hchelp${NC} to see available commands."
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+    echo -e "${GREEN}[+]${NC} Hashcat module loaded with auto-detection and cracking workflows."
+    echo -e "    Type ${CYAN}hchelp${NC} to see available commands."
+fi

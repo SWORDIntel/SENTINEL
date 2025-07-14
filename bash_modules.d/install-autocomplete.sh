@@ -7,16 +7,18 @@ set -e
 
 # Banner function
 _print_banner() {
-    echo -e "\e[1;34m"
-    echo "  ____  _____ _   _ _____ ___ _   _ _____ _"
-    echo " / ___|| ____| \ | |_   _|_ _| \ | | ____| |"
-    echo " \___ \|  _| |  \| | | |  | ||  \| |  _| | |"
-    echo "  ___) | |___| |\  | | |  | || |\  | |___|_|"
-    echo " |____/|_____|_| \_| |_| |___|_| \_|_____(_)"
-    echo -e "\e[0m"
-    echo -e "\e[1;32mAutocomplete System Installation\e[0m"
-    echo -e "\e[1;32m==============================\e[0m"
-    echo ""
+    if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+        echo -e "\e[1;34m"
+        echo "  ____  _____ _   _ _____ ___ _   _ _____ _"
+        echo " / ___|| ____| \ | |_   _|_ _| \ | | ____| |"
+        echo " \___ \|  _| |  \| | | |  | ||  \| |  _| | |"
+        echo "  ___) | |___| |\  | | |  | || |\  | |___|_|"
+        echo " |____/|_____|_| \_| |_| |___|_| \_|_____(_)"
+        echo -e "\e[0m"
+        echo -e "\e[1;32mAutocomplete System Installation\e[0m"
+        echo -e "\e[1;32m==============================\e[0m"
+        echo ""
+    fi
 }
 
 # Helper functions

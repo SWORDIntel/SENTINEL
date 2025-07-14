@@ -24,10 +24,12 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 fi
 
 # Display initial message with warning - with error handling
-{ echo -e "${RED}[!] WARNING: Obfuscation module loaded${NC}"; } 2>/dev/null || true
-{ echo -e "${YELLOW}These tools are for legitimate security testing and educational purposes only.${NC}"; } 2>/dev/null || true
-{ echo -e "${YELLOW}Improper use may violate laws and organizational policies.${NC}"; } 2>/dev/null || true
-{ echo -e "${GREEN}Type 'obfuscate_help' for usage information.${NC}"; } 2>/dev/null || true
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+    { echo -e "${RED}[!] WARNING: Obfuscation module loaded${NC}"; } 2>/dev/null || true
+    { echo -e "${YELLOW}These tools are for legitimate security testing and educational purposes only.${NC}"; } 2>/dev/null || true
+    { echo -e "${YELLOW}Improper use may violate laws and organizational policies.${NC}"; } 2>/dev/null || true
+    { echo -e "${GREEN}Type 'obfuscate_help' for usage information.${NC}"; } 2>/dev/null || true
+fi
 
 # Configuration
 OBFUSCATE_TEMP_DIR="${OBFUSCATE_TEMP_DIR:-/tmp/obfuscate_temp}"
@@ -1451,7 +1453,9 @@ EOF
 OBFUSCATE_FUNC_COUNT=$(declare -F | grep -c "^declare -f obfuscate_" 2>/dev/null || echo "several")
 
 # Display module loaded message with error handling
-{ echo -e "${GREEN}[+]${NC} File obfuscation module loaded with ${CYAN}${OBFUSCATE_FUNC_COUNT}${NC} obfuscation techniques."; } 2>/dev/null || true
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+    { echo -e "${GREEN}[+]${NC} File obfuscation module loaded with ${CYAN}${OBFUSCATE_FUNC_COUNT}${NC} obfuscation techniques."; } 2>/dev/null || true
+fi
 
 # Always return success to prevent terminal crashes
 return 0

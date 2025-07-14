@@ -154,4 +154,6 @@ alias suggest="sentinel_smart_suggest"
 # Initial context update on module load
 sentinel_update_context >/dev/null 2>&1 &
 
-echo "SENTINEL Context module loaded" 
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+    echo "SENTINEL Context module loaded"
+fi 

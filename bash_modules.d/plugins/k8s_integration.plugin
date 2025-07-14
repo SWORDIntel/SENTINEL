@@ -1,0 +1,365 @@
+#!/usr/bin/env bash
+# SENTINEL - Kubernetes Integration Plugin
+# Version: 1.0.0
+# Description: Enhanced Kubernetes integration with security and monitoring
+# Dependencies: external_tools
+
+# Plugin metadata
+SENTINEL_PLUGIN_NAME="k8s_integration"
+SENTINEL_PLUGIN_VERSION="1.0.0"
+SENTINEL_PLUGIN_DESCRIPTION="Kubernetes cluster management with security features"
+
+# Kubernetes configuration
+K8S_NAMESPACE="${K8S_NAMESPACE:-default}"
+K8S_CONTEXT="${K8S_CONTEXT:-$(kubectl config current-context 2>/dev/null)}"
+K8S_SECURITY_SCAN="${K8S_SECURITY_SCAN:-1}"
+K8S_RESOURCE_VALIDATION="${K8S_RESOURCE_VALIDATION:-1}"
+K8S_AUDIT_LOG="${K8S_AUDIT_LOG:-$HOME/.sentinel/k8s/audit.log}"
+
+# Create plugin directories
+mkdir -p "$(dirname "$K8S_AUDIT_LOG")"
+
+# Kubernetes context management
+sentinel_k8s_context() {
+    local operation="${1:-list}"
+    local context="$2"
+    
+    case "$operation" in
+        list)
+            echo "=== Kubernetes Contexts ==="
+            kubectl config get-contexts
+            ;;
+        switch|use)
+            [[ -z "$context" ]] && {
+                echo "Usage: sentinel_k8s_context switch <context>"
+                return 1
+            }
+            kubectl config use-context "$context"
+            export K8S_CONTEXT="$context"
+            ;;
+        current)
+            echo "Current context: $(kubectl config current-context)"
+            ;;
+        *)
+            echo "Usage: sentinel_k8s_context [list|switch|current]"
+            return 1
+            ;;
+    esac
+}
+
+# Safe kubectl with validation and logging
+sentinel_kubectl() {
+    local operation="$1"
+    shift
+    
+    # Log kubectl commands for audit
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] kubectl $operation $*" >> "$K8S_AUDIT_LOG"
+    
+    # Validate dangerous operations
+    case "$operation" in
+        delete|drain|cordon)
+            read -p "Confirm $operation operation? [y/N] " -n 1 -r
+            echo
+            [[ ! $REPLY =~ ^[Yy]$ ]] && return 1
+            ;;
+    esac
+    
+    # Execute with namespace if not specified
+    if [[ ! "$*" =~ -n|--namespace ]]; then
+        kubectl "$operation" -n "$K8S_NAMESPACE" "$@"
+    else
+        kubectl "$operation" "$@"
+    fi
+}
+
+# Kubernetes security scanning
+sentinel_k8s_scan() {
+    local scan_type="${1:-all}"
+    local namespace="${2:-$K8S_NAMESPACE}"
+    
+    echo "=== Kubernetes Security Scan ==="
+    echo "Namespace: $namespace"
+    echo
+    
+    case "$scan_type" in
+        rbac|all)
+            echo "=== RBAC Analysis ==="
+            # Check for overly permissive roles
+            kubectl get clusterrolebindings -o json | jq -r '
+                .items[] | 
+                select(.roleRef.name == "cluster-admin") | 
+                "ClusterAdmin binding: " + .metadata.name + " -> " + (.subjects[].name // "unknown")
+            '
+            ;;&
+        pods|all)
+            echo "=== Pod Security Analysis ==="
+            kubectl get pods -n "$namespace" -o json | jq -r '
+                .items[] | 
+                select(.spec.securityContext.privileged == true or 
+                       .spec.containers[].securityContext.privileged == true) |
+                "Privileged pod: " + .metadata.name
+            '
+            ;;&
+        network|all)
+            echo "=== Network Policy Check ==="
+            local netpol_count=$(kubectl get networkpolicies -n "$namespace" --no-headers 2>/dev/null | wc -l)
+            if [[ "$netpol_count" -eq 0 ]]; then
+                echo "WARNING: No network policies found in namespace $namespace"
+            else
+                echo "Found $netpol_count network policies"
+            fi
+            ;;&
+        secrets|all)
+            echo "=== Exposed Secrets Check ==="
+            # Check for secrets in environment variables
+            kubectl get pods -n "$namespace" -o json | jq -r '
+                .items[] | 
+                .spec.containers[] | 
+                select(.env[]?.valueFrom.secretKeyRef != null) |
+                "Pod using secrets in env: " + .name
+            ' | sort -u
+            ;;
+    esac
+}
+
+# Resource monitoring
+sentinel_k8s_monitor() {
+    local resource_type="${1:-pods}"
+    local namespace="${2:-$K8S_NAMESPACE}"
+    local interval="${3:-5}"
+    
+    echo "=== Kubernetes Resource Monitor ==="
+    echo "Monitoring $resource_type in namespace: $namespace"
+    echo "Refreshing every ${interval}s (Ctrl+C to stop)"
+    echo
+    
+    while true; do
+        clear
+        case "$resource_type" in
+            pods)
+                kubectl top pods -n "$namespace" 2>/dev/null || kubectl get pods -n "$namespace"
+                ;;
+            nodes)
+                kubectl top nodes 2>/dev/null || kubectl get nodes
+                ;;
+            all)
+                echo "=== Nodes ==="
+                kubectl top nodes 2>/dev/null || kubectl get nodes
+                echo
+                echo "=== Pods ==="
+                kubectl top pods -n "$namespace" 2>/dev/null || kubectl get pods -n "$namespace"
+                ;;
+        esac
+        sleep "$interval"
+    done
+}
+
+# Apply resources with validation
+sentinel_k8s_apply() {
+    local manifest="$1"
+    local dry_run="${2:-client}"
+    
+    [[ -z "$manifest" ]] && {
+        echo "Usage: sentinel_k8s_apply <manifest> [dry-run-mode]"
+        return 1
+    }
+    
+    # Validate manifest
+    if [[ "$K8S_RESOURCE_VALIDATION" == "1" ]]; then
+        echo "=== Validating manifest ==="
+        
+        # Check with kubectl
+        if ! kubectl apply -f "$manifest" --dry-run="$dry_run" -o yaml >/dev/null; then
+            sentinel_log_error "k8s_integration" "Manifest validation failed"
+            return 1
+        fi
+        
+        # Security checks
+        if command -v kubesec >/dev/null 2>&1; then
+            echo "=== Security scan with kubesec ==="
+            kubesec scan "$manifest"
+        fi
+        
+        # Policy checks
+        if command -v opa >/dev/null 2>&1 && [[ -d "$HOME/.sentinel/k8s/policies" ]]; then
+            echo "=== OPA policy check ==="
+            opa eval -d "$HOME/.sentinel/k8s/policies" -i "$manifest" "data.kubernetes.admission.deny[msg]"
+        fi
+    fi
+    
+    # Apply with confirmation
+    read -p "Apply manifest? [y/N] " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        kubectl apply -f "$manifest"
+    fi
+}
+
+# Kubernetes troubleshooting helpers
+sentinel_k8s_debug() {
+    local pod="$1"
+    local namespace="${2:-$K8S_NAMESPACE}"
+    
+    [[ -z "$pod" ]] && {
+        echo "Usage: sentinel_k8s_debug <pod> [namespace]"
+        return 1
+    }
+    
+    echo "=== Pod Debug Information ==="
+    echo "Pod: $pod"
+    echo "Namespace: $namespace"
+    echo
+    
+    # Pod details
+    echo "=== Pod Description ==="
+    kubectl describe pod "$pod" -n "$namespace"
+    echo
+    
+    # Container logs
+    echo "=== Container Logs ==="
+    kubectl logs "$pod" -n "$namespace" --all-containers --tail=50
+    echo
+    
+    # Events
+    echo "=== Recent Events ==="
+    kubectl get events -n "$namespace" --field-selector "involvedObject.name=$pod" --sort-by='.lastTimestamp'
+}
+
+# Kubernetes backup utilities
+sentinel_k8s_backup() {
+    local backup_type="${1:-namespace}"
+    local target="${2:-$K8S_NAMESPACE}"
+    local backup_dir="${3:-$HOME/.sentinel/k8s/backups/$(date +%Y%m%d_%H%M%S)}"
+    
+    mkdir -p "$backup_dir"
+    
+    case "$backup_type" in
+        namespace)
+            echo "=== Backing up namespace: $target ==="
+            # Export all resources in namespace
+            for resource in $(kubectl api-resources --verbs=list --namespaced -o name); do
+                echo "Backing up $resource..."
+                kubectl get "$resource" -n "$target" -o yaml > "$backup_dir/${resource}.yaml" 2>/dev/null
+            done
+            ;;
+        cluster)
+            echo "=== Backing up cluster resources ==="
+            # Export cluster-wide resources
+            for resource in $(kubectl api-resources --verbs=list --namespaced=false -o name); do
+                echo "Backing up $resource..."
+                kubectl get "$resource" -o yaml > "$backup_dir/cluster_${resource}.yaml" 2>/dev/null
+            done
+            ;;
+        *)
+            echo "Usage: sentinel_k8s_backup [namespace|cluster] <target> [backup-dir]"
+            return 1
+            ;;
+    esac
+    
+    echo "Backup completed: $backup_dir"
+}
+
+# Helm integration
+sentinel_k8s_helm() {
+    local operation="$1"
+    shift
+    
+    case "$operation" in
+        scan)
+            local chart="$1"
+            # Scan Helm chart for security issues
+            if command -v helm >/dev/null 2>&1; then
+                helm template "$chart" | kubectl apply --dry-run=client -f - -o yaml >/dev/null
+                echo "Helm chart validation passed"
+            fi
+            ;;
+        diff)
+            # Show what would change
+            if command -v helm-diff >/dev/null 2>&1; then
+                helm diff "$@"
+            else
+                echo "helm-diff plugin not installed"
+                return 1
+            fi
+            ;;
+        *)
+            # Pass through to helm
+            helm "$operation" "$@"
+            ;;
+    esac
+}
+
+# MCP handler for Kubernetes operations
+sentinel_k8s_mcp_handler() {
+    local operation="$1"
+    shift
+    
+    case "$operation" in
+        get)
+            kubectl get "$@" -o json
+            ;;
+        describe)
+            kubectl describe "$@"
+            ;;
+        logs)
+            kubectl logs "$@"
+            ;;
+        scan)
+            sentinel_k8s_scan "$@"
+            ;;
+        *)
+            echo '{"error": "Unknown kubernetes operation"}'
+            ;;
+    esac
+}
+
+# Initialize Kubernetes integration
+sentinel_k8s_integration_init() {
+    # Check kubectl availability
+    if ! command -v kubectl >/dev/null 2>&1; then
+        sentinel_log_warning "k8s_integration" "kubectl not found, plugin functionality limited"
+        return 1
+    fi
+    
+    # Register kubectl with external tools
+    if type sentinel_tool_register >/dev/null 2>&1; then
+        sentinel_tool_register "kubectl" "$(which kubectl)" '{"type": "orchestration", "category": "infrastructure"}'
+        
+        # Create aliases
+        sentinel_tool_alias "k" "kubectl"
+        sentinel_tool_alias "kgp" "kubectl" "get pods"
+        sentinel_tool_alias "kgs" "kubectl" "get svc"
+        sentinel_tool_alias "kgd" "kubectl" "get deploy"
+        
+        # Register helm if available
+        if command -v helm >/dev/null 2>&1; then
+            sentinel_tool_register "helm" "$(which helm)" '{"type": "package_manager", "category": "infrastructure"}'
+        fi
+    fi
+    
+    # Register MCP handler
+    if [[ "$SENTINEL_MCP_ENABLED" == "1" ]]; then
+        echo "k8s:sentinel_k8s_mcp_handler" >> "$SENTINEL_TOOLS_DIR/mcp_handlers.txt"
+    fi
+    
+    # Set up completion if available
+    if command -v kubectl >/dev/null 2>&1; then
+        source <(kubectl completion bash 2>/dev/null)
+    fi
+    
+    sentinel_log_info "k8s_integration" "Kubernetes integration plugin loaded"
+}
+
+# Export functions
+export -f sentinel_k8s_context
+export -f sentinel_kubectl
+export -f sentinel_k8s_scan
+export -f sentinel_k8s_monitor
+export -f sentinel_k8s_apply
+export -f sentinel_k8s_debug
+export -f sentinel_k8s_backup
+export -f sentinel_k8s_helm
+export -f sentinel_k8s_mcp_handler
+
+# Initialize plugin
+sentinel_k8s_integration_init

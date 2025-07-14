@@ -474,6 +474,9 @@ export SENTINEL_FZF_ENABLED=1
 export SENTINEL_SKIP_AUTO_LOAD=1
 export _SENTINEL_MODULES_LOADED=0
 
+# Set MODULES_DIR for module installer scripts
+export MODULES_DIR="/opt/github/SENTINEL/bash_modules.d"
+
 # Create cache directories
 mkdir -p "${SENTINEL_CACHE_DIR}/config" "${SENTINEL_CACHE_DIR}/modules" 2>/dev/null || true
 
@@ -581,7 +584,7 @@ done
 # Load enabled modules
 if [[ "$_SENTINEL_MODULES_LOADED" == "0" ]] && [[ -f "$HOME/.enabled_modules" ]]; then
   load_enabled_modules "$HOME/.enabled_modules" 2>/dev/null || {
-    # Fallback: load critical modules directly
+    # Fallback: load critical modules directly in dependency order
     for critical_module in "logging" "config_cache" "module_manager"; do
       load_module "$critical_module" 2>/dev/null || true
     done
@@ -590,8 +593,8 @@ if [[ "$_SENTINEL_MODULES_LOADED" == "0" ]] && [[ -f "$HOME/.enabled_modules" ]]
 fi
 
 # Load essential modules directly
-safe_load_module_once "config_cache" 2>/dev/null
 safe_load_module_once "logging" 2>/dev/null
+safe_load_module_once "config_cache" 2>/dev/null
 safe_load_module_once "auto_install" 2>/dev/null
 
 # Source custom venv helpers

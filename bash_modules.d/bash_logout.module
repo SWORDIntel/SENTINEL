@@ -319,4 +319,6 @@ alias secure-logout-add-dir='secure_logout_add_dir'
 alias secure-logout-cleanup='secure_logout_cleanup'
 
 # Initial load message.
-echo "SENTINEL: Secure logout module loaded. Type 'secure-logout-config' to view your settings."
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+    echo "SENTINEL: Secure logout module loaded. Type 'secure-logout-config' to view your settings."
+fi

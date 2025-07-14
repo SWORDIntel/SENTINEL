@@ -195,32 +195,62 @@ fi
 
 # Silence module status messages
 export SENTINEL_QUIET_STATUS=1
+export SENTINEL_VERBOSE=0
+export SENTINEL_DEBUG=0
+export SENTINEL_DEBUG_MODULES=0
+export SENTINEL_QUIET_MODE=1
+export SENTINEL_DISABLE_STARTUP_MESSAGES=1
+export SENTINEL_SUPPRESS_MODULE_MESSAGES=1
+
+# Create function to show critical startup info only
+sentinel_startup_summary() {
+    if [[ "${SENTINEL_QUIET_MODE:-0}" == "1" ]]; then
+        return 0
+    fi
+    
+    echo -e "\033[32m[SENTINEL]\033[0m Ready - $(date +'%H:%M:%S')"
+    
+    # Show only critical status
+    local critical_info=""
+    
+    # Check if in data science environment
+    if [[ -n "${VIRTUAL_ENV}" && "${VIRTUAL_ENV}" == "${HOME}/datascience/envs/dsenv" ]]; then
+        critical_info+=" | dsenv active"
+    fi
+    
+    # Check NPU status briefly
+    if [[ -e /dev/accel/accel0 ]]; then
+        critical_info+=" | NPU: available"
+    fi
+    
+    # Show module count
+    local module_count=$(echo "${!SENTINEL_LOADED_MODULES[@]}" | wc -w 2>/dev/null || echo "0")
+    critical_info+=" | ${module_count} modules"
+    
+    if [[ -n "$critical_info" ]]; then
+        echo -e "\033[32m[SENTINEL]\033[0m${critical_info}"
+    fi
+}
 
 # OpenVINO Check (after Python venv setup)
 DSENV_PATH="${HOME}/datascience/envs/dsenv"
 SENTINEL_VENV_PATH="${HOME}/venv"
 
-if [[ -n "${VIRTUAL_ENV}" && "${VIRTUAL_ENV}" == "${DSENV_PATH}" ]]; then
-  # dsenv is active
-  if python -c "import openvino" >/dev/null 2>&1; then
-    echo "[SENTINEL] OpenVINO Python package successfully detected in the active custom environment (dsenv)."
-  else
-    echo "[SENTINEL] Warning: Custom environment (dsenv) is active, but OpenVINO Python package not found within it."
-    echo "[SENTINEL] Ensure your custom OpenVINO build in dsenv includes the Python bindings."
-  fi
-elif [[ -n "${VIRTUAL_ENV}" && "${VIRTUAL_ENV}" == "${SENTINEL_VENV_PATH}" ]]; then
-  # SENTINEL venv is active (and dsenv is not)
-  # This check will likely fail due to constraints.txt, but we keep it for completeness.
-  if "${SENTINEL_VENV_PATH}/bin/python" -c "import openvino" >/dev/null 2>&1; then
-    echo "[SENTINEL] OpenVINO Python package is available in the SENTINEL virtual environment (${SENTINEL_VENV_PATH})."
-  else
-    echo "[SENTINEL] SENTINEL virtual environment (${SENTINEL_VENV_PATH}) is active. OpenVINO Python package not found (expected, due to constraints.txt for custom build)."
-    echo "[SENTINEL] If you intend to use a custom OpenVINO, please activate the 'dsenv' environment: source ${DSENV_PATH}/bin/activate"
-  fi
-else
-  # No known primary virtual environment active or an unknown one is.
-  echo "[SENTINEL] No primary SENTINEL or dsenv virtual environment detected as active."
-  echo "[SENTINEL] For OpenVINO, ensure 'dsenv' (${DSENV_PATH}) is activated or OpenVINO is installed in '${SENTINEL_VENV_PATH}' (if not using custom build)."
+# OpenVINO Check (only show warnings/errors, not success messages)
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" ]]; then
+    if [[ -n "${VIRTUAL_ENV}" && "${VIRTUAL_ENV}" == "${DSENV_PATH}" ]]; then
+        # dsenv is active - only warn if OpenVINO not found
+        if ! python -c "import openvino" >/dev/null 2>&1; then
+            echo "[SENTINEL] Warning: dsenv active but OpenVINO Python package not found."
+        fi
+    elif [[ -n "${VIRTUAL_ENV}" && "${VIRTUAL_ENV}" == "${SENTINEL_VENV_PATH}" ]]; then
+        # SENTINEL venv - expected that OpenVINO won't be available
+        if ! "${SENTINEL_VENV_PATH}/bin/python" -c "import openvino" >/dev/null 2>&1; then
+            echo "[SENTINEL] SENTINEL venv active. For OpenVINO, activate dsenv: source ${DSENV_PATH}/bin/activate"
+        fi
+    elif [[ -z "${VIRTUAL_ENV}" ]]; then
+        echo "[SENTINEL] No virtual environment active. Activate dsenv for OpenVINO: source ${DSENV_PATH}/bin/activate"
+    fi
 fi
 
 # Python virtual environment management

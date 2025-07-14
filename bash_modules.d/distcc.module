@@ -87,47 +87,82 @@ distcc_setup() {
     # Configure ccache
     export CCACHE_DIR
     
-    # Set ccache size if not already configured
-    if ! ccache -s | grep -q "max cache size.*$CCACHE_SIZE"; then
-        ccache -M "$CCACHE_SIZE" >/dev/null
+    # Set ccache size if ccache is available and not already configured
+    if command -v ccache &>/dev/null; then
+        if ! ccache -s 2>/dev/null | grep -q "max cache size.*$CCACHE_SIZE"; then
+            ccache -M "$CCACHE_SIZE" >/dev/null 2>&1
+        fi
     fi
     
-    # Add distcc and ccache to PATH
-    local distcc_bin_paths=(
+    # Add distcc and ccache wrapper directories to PATH if they exist
+    local distcc_wrapper_paths=(
+        "/usr/lib/distcc"
+        "/usr/lib64/distcc" 
+        "/usr/local/lib/distcc"
+        "/opt/local/lib/distcc"
         "/usr/lib/distcc/bin"
         "/usr/lib64/distcc/bin"
         "/usr/local/lib/distcc/bin"
         "/opt/local/lib/distcc/bin"
     )
     
-    local ccache_bin_paths=(
+    local ccache_wrapper_paths=(
+        "/usr/lib/ccache"
+        "/usr/lib64/ccache"
+        "/usr/local/lib/ccache"
+        "/opt/local/lib/ccache"
         "/usr/lib/ccache/bin"
         "/usr/lib64/ccache/bin"
         "/usr/local/lib/ccache/bin"
         "/opt/local/lib/ccache/bin"
     )
     
-    # Find existing paths and add to PATH
-    for p in "${distcc_bin_paths[@]}"; do
+    local distcc_found=""
+    local ccache_found=""
+    
+    # Find and add distcc wrapper directory to PATH
+    for p in "${distcc_wrapper_paths[@]}"; do
         if [[ -d "$p" && ":$PATH:" != *":$p:"* ]]; then
-            export PATH="$p:$PATH"
-            break
+            # Check if directory contains compiler wrappers
+            if ls "$p"/{gcc,g++,cc} &>/dev/null; then
+                export PATH="$p:$PATH"
+                distcc_found="$p"
+                break
+            fi
         fi
     done
     
-    for p in "${ccache_bin_paths[@]}"; do
+    # Find and add ccache wrapper directory to PATH  
+    for p in "${ccache_wrapper_paths[@]}"; do
         if [[ -d "$p" && ":$PATH:" != *":$p:"* ]]; then
-            export PATH="$p:$PATH"
-            break
+            # Check if directory contains compiler wrappers
+            if ls "$p"/{gcc,g++,cc} &>/dev/null; then
+                export PATH="$p:$PATH"
+                ccache_found="$p"
+                break
+            fi
         fi
     done
     
-    # Verify PATH updates
-    if echo "$PATH" | grep -q "distcc\|ccache"; then
-        echo -e "${GREEN}Distcc and Ccache added to PATH:${NC} $PATH"
+    # Report results
+    if [[ -n "$distcc_found" || -n "$ccache_found" ]]; then
+        echo -e "${GREEN}Compiler wrapper directories added to PATH:${NC}"
+        [[ -n "$distcc_found" ]] && echo -e "  Distcc wrappers: $distcc_found"
+        [[ -n "$ccache_found" ]] && echo -e "  Ccache wrappers: $ccache_found"
     else
-        echo -e "${YELLOW}Warning: Could not find distcc or ccache bin directories${NC}"
-        echo -e "Standard paths were not found. You may need to manually set your PATH."
+        # Check if the tools are available in standard PATH
+        local tools_available=""
+        command -v distcc &>/dev/null && tools_available+="distcc "
+        command -v ccache &>/dev/null && tools_available+="ccache "
+        
+        if [[ -n "$tools_available" ]]; then
+            echo -e "${GREEN}Available in system PATH:${NC} $tools_available"
+            echo -e "${CYAN}Note:${NC} No compiler wrapper directories found, but tools are available."
+            echo -e "      You can use them directly: CC='distcc gcc' CXX='distcc g++'"
+        else
+            echo -e "${YELLOW}Warning: No distcc or ccache wrapper directories found${NC}"
+            echo -e "         Tools may not be installed or may be in non-standard locations."
+        fi
     fi
     
     echo -e "${GREEN}Distcc configured with hosts:${NC} $DISTCC_HOSTS"
@@ -172,7 +207,11 @@ distcc_status() {
     
     echo -e "\n${BLUE}Ccache Configuration:${NC}"
     echo -e "CCACHE_DIR:      $CCACHE_DIR"
-    ccache -s
+    if command -v ccache &>/dev/null; then
+        ccache -s
+    else
+        echo -e "${YELLOW}Ccache not available${NC}"
+    fi
     
     echo -e "\n${BLUE}System PATH:${NC}"
     echo "$PATH" | tr ':' '\n' | grep -E 'distcc|ccache'
@@ -317,5 +356,7 @@ alias automake-distcc='automake_env gnu'
 alias cmake-distcc='automake_env cmake'
 
 # Display module loaded message
-echo -e "${GREEN}[+]${NC} Distcc/Ccache module loaded. PATH configured for distributed compilation."
-echo -e "    Type ${CYAN}distcc-help${NC} to see available commands."
+if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+    echo -e "${GREEN}[+]${NC} Distcc/Ccache module loaded. PATH configured for distributed compilation."
+    echo -e "    Type ${CYAN}distcc-help${NC} to see available commands."
+fi

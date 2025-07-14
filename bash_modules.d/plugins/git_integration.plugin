@@ -1,0 +1,266 @@
+#!/usr/bin/env bash
+# SENTINEL - Git Integration Plugin
+# Version: 1.0.0
+# Description: Enhanced Git integration with MCP support
+# Dependencies: external_tools
+
+# Plugin metadata
+SENTINEL_PLUGIN_NAME="git_integration"
+SENTINEL_PLUGIN_VERSION="1.0.0"
+SENTINEL_PLUGIN_DESCRIPTION="Enhanced Git integration with workflow automation"
+
+# Git configuration
+GIT_DEFAULT_BRANCH="${GIT_DEFAULT_BRANCH:-main}"
+GIT_COMMIT_TEMPLATE="${GIT_COMMIT_TEMPLATE:-$HOME/.sentinel/git/commit.template}"
+GIT_HOOKS_DIR="${GIT_HOOKS_DIR:-$HOME/.sentinel/git/hooks}"
+
+# Create plugin directories
+mkdir -p "$(dirname "$GIT_COMMIT_TEMPLATE")" "$GIT_HOOKS_DIR"
+
+# Enhanced git status with formatting
+sentinel_git_status() {
+    local format="${1:-pretty}"
+    
+    case "$format" in
+        json)
+            # Output git status as JSON
+            git status --porcelain=v2 | awk '
+            BEGIN { print "{\"files\": [" }
+            /^[12] / {
+                split($0, parts, " ")
+                if (NR > 1) print ","
+                printf "{\"status\": \"%s\", \"file\": \"%s\"}", parts[2], parts[9]
+            }
+            END { print "]}" }
+            '
+            ;;
+        pretty|*)
+            # Enhanced colored output
+            echo -e "\033[1;34m=== Git Repository Status ===\033[0m"
+            echo -e "\033[1;33mBranch:\033[0m $(git branch --show-current)"
+            echo -e "\033[1;33mRemote:\033[0m $(git remote get-url origin 2>/dev/null || echo 'No remote')"
+            echo
+            git status --short --branch
+            ;;
+    esac
+}
+
+# Smart commit with template and validation
+sentinel_git_commit() {
+    local message="$1"
+    local use_template="${2:-1}"
+    
+    # Validate repository state
+    if ! git diff --cached --quiet; then
+        if [[ -z "$message" && "$use_template" == "1" ]]; then
+            # Use commit template
+            if [[ -f "$GIT_COMMIT_TEMPLATE" ]]; then
+                git commit -t "$GIT_COMMIT_TEMPLATE"
+            else
+                # Create default template
+                cat > "$GIT_COMMIT_TEMPLATE" <<'EOF'
+# Type: feat|fix|docs|style|refactor|perf|test|chore
+# Scope: (optional)
+# Subject: Brief description (50 chars or less)
+
+# Body: Detailed explanation (optional)
+
+# Footer: References, breaking changes (optional)
+# Fixes #123
+# BREAKING CHANGE: description
+EOF
+                git commit -t "$GIT_COMMIT_TEMPLATE"
+            fi
+        else
+            git commit -m "$message"
+        fi
+    else
+        sentinel_log_warning "git_integration" "No staged changes to commit"
+        return 1
+    fi
+}
+
+# Git workflow automation
+sentinel_git_workflow() {
+    local workflow="$1"
+    shift
+    
+    case "$workflow" in
+        feature)
+            sentinel_git_feature_workflow "$@"
+            ;;
+        hotfix)
+            sentinel_git_hotfix_workflow "$@"
+            ;;
+        release)
+            sentinel_git_release_workflow "$@"
+            ;;
+        pr|pull-request)
+            sentinel_git_pr_workflow "$@"
+            ;;
+        *)
+            echo "Available workflows: feature, hotfix, release, pr"
+            return 1
+            ;;
+    esac
+}
+
+# Feature branch workflow
+sentinel_git_feature_workflow() {
+    local feature_name="$1"
+    local base_branch="${2:-$GIT_DEFAULT_BRANCH}"
+    
+    [[ -z "$feature_name" ]] && {
+        echo "Usage: sentinel_git_workflow feature <name> [base-branch]"
+        return 1
+    }
+    
+    # Create feature branch
+    git checkout -b "feature/$feature_name" "$base_branch"
+    
+    # Set up tracking
+    git push -u origin "feature/$feature_name"
+    
+    sentinel_log_info "git_integration" "Created feature branch: feature/$feature_name"
+}
+
+# Pull request creation helper
+sentinel_git_pr_workflow() {
+    local title="$1"
+    local description="$2"
+    local base_branch="${3:-$GIT_DEFAULT_BRANCH}"
+    
+    # Check if gh CLI is available
+    if command -v gh >/dev/null 2>&1; then
+        gh pr create --title "$title" --body "$description" --base "$base_branch"
+    else
+        # Fallback to URL generation
+        local remote_url=$(git remote get-url origin)
+        local current_branch=$(git branch --show-current)
+        
+        if [[ "$remote_url" =~ github.com ]]; then
+            local repo_path=$(echo "$remote_url" | sed -E 's/.*github.com[:/](.*)\.git/\1/')
+            echo "Create PR at: https://github.com/$repo_path/compare/$base_branch...$current_branch"
+        fi
+    fi
+}
+
+# Git hooks integration
+sentinel_git_hooks_init() {
+    local repo_path="${1:-.}"
+    
+    # Pre-commit hook
+    cat > "$GIT_HOOKS_DIR/pre-commit" <<'EOF'
+#!/usr/bin/env bash
+# SENTINEL pre-commit hook
+
+# Load SENTINEL functions
+[[ -f "$HOME/.sentinel/modules/external_tools.module" ]] && source "$HOME/.sentinel/modules/external_tools.module"
+
+# Run security checks
+if type sentinel_security_scan >/dev/null 2>&1; then
+    sentinel_security_scan --pre-commit
+fi
+
+# Check for sensitive data
+if type sentinel_sensitive_data_check >/dev/null 2>&1; then
+    sentinel_sensitive_data_check
+fi
+
+exit 0
+EOF
+    
+    chmod +x "$GIT_HOOKS_DIR/pre-commit"
+    
+    # Install hooks
+    git config core.hooksPath "$GIT_HOOKS_DIR"
+    
+    sentinel_log_info "git_integration" "Git hooks initialized"
+}
+
+# Git repository analysis
+sentinel_git_analyze() {
+    local output_format="${1:-summary}"
+    
+    case "$output_format" in
+        summary)
+            echo "=== Git Repository Analysis ==="
+            echo "Repository: $(basename "$(git rev-parse --show-toplevel)")"
+            echo "Commits: $(git rev-list --count HEAD)"
+            echo "Contributors: $(git shortlog -sn | wc -l)"
+            echo "Branches: $(git branch -a | wc -l)"
+            echo "Tags: $(git tag | wc -l)"
+            echo "Size: $(du -sh .git | cut -f1)"
+            ;;
+        json)
+            cat <<EOF
+{
+    "repository": "$(basename "$(git rev-parse --show-toplevel)")",
+    "commits": $(git rev-list --count HEAD),
+    "contributors": $(git shortlog -sn | wc -l),
+    "branches": $(git branch -a | wc -l),
+    "tags": $(git tag | wc -l),
+    "size": "$(du -sh .git | cut -f1)"
+}
+EOF
+            ;;
+    esac
+}
+
+# MCP handler for git operations
+sentinel_git_mcp_handler() {
+    local operation="$1"
+    shift
+    
+    case "$operation" in
+        status)
+            sentinel_git_status json
+            ;;
+        commit)
+            sentinel_git_commit "$@"
+            ;;
+        analyze)
+            sentinel_git_analyze json
+            ;;
+        workflow)
+            sentinel_git_workflow "$@"
+            ;;
+        *)
+            echo '{"error": "Unknown git operation"}'
+            ;;
+    esac
+}
+
+# Register git tool and aliases
+sentinel_git_integration_init() {
+    # Register git with external tools
+    if type sentinel_tool_register >/dev/null 2>&1; then
+        sentinel_tool_register "git" "$(which git)" '{"type": "vcs", "category": "development"}'
+        
+        # Create convenient aliases
+        sentinel_tool_alias "gs" "git" "status"
+        sentinel_tool_alias "gc" "git" "commit"
+        sentinel_tool_alias "gp" "git" "push"
+        sentinel_tool_alias "gl" "git" "log --oneline"
+    fi
+    
+    # Register MCP handler
+    if [[ "$SENTINEL_MCP_ENABLED" == "1" ]]; then
+        echo "git:sentinel_git_mcp_handler" >> "$SENTINEL_TOOLS_DIR/mcp_handlers.txt"
+    fi
+    
+    sentinel_log_info "git_integration" "Git integration plugin loaded"
+}
+
+# Export functions
+export -f sentinel_git_status
+export -f sentinel_git_commit
+export -f sentinel_git_workflow
+export -f sentinel_git_feature_workflow
+export -f sentinel_git_pr_workflow
+export -f sentinel_git_hooks_init
+export -f sentinel_git_analyze
+export -f sentinel_git_mcp_handler
+
+# Initialize plugin
+sentinel_git_integration_init

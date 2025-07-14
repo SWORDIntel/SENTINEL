@@ -9,6 +9,9 @@
 # DO NOT use strict error handling as it can cause terminal crashes
 # set -euo pipefail
 
+# Module dependencies
+SENTINEL_MODULE_DEPENDENCIES=""
+
 # Prevent multiple loading
 [[ -n "${_SENTINEL_AUTOCOMPLETE_LOADED}" ]] && return 0
 export _SENTINEL_AUTOCOMPLETE_LOADED=1

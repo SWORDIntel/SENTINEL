@@ -28,7 +28,9 @@ mkdir -p "$SENTINEL_CONFIG_CACHE_DIR"
 if type sentinel_log_info &>/dev/null; then
     sentinel_log_info "config_cache" "Configuration cache module loaded"
 else
-    echo "Configuration cache module loaded (logging module not available)"
+    if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
+        echo "Configuration cache module loaded (logging module not available)"
+    fi
 fi
 
 # Function to create a config key from filepath
@@ -129,7 +131,7 @@ config_cache_load() {
     fi
     
     # Use cache if available, newer than config, and no force refresh - with error handling
-    if [[ -f "$cache_file" && -f "$filepath" ]] && [[ -f "$cache_file" -a "$cache_file" -nt "$filepath" ]] && [[ $force_refresh -eq 0 ]]; then
+    if [[ -f "$cache_file" && -f "$filepath" ]] && [[ "$cache_file" -nt "$filepath" ]] && [[ $force_refresh -eq 0 ]]; then
         # Try to update stats but don't fail if it doesn't work
         {
             if [[ -f "$stats_file" ]]; then

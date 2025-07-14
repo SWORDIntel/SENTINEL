@@ -1,0 +1,487 @@
+#!/bin/bash
+# Module: module_name
+# Version: 1.0.0
+# Description: Brief description of module functionality
+# Dependencies: logging config_cache
+# Optional-Dependencies: fzf python3
+# Author: Your Name
+# License: Same as SENTINEL
+
+# Prevent direct execution
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && {
+    echo "Error: This module should be sourced, not executed directly."
+    echo "Usage: source ${BASH_SOURCE[0]}"
+    exit 1
+}
+
+# ============================================================================
+# MODULE METADATA
+# ============================================================================
+
+MODULE_NAME="module_name"
+MODULE_VERSION="1.0.0"
+MODULE_AUTHOR="Your Name"
+MODULE_LICENSE="Same as SENTINEL"
+MODULE_DESCRIPTION="Brief description of module functionality"
+
+# Dependencies
+MODULE_DEPS=("logging" "config_cache")
+MODULE_OPTIONAL_DEPS=("fzf" "python3")
+
+# Configuration variables with defaults
+MODULE_CONFIG_VARS=(
+    "MODULE_NAME_ENABLED:true"
+    "MODULE_NAME_LOG_LEVEL:info"
+    "MODULE_NAME_CACHE_TTL:3600"
+    "MODULE_NAME_MAX_ITEMS:100"
+)
+
+# ============================================================================
+# MODULE INITIALIZATION
+# ============================================================================
+
+_init_module_name() {
+    log_debug "Initializing ${MODULE_NAME} v${MODULE_VERSION}"
+    
+    # Check required dependencies
+    local dep
+    for dep in "${MODULE_DEPS[@]}"; do
+        if ! is_module_loaded "$dep"; then
+            log_error "Required dependency '$dep' is not loaded"
+            return 1
+        fi
+    done
+    
+    # Check optional dependencies
+    MODULE_NAME_HAS_FZF=false
+    MODULE_NAME_HAS_PYTHON=false
+    
+    if has_command fzf; then
+        MODULE_NAME_HAS_FZF=true
+        log_debug "Optional dependency 'fzf' is available"
+    fi
+    
+    if has_command python3; then
+        MODULE_NAME_HAS_PYTHON=true
+        log_debug "Optional dependency 'python3' is available"
+    fi
+    
+    # Load configuration
+    if ! _load_module_name_config; then
+        log_error "Failed to load configuration"
+        return 1
+    fi
+    
+    # Initialize module state
+    export MODULE_NAME_LOADED=1
+    export MODULE_NAME_STATE="initialized"
+    
+    # Set up aliases
+    alias mycommand='module_name_main'
+    
+    # Set up completions
+    complete -F _module_name_complete mycommand
+    
+    # Register event handlers (if applicable)
+    # register_event_handler "shell_startup" "_module_name_on_startup"
+    
+    log_info "${MODULE_NAME} initialized successfully"
+    return 0
+}
+
+# ============================================================================
+# CONFIGURATION MANAGEMENT
+# ============================================================================
+
+_load_module_name_config() {
+    local var_def var_name default_val value
+    
+    for var_def in "${MODULE_CONFIG_VARS[@]}"; do
+        var_name="${var_def%%:*}"
+        default_val="${var_def#*:}"
+        
+        # Check environment variable first, then use default
+        value="${!var_name:-$default_val}"
+        
+        # Validate value if needed
+        case "$var_name" in
+            MODULE_NAME_LOG_LEVEL)
+                if [[ ! "$value" =~ ^(debug|info|warning|error)$ ]]; then
+                    log_warning "Invalid log level '$value', using 'info'"
+                    value="info"
+                fi
+                ;;
+            MODULE_NAME_CACHE_TTL)
+                if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+                    log_warning "Invalid cache TTL '$value', using default"
+                    value="3600"
+                fi
+                ;;
+        esac
+        
+        export "$var_name=$value"
+        log_debug "Config: $var_name=$value"
+    done
+    
+    return 0
+}
+
+# ============================================================================
+# MAIN FUNCTIONALITY
+# ============================================================================
+
+module_name_main() {
+    local action="${1:-help}"
+    shift
+    
+    # Check if module is enabled
+    if [[ "$MODULE_NAME_ENABLED" != "true" ]]; then
+        echo "Error: ${MODULE_NAME} is disabled"
+        echo "Enable with: export MODULE_NAME_ENABLED=true"
+        return 1
+    fi
+    
+    case "$action" in
+        start)
+            module_name_start "$@"
+            ;;
+        stop)
+            module_name_stop "$@"
+            ;;
+        status)
+            module_name_status "$@"
+            ;;
+        config)
+            _config_module_name "$@"
+            ;;
+        help|--help|-h)
+            module_name_help
+            ;;
+        *)
+            echo "Error: Unknown action '$action'"
+            module_name_help
+            return 1
+            ;;
+    esac
+}
+
+# ============================================================================
+# FEATURE IMPLEMENTATION
+# ============================================================================
+
+module_name_start() {
+    log_info "Starting ${MODULE_NAME}..."
+    
+    # Validate preconditions
+    if [[ "$MODULE_NAME_STATE" == "running" ]]; then
+        echo "Already running"
+        return 0
+    fi
+    
+    # Perform startup actions
+    # TODO: Implement actual functionality
+    
+    MODULE_NAME_STATE="running"
+    echo "${MODULE_NAME} started successfully"
+    return 0
+}
+
+module_name_stop() {
+    log_info "Stopping ${MODULE_NAME}..."
+    
+    if [[ "$MODULE_NAME_STATE" != "running" ]]; then
+        echo "Not running"
+        return 0
+    fi
+    
+    # Perform shutdown actions
+    # TODO: Implement actual functionality
+    
+    MODULE_NAME_STATE="stopped"
+    echo "${MODULE_NAME} stopped"
+    return 0
+}
+
+module_name_status() {
+    echo "${MODULE_NAME} Status"
+    echo "=================="
+    echo "Version: ${MODULE_VERSION}"
+    echo "State: ${MODULE_NAME_STATE}"
+    echo "Enabled: ${MODULE_NAME_ENABLED}"
+    echo "Log Level: ${MODULE_NAME_LOG_LEVEL}"
+    echo ""
+    echo "Optional Features:"
+    echo "  FZF: ${MODULE_NAME_HAS_FZF}"
+    echo "  Python: ${MODULE_NAME_HAS_PYTHON}"
+}
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
+_module_name_validate_input() {
+    local input="$1"
+    
+    # Validate input format
+    if [[ ! "$input" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        log_error "Invalid input format: $input"
+        return 1
+    fi
+    
+    # Additional validation logic
+    # TODO: Add specific validation
+    
+    return 0
+}
+
+_module_name_cache_get() {
+    local key="$1"
+    local cache_file="${MODULE_NAME_CACHE_DIR}/${key}.cache"
+    
+    # Check if cache exists and is valid
+    if [[ -f "$cache_file" ]]; then
+        local age=$(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file")))
+        if [[ $age -lt $MODULE_NAME_CACHE_TTL ]]; then
+            cat "$cache_file"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
+_module_name_cache_set() {
+    local key="$1"
+    local value="$2"
+    local cache_file="${MODULE_NAME_CACHE_DIR}/${key}.cache"
+    
+    mkdir -p "$MODULE_NAME_CACHE_DIR"
+    echo "$value" > "$cache_file"
+}
+
+# ============================================================================
+# COMPLETION SUPPORT
+# ============================================================================
+
+_module_name_complete() {
+    local cur prev words cword
+    _init_completion || return
+    
+    # First argument: action
+    if [[ $cword -eq 1 ]]; then
+        COMPREPLY=($(compgen -W "start stop status config help" -- "$cur"))
+        return
+    fi
+    
+    # Action-specific completions
+    case "${words[1]}" in
+        start|stop)
+            # No additional arguments
+            ;;
+        config)
+            if [[ $cword -eq 2 ]]; then
+                COMPREPLY=($(compgen -W "show edit reset" -- "$cur"))
+            fi
+            ;;
+    esac
+}
+
+# ============================================================================
+# CONFIGURATION UI
+# ============================================================================
+
+_config_module_name() {
+    local action="${1:-show}"
+    
+    case "$action" in
+        show)
+            echo "Current ${MODULE_NAME} Configuration:"
+            echo "===================================="
+            for var_def in "${MODULE_CONFIG_VARS[@]}"; do
+                var_name="${var_def%%:*}"
+                echo "$var_name = ${!var_name}"
+            done
+            ;;
+        edit)
+            echo "Interactive configuration not implemented yet"
+            # TODO: Implement interactive configuration
+            ;;
+        reset)
+            echo "Resetting to defaults..."
+            unset "${!MODULE_NAME_@}"
+            _load_module_name_config
+            echo "Configuration reset"
+            ;;
+        *)
+            echo "Usage: config [show|edit|reset]"
+            return 1
+            ;;
+    esac
+}
+
+# ============================================================================
+# HELP DOCUMENTATION
+# ============================================================================
+
+module_name_help() {
+    cat << EOF
+${MODULE_NAME} - ${MODULE_DESCRIPTION}
+
+Version: ${MODULE_VERSION}
+Author: ${MODULE_AUTHOR}
+
+USAGE:
+    mycommand [action] [options]
+
+ACTIONS:
+    start               Start the module functionality
+    stop                Stop the module functionality
+    status              Show current module status
+    config [subcmd]     Configure module settings
+    help                Show this help message
+
+CONFIGURATION:
+    The following environment variables control module behavior:
+    
+    MODULE_NAME_ENABLED     Enable/disable module (true/false)
+                           Default: true
+    
+    MODULE_NAME_LOG_LEVEL   Logging level (debug/info/warning/error)
+                           Default: info
+    
+    MODULE_NAME_CACHE_TTL   Cache time-to-live in seconds
+                           Default: 3600
+    
+    MODULE_NAME_MAX_ITEMS   Maximum number of items to process
+                           Default: 100
+
+EXAMPLES:
+    # Start the module
+    mycommand start
+    
+    # Check status
+    mycommand status
+    
+    # Configure with custom settings
+    MODULE_NAME_LOG_LEVEL=debug mycommand start
+    
+    # View configuration
+    mycommand config show
+
+DEPENDENCIES:
+    Required: ${MODULE_DEPS[*]}
+    Optional: ${MODULE_OPTIONAL_DEPS[*]}
+
+For more information, see the module documentation in:
+    /opt/github/SENTINEL/.claude/guides/module_development.md
+EOF
+}
+
+# ============================================================================
+# CLEANUP
+# ============================================================================
+
+_cleanup_module_name() {
+    log_info "Cleaning up ${MODULE_NAME}..."
+    
+    # Stop if running
+    if [[ "$MODULE_NAME_STATE" == "running" ]]; then
+        module_name_stop
+    fi
+    
+    # Remove aliases
+    unalias mycommand 2>/dev/null
+    
+    # Unregister event handlers
+    # unregister_event_handler "shell_startup" "_module_name_on_startup"
+    
+    # Clean up variables
+    unset MODULE_NAME_LOADED
+    unset MODULE_NAME_STATE
+    unset MODULE_NAME_HAS_FZF
+    unset MODULE_NAME_HAS_PYTHON
+    
+    # Clean up functions (optional, be careful)
+    # unset -f module_name_main
+    # unset -f module_name_start
+    # ... etc
+    
+    log_info "${MODULE_NAME} cleaned up"
+}
+
+# ============================================================================
+# SELF-TEST
+# ============================================================================
+
+_test_module_name() {
+    local errors=0
+    echo "Running ${MODULE_NAME} self-test..."
+    
+    # Test 1: Module loaded
+    echo -n "  Checking module loaded... "
+    if [[ "$MODULE_NAME_LOADED" == "1" ]]; then
+        echo "✓"
+    else
+        echo "✗"
+        ((errors++))
+    fi
+    
+    # Test 2: Configuration loaded
+    echo -n "  Checking configuration... "
+    if [[ -n "$MODULE_NAME_ENABLED" ]]; then
+        echo "✓"
+    else
+        echo "✗"
+        ((errors++))
+    fi
+    
+    # Test 3: Main function exists
+    echo -n "  Checking main function... "
+    if type module_name_main &>/dev/null; then
+        echo "✓"
+    else
+        echo "✗"
+        ((errors++))
+    fi
+    
+    # Test 4: Dependencies available
+    echo -n "  Checking dependencies... "
+    local missing_deps=()
+    for dep in "${MODULE_DEPS[@]}"; do
+        if ! is_module_loaded "$dep"; then
+            missing_deps+=("$dep")
+        fi
+    done
+    
+    if [[ ${#missing_deps[@]} -eq 0 ]]; then
+        echo "✓"
+    else
+        echo "✗ (missing: ${missing_deps[*]})"
+        ((errors++))
+    fi
+    
+    # Summary
+    echo ""
+    if [[ $errors -eq 0 ]]; then
+        echo "All tests passed! ✓"
+        return 0
+    else
+        echo "$errors test(s) failed! ✗"
+        return 1
+    fi
+}
+
+# ============================================================================
+# AUTO-INITIALIZATION
+# ============================================================================
+
+# Initialize module if auto-init is enabled (default: true)
+if [[ "${MODULE_AUTO_INIT:-true}" == "true" ]]; then
+    if ! _init_module_name; then
+        log_error "Failed to initialize ${MODULE_NAME}"
+        # Don't exit/return here - let shell continue
+    fi
+fi
+
+# Make test function available even if init fails
+alias "test_${MODULE_NAME}"="_test_module_name"

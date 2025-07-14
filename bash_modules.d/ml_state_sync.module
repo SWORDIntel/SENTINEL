@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+### BEGIN MODULE INFO
+# Name:                  ml_state_sync
+# Short-Description:     ML component state synchronization
+# Description:           Synchronizes state between bash and Python ML components
+#                        using the python_integration module.
+# Author:                Team 5 Agent 1
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  ml, state-sync, integration
+# Provides:              ml_state_sync
+# Requires:              python_integration, python3
+# Conflicts:             none
+### END MODULE INFO
+
+# Check if python_integration module is loaded
+if ! declare -f sentinel_state_get &>/dev/null; then
+    echo "[ML_STATE_SYNC] Error: python_integration module not loaded"
+    return 1
+fi
+
+# ML component state directory
+ML_STATE_DIR="${SENTINEL_STATE_DIR}/ml"
+mkdir -p "${ML_STATE_DIR}"
+
+# Sync command history for ML training
+sync_command_history() {
+    local history_file="${ML_STATE_DIR}/command_history.json"
+    local temp_file="${ML_STATE_DIR}/command_history.tmp"
+    
+    # Extract last 100 commands
+    history | tail -100 | python3 -c "
+import sys
+import json
+import re
+
+commands = []
+for line in sys.stdin:
+    match = re.match(r'\s*(\d+)\s+(.+)', line)
+    if match:
+        commands.append({
+            'index': int(match.group(1)),
+            'command': match.group(2).strip()
+        })
+
+print(json.dumps(commands, indent=2))
+" > "$temp_file"
+    
+    if [[ -s "$temp_file" ]]; then
+        mv "$temp_file" "$history_file"
+        sentinel_state_set "ml_last_history_sync" "$(date +%s)"
+        echo "[ML_STATE_SYNC] Command history synchronized"
+    fi
+}
+
+# Sync environment context for ML
+sync_environment_context() {
+    local context_file="${ML_STATE_DIR}/environment_context.json"
+    
+    python3 -c "
+import os
+import json
+import socket
+import pwd
+
+context = {
+    'hostname': socket.gethostname(),
+    'user': os.environ.get('USER', 'unknown'),
+    'home': os.environ.get('HOME', 'unknown'),
+    'shell': os.environ.get('SHELL', 'unknown'),
+    'term': os.environ.get('TERM', 'unknown'),
+    'pwd': os.getcwd(),
+    'sentinel_version': os.environ.get('SENTINEL_VERSION', 'unknown'),
+    'python_version': '.'.join(map(str, sys.version_info[:3])),
+    'ml_enabled': os.environ.get('SENTINEL_ML_ENABLED', '0'),
+    'timestamp': $(date +%s)
+}
+
+print(json.dumps(context, indent=2))
+" > "$context_file"
+    
+    sentinel_state_set "ml_last_context_sync" "$(date +%s)"
+    echo "[ML_STATE_SYNC] Environment context synchronized"
+}
+
+# Sync ML model metadata
+sync_model_metadata() {
+    local models_dir="${HOME}/models"
+    local metadata_file="${ML_STATE_DIR}/model_metadata.json"
+    
+    if [[ -d "$models_dir" ]]; then
+        python3 -c "
+import os
+import json
+from pathlib import Path
+
+models_dir = Path('$models_dir')
+models = []
+
+for model_file in models_dir.glob('*.model'):
+    stat = model_file.stat()
+    models.append({
+        'name': model_file.name,
+        'size': stat.st_size,
+        'modified': int(stat.st_mtime),
+        'path': str(model_file)
+    })
+
+metadata = {
+    'count': len(models),
+    'models': models,
+    'total_size': sum(m['size'] for m in models)
+}
+
+print(json.dumps(metadata, indent=2))
+" > "$metadata_file"
+        
+        sentinel_state_set "ml_model_count" "$(jq -r '.count' "$metadata_file" 2>/dev/null || echo 0)"
+        echo "[ML_STATE_SYNC] Model metadata synchronized"
+    fi
+}
+
+# Automatic sync function
+ml_auto_sync() {
+    local last_sync=$(sentinel_state_get "ml_last_auto_sync" || echo 0)
+    local current_time=$(date +%s)
+    local sync_interval=300  # 5 minutes
+    
+    if (( current_time - last_sync > sync_interval )); then
+        sync_command_history
+        sync_environment_context
+        sync_model_metadata
+        sentinel_state_set "ml_last_auto_sync" "$current_time"
+    fi
+}
+
+# Manual sync command
+ml_sync_all() {
+    echo "[ML_STATE_SYNC] Starting full ML state synchronization..."
+    sync_command_history
+    sync_environment_context
+    sync_model_metadata
+    sentinel_state_set "ml_last_manual_sync" "$(date +%s)"
+    echo "[ML_STATE_SYNC] Full synchronization complete"
+}
+
+# Get ML state summary
+ml_state_summary() {
+    echo "=== ML State Summary ==="
+    echo "Last auto sync: $(date -d @$(sentinel_state_get ml_last_auto_sync || echo 0) 2>/dev/null || echo 'Never')"
+    echo "Last manual sync: $(date -d @$(sentinel_state_get ml_last_manual_sync || echo 0) 2>/dev/null || echo 'Never')"
+    echo "Model count: $(sentinel_state_get ml_model_count || echo 0)"
+    echo "State directory: ${ML_STATE_DIR}"
+    
+    if [[ -f "${ML_STATE_DIR}/environment_context.json" ]]; then
+        echo "Environment context:"
+        jq -r 'to_entries | .[] | "  \(.key): \(.value)"' "${ML_STATE_DIR}/environment_context.json" 2>/dev/null | head -10
+    fi
+}
+
+# Hook into prompt command for auto-sync
+if [[ -n "$PROMPT_COMMAND" ]]; then
+    PROMPT_COMMAND="${PROMPT_COMMAND}; ml_auto_sync"
+else
+    PROMPT_COMMAND="ml_auto_sync"
+fi
+
+# Export functions
+export -f sync_command_history
+export -f sync_environment_context
+export -f sync_model_metadata
+export -f ml_auto_sync
+export -f ml_sync_all
+export -f ml_state_summary
+
+# Aliases
+alias ml-sync='ml_sync_all'
+alias ml-status='ml_state_summary'
+
+echo "[ML_STATE_SYNC] Module loaded - automatic state synchronization enabled"
