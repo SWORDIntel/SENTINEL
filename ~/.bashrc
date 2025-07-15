@@ -10,3 +10,5 @@ fi
 if [ -f "${HOME}/bashrc.postcustom" ]; then
     source "${HOME}/bashrc.postcustom"
 fi
+
+export PATH="$HOME/bin:$PATH"

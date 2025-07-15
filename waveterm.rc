@@ -82,35 +82,20 @@ export CCACHE_SIZE="5G"               # Maximum size of ccache
 
 # Source centralized configuration
 
-# SAFER module loading with ultra-robust error handling
-# This completely prevents terminal crashes even if modules are broken
-{
-    # Only attempt module loading if the file exists
-    if [[ -f "${HOME}/.bash_modules" ]]; then
-        # Read modules in a protected way that can't crash the terminal
-        {
-            while IFS= read -r module || [[ -n "$module" ]]; do
-                # Skip empty lines and comments with proper quoting
-                [[ -z "$module" || "$module" =~ ^[[:space:]]*# ]] && continue
+# Source module manager and parallel loader
+if [[ -f "${HOME}/bash_modules.d/module_manager.module" ]]; then
+    source "${HOME}/bash_modules.d/module_manager.module"
+fi
+if [[ -f "${HOME}/bash_modules.d/parallel_loader.module" ]]; then
+    source "${HOME}/bash_modules.d/parallel_loader.module"
+fi
 
-                # Extremely safe module loading with multiple layers of protection
-                {
-                    # Try module_enable if it exists
-                    if type module_enable &>/dev/null; then
-                        { module_enable "$module"; } 2>/dev/null || true
-                    else
-                        # Direct loading with ultimate fallback protection
-                        if [[ -f "${HOME}/.bash_modules.d/${module}.module" ]]; then
-                            { source "${HOME}/.bash_modules.d/${module}.module"; } 2>/dev/null || true
-                        elif [[ -f "${HOME}/.bash_modules.d/${module}.sh" ]]; then
-                            { source "${HOME}/.bash_modules.d/${module}.sh"; } 2>/dev/null || true
-                        fi
-                    fi
-                } 2>/dev/null || true
-            done < "${HOME}/.bash_modules"
-        } 2>/dev/null || true
-    fi
-} 2>/dev/null || true
+# Load all enabled modules in parallel
+if type parallel_load_modules &>/dev/null; then
+    parallel_load_modules "${HOME}/.bash_modules"
+fi
+
+export PATH="$HOME/bin:$PATH"
 
 # ========================================================================
 # Performance Configuration
