@@ -82,16 +82,26 @@ export CCACHE_SIZE="5G"               # Maximum size of ccache
 
 # Source centralized configuration
 
-# Source module manager and parallel loader
-if [[ -f "${HOME}/bash_modules.d/module_manager.module" ]]; then
-    source "${HOME}/bash_modules.d/module_manager.module"
-fi
-if [[ -f "${HOME}/bash_modules.d/parallel_loader.module" ]]; then
-    source "${HOME}/bash_modules.d/parallel_loader.module"
+# Don't re-source bash_modules if already loaded (prevents infinite loops)
+if [[ -z "${_SENTINEL_MODULES_LOADED}" ]]; then
+    # Source the main bash_modules first to get core functions
+    if [[ -f "/opt/github/SENTINEL/bash_modules" ]]; then
+        export SENTINEL_SKIP_AUTO_LOAD=1  # Prevent duplicate loading
+        source "/opt/github/SENTINEL/bash_modules"
+    fi
 fi
 
-# Load all enabled modules in parallel
-if type parallel_load_modules &>/dev/null; then
+# Source module manager and parallel loader only if not already loaded
+if [[ -z "${_SENTINEL_MODULE_MANAGER_LOADED}" ]] && [[ -f "/opt/github/SENTINEL/bash_modules.d/module_manager.module" ]]; then
+    source "/opt/github/SENTINEL/bash_modules.d/module_manager.module"
+fi
+if [[ -z "${_SENTINEL_PARALLEL_LOADER_LOADED}" ]] && [[ -f "/opt/github/SENTINEL/bash_modules.d/parallel_loader.module" ]]; then
+    source "/opt/github/SENTINEL/bash_modules.d/parallel_loader.module"
+fi
+
+# Load all enabled modules in parallel only if function exists and modules not already loaded
+if type parallel_load_modules &>/dev/null && [[ -z "${_SENTINEL_PARALLEL_MODULES_LOADED}" ]]; then
+    export _SENTINEL_PARALLEL_MODULES_LOADED=1
     parallel_load_modules "${HOME}/.bash_modules"
 fi
 

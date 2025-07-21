@@ -144,28 +144,30 @@ distcc_setup() {
         fi
     done
     
-    # Report results
-    if [[ -n "$distcc_found" || -n "$ccache_found" ]]; then
-        echo -e "${GREEN}Compiler wrapper directories added to PATH:${NC}"
-        [[ -n "$distcc_found" ]] && echo -e "  Distcc wrappers: $distcc_found"
-        [[ -n "$ccache_found" ]] && echo -e "  Ccache wrappers: $ccache_found"
-    else
-        # Check if the tools are available in standard PATH
-        local tools_available=""
-        command -v distcc &>/dev/null && tools_available+="distcc "
-        command -v ccache &>/dev/null && tools_available+="ccache "
-        
-        if [[ -n "$tools_available" ]]; then
-            echo -e "${GREEN}Available in system PATH:${NC} $tools_available"
-            echo -e "${CYAN}Note:${NC} No compiler wrapper directories found, but tools are available."
-            echo -e "      You can use them directly: CC='distcc gcc' CXX='distcc g++'"
+    # Report results - only in verbose/debug mode to prevent startup hang
+    if [[ "${SENTINEL_VERBOSE:-0}" == "1" || "${SENTINEL_DEBUG:-0}" == "1" || "${SENTINEL_DEBUG_MODULES:-0}" == "1" ]]; then
+        if [[ -n "$distcc_found" || -n "$ccache_found" ]]; then
+            echo -e "${GREEN}Compiler wrapper directories added to PATH:${NC}"
+            [[ -n "$distcc_found" ]] && echo -e "  Distcc wrappers: $distcc_found"
+            [[ -n "$ccache_found" ]] && echo -e "  Ccache wrappers: $ccache_found"
         else
-            echo -e "${YELLOW}Warning: No distcc or ccache wrapper directories found${NC}"
-            echo -e "         Tools may not be installed or may be in non-standard locations."
+            # Check if the tools are available in standard PATH
+            local tools_available=""
+            command -v distcc &>/dev/null && tools_available+="distcc "
+            command -v ccache &>/dev/null && tools_available+="ccache "
+            
+            if [[ -n "$tools_available" ]]; then
+                echo -e "${GREEN}Available in system PATH:${NC} $tools_available"
+                echo -e "${CYAN}Note:${NC} No compiler wrapper directories found, but tools are available."
+                echo -e "      You can use them directly: CC='distcc gcc' CXX='distcc g++'"
+            else
+                echo -e "${YELLOW}Warning: No distcc or ccache wrapper directories found${NC}"
+                echo -e "         Tools may not be installed or may be in non-standard locations."
+            fi
         fi
+        
+        echo -e "${GREEN}Distcc configured with hosts:${NC} $DISTCC_HOSTS"
     fi
-    
-    echo -e "${GREEN}Distcc configured with hosts:${NC} $DISTCC_HOSTS"
 }
 
 # Function to configure distcc hosts

@@ -5,14 +5,14 @@
 # Dependencies: config_cache
 # Maintainer: SENTINEL Team
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_MODULE_MANAGER_LOADED}" ]] && return 0
+export _SENTINEL_MODULE_MANAGER_LOADED=1
+
 # Module metadata for dependency resolution
 SENTINEL_MODULE_DESCRIPTION="Enhanced module management system"
 SENTINEL_MODULE_VERSION="1.0.0"
 SENTINEL_MODULE_DEPENDENCIES="config_cache logging"
-
-# Prevent double loading
-[[ -n "${_SENTINEL_MODULE_MANAGER_LOADED}" ]] && return 0
-export _SENTINEL_MODULE_MANAGER_LOADED=1
 
 # Ensure module cache directory exists
 SENTINEL_MODULE_CACHE_DIR="${SENTINEL_CACHE_DIR:-$HOME/.sentinel/cache}/modules"

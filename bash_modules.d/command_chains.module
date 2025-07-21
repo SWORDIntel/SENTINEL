@@ -10,7 +10,8 @@ SENTINEL_MODULE_DEPENDENCIES="logging"
 
 [ -n "$BASH_VERSION" ] || { echo "This script requires bash"; return 0; }
 if [ -n "${_SENTINEL_COMMAND_CHAINS_LOADED}" ]; then
-    echo "DEBUG: command_chains already loaded"; return 0;
+    [[ "${SENTINEL_DEBUG:-0}" == "1" ]] && echo "DEBUG: command_chains already loaded"
+    return 0
 fi
 export _SENTINEL_COMMAND_CHAINS_LOADED=1
 
@@ -19,9 +20,13 @@ if ! type -t sentinel_log_info &>/dev/null; then
     source "${BASH_SOURCE%/*}/logging.module" 2>/dev/null || true
 fi
 if ! type -t sentinel_log_info &>/dev/null; then
-    echo "ERROR: sentinel_log_info not loaded in command_chains";
+    [[ "${SENTINEL_DEBUG:-0}" == "1" ]] && echo "ERROR: sentinel_log_info not loaded in command_chains"
+    # Define fallback logging functions
+    sentinel_log_info() { :; }
+    sentinel_log_warning() { :; }
+    sentinel_log_error() { :; }
 else
-    echo "DEBUG: sentinel_log_info loaded in command_chains";
+    [[ "${SENTINEL_DEBUG:-0}" == "1" ]] && echo "DEBUG: sentinel_log_info loaded in command_chains"
 fi
 
 # Set strict error handling
@@ -142,7 +147,7 @@ _sentinel_command_chain_predictor() {
         # Periodically update the chain database (every ~20 commands)
         local random=$((RANDOM % 20))
         if [[ $random -eq 0 ]]; then
-            _sentinel_update_chain_database >/dev/null 2>&1 &
+            ( _sentinel_update_chain_database >/dev/null 2>&1 & ) 2>/dev/null
         fi
         
         # Get the last executed command
@@ -169,7 +174,7 @@ _sentinel_command_chain_predictor() {
         _sentinel_register_chain_hook
         
         # Do initial analysis in background
-        (_sentinel_update_chain_database >/dev/null 2>&1 &)
+        ( _sentinel_update_chain_database >/dev/null 2>&1 & ) 2>/dev/null
     }
     
     # Start the system

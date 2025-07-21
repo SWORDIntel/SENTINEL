@@ -2,6 +2,10 @@
 # SENTINEL Module System
 # Provides dynamic loading and management of bashrc extensions
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_MODULES_LOADED}" ]] && return 0
+export _SENTINEL_MODULES_LOADED=1
+
 # Define colors for prettier output
 export RED="\033[0;31m"
 export GREEN="\033[0;32m"

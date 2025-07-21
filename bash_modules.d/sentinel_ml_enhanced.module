@@ -43,14 +43,18 @@ SENTINEL_ML_DEPS_AVAILABLE=0
 if python3 -c "import importlib.util; print(all(importlib.util.find_spec(pkg) is not None for pkg in ['numpy', 'markovify']))" 2>/dev/null | grep -q "True"; then
     SENTINEL_ML_DEPS_AVAILABLE=1
 else
-    echo "Warning: Required Python packages (numpy, markovify) not installed."
-    echo "To enable full SENTINEL Enhanced ML features, install required packages:"
-    echo "  pip install numpy markovify llama-cpp-python"
-    echo "Basic functionality will still be available."
+    if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] || [[ "${SENTINEL_DEBUG:-0}" == "1" ]]; then
+        echo "Warning: Required Python packages (numpy, markovify) not installed."
+        echo "To enable full SENTINEL Enhanced ML features, install required packages:"
+        echo "  pip install numpy markovify llama-cpp-python"
+        echo "Basic functionality will still be available."
+    fi
 fi
 
 # Initialize the modules
-echo "Initializing SENTINEL Enhanced ML capabilities..."
+if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] || [[ "${SENTINEL_DEBUG:-0}" == "1" ]]; then
+    echo "Initializing SENTINEL Enhanced ML capabilities..."
+fi
 
 # Function to record commands for chain prediction
 function __sentinel_record_for_chain() {
@@ -60,7 +64,7 @@ function __sentinel_record_for_chain() {
     # Only record if chain prediction is available
     if [ -f "$CHAIN_PREDICT_SCRIPT" ]; then
         # Run in background to avoid slowing down the shell
-        python3 "$CHAIN_PREDICT_SCRIPT" --process "$command" --exit-code $exit_code >/dev/null 2>&1 &
+        ( python3 "$CHAIN_PREDICT_SCRIPT" --process "$command" --exit-code $exit_code >/dev/null 2>&1 & disown ) 2>/dev/null
     fi
 }
 
@@ -215,9 +219,9 @@ function sentinel_translate() {
             echo "Was this translation helpful? (y/n)"
             read -r feedback
             if [[ "$feedback" == "y" ]]; then
-                python3 "$NLU_SCRIPT" --feedback "$*|$command|true" >/dev/null 2>&1 &
+                ( python3 "$NLU_SCRIPT" --feedback "$*|$command|true" >/dev/null 2>&1 & disown ) 2>/dev/null
             else
-                python3 "$NLU_SCRIPT" --feedback "$*|$command|false" >/dev/null 2>&1 &
+                ( python3 "$NLU_SCRIPT" --feedback "$*|$command|false" >/dev/null 2>&1 & disown ) 2>/dev/null
             fi
             
             return $exit_code
@@ -283,13 +287,13 @@ function __sentinel_enhanced_ml_hook() {
     # Record task occasionally
     if [ -f "$TASK_DETECT_SCRIPT" ] && [ $((RANDOM % 10)) -eq 0 ]; then
         # 10% chance of running task detection
-        python3 "$TASK_DETECT_SCRIPT" --detect >/dev/null 2>&1 &
+        ( python3 "$TASK_DETECT_SCRIPT" --detect >/dev/null 2>&1 & disown ) 2>/dev/null
     fi
     
     # Periodically train the prediction model
     if [ -f "$CHAIN_PREDICT_SCRIPT" ] && [ $((RANDOM % 100)) -eq 0 ]; then
         # 1% chance of retraining
-        python3 "$CHAIN_PREDICT_SCRIPT" --train >/dev/null 2>&1 &
+        ( python3 "$CHAIN_PREDICT_SCRIPT" --train >/dev/null 2>&1 & disown ) 2>/dev/null
     fi
 }
 
@@ -341,6 +345,6 @@ if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES
     echo "SENTINEL Enhanced ML Module loaded"
 fi
 if [ -f "$TASK_DETECT_SCRIPT" ]; then
-    # Detect current task in background
-    python3 "$TASK_DETECT_SCRIPT" --detect >/dev/null 2>&1 &
+    # Detect current task in background (suppress job notifications)
+    ( python3 "$TASK_DETECT_SCRIPT" --detect >/dev/null 2>&1 & ) 2>/dev/null
 fi 

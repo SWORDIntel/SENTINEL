@@ -161,9 +161,17 @@ if [[ "$-" == *i* && "${SENTINEL_SECURE_LOGOUT_ENABLED}" == "1" ]]; then
     _sentinel_secure_logout_trap() {
         # Only run cleanup if shell is actually exiting (not being killed)
         # $? is the exit status of the last command
-        # 130 is the exit code for Ctrl+C, 143 for SIGTERM
-        if [[ "$?" -ne 130 && "$?" -ne 143 ]]; then
-            secure_logout_cleanup
+        # 130 is the exit code for Ctrl+C, 143 for SIGTERM, 146 for SIGTSTP
+        local exit_code=$?
+        
+        # Check if we're in a real exit scenario (not just shell initialization)
+        # SECONDS is a bash variable that counts seconds since shell start
+        if [[ "$exit_code" -ne 130 && "$exit_code" -ne 143 && "$exit_code" -ne 146 ]]; then
+            # Only run if shell has been active for more than 2 seconds
+            # This prevents the trap from firing during shell initialization
+            if [[ "${SECONDS:-0}" -gt 2 ]]; then
+                secure_logout_cleanup
+            fi
         fi
         
         # Execute the original trap if it existed
@@ -175,10 +183,14 @@ if [[ "$-" == *i* && "${SENTINEL_SECURE_LOGOUT_ENABLED}" == "1" ]]; then
     # Set our trap
     trap _sentinel_secure_logout_trap EXIT
     
-    echo "SENTINEL: Secure logout trap enabled. Will run cleanup on normal shell exit."
+    if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" && "${SENTINEL_DEBUG_MODULES:-0}" == "1" ]]; then
+        echo "SENTINEL: Secure logout trap enabled. Will run cleanup on normal shell exit."
+    fi
 else
     # Not setting the trap - either non-interactive shell or disabled by user
-    [[ "$-" == *i* ]] && echo "SENTINEL: Secure logout trap disabled by configuration."
+    if [[ "$-" == *i* && "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" && "${SENTINEL_DEBUG_MODULES:-0}" == "1" ]]; then
+        echo "SENTINEL: Secure logout trap disabled by configuration."
+    fi
 fi
 
 # -------------------------------

@@ -28,12 +28,16 @@ if command -v python3 &>/dev/null; then
         # Module is already enabled via bashrc.postcustom
         true
     else
-        echo "Warning: markovify not installed. Install with: pip install markovify"
-        echo "To enable SENTINEL ML capabilities, install required packages."
+        if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] || [[ "${SENTINEL_DEBUG:-0}" == "1" ]]; then
+            echo "Warning: markovify not installed. Install with: pip install markovify"
+            echo "To enable SENTINEL ML capabilities, install required packages."
+        fi
         return 0
     fi
 else
-    echo "Warning: python3 not found. SENTINEL ML capabilities disabled."
+    if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] || [[ "${SENTINEL_DEBUG:-0}" == "1" ]]; then
+        echo "Warning: python3 not found. SENTINEL ML capabilities disabled."
+    fi
     return 0
 fi
 

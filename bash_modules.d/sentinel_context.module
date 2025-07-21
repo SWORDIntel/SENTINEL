@@ -32,7 +32,13 @@ function __sentinel_record_command() {
         # Don't record commands with sensitive keywords
         if ! echo "$command" | grep -q -i "password\|secret\|key\|token\|credential"; then
             # Run context update in background to avoid slowing down the shell
-            python3 "$SENTINEL_CTX_SCRIPT" --record "$command" --exit-code $exit_code >/dev/null 2>&1 &
+            # Use disown to completely detach the process and prevent job notifications
+            # Run in a clean subshell with no verbosity
+            ( 
+                set +x +v 2>/dev/null
+                ( python3 "$SENTINEL_CTX_SCRIPT" --record "$command" --exit-code $exit_code >/dev/null 2>&1 & ) 2>/dev/null 
+                disown 
+            ) >/dev/null 2>&1
         fi
     fi
 }
@@ -42,7 +48,15 @@ function __sentinel_command_done() {
     local exit_code=$?
     local last_cmd=$(HISTTIMEFORMAT= history 1 | sed 's/^[ 0-9]\+[ ]\+//')
     
+    # Temporarily disable job control to prevent notifications
+    local old_opts=$(set +o | grep monitor)
+    set +m 2>/dev/null
+    
     __sentinel_record_command $exit_code "$last_cmd"
+    
+    # Restore job control setting
+    eval "$old_opts" 2>/dev/null
+    
     return $exit_code
 }
 
@@ -62,7 +76,7 @@ function __sentinel_analyze_sequence() {
     local cmd_list=$(echo "$cmds" | tr '\n' ',' | sed 's/,$//')
     
     # Add sequence to context
-    python3 "$SENTINEL_CTX_SCRIPT" --add-sequence "$cmd_list" >/dev/null 2>&1 &
+    ( python3 "$SENTINEL_CTX_SCRIPT" --add-sequence "$cmd_list" >/dev/null 2>&1 & disown ) 2>/dev/null
 }
 
 # Function to update context manually
@@ -152,7 +166,7 @@ alias ctxupdate="sentinel_update_context"
 alias suggest="sentinel_smart_suggest"
 
 # Initial context update on module load
-sentinel_update_context >/dev/null 2>&1 &
+( sentinel_update_context >/dev/null 2>&1 & disown ) 2>/dev/null
 
 if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
     echo "SENTINEL Context module loaded"

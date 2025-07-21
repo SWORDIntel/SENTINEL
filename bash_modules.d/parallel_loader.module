@@ -2,6 +2,10 @@
 # SENTINEL Module: Parallel Module Loader
 # Implements parallel loading with dependency graph analysis and caching
 
+# Prevent multiple loading
+[[ -n "${_SENTINEL_PARALLEL_LOADER_LOADED}" ]] && return 0
+export _SENTINEL_PARALLEL_LOADER_LOADED=1
+
 SENTINEL_MODULE_DESCRIPTION="Parallel module loading with dependency resolution and caching"
 SENTINEL_MODULE_VERSION="1.0.0"
 SENTINEL_MODULE_DEPENDENCIES="logging config_cache"
@@ -163,7 +167,7 @@ _build_dependency_graph() {
         local module_file="${module_info#*:}"
         
         # Load metadata (this will use cache if available)
-        _load_module_metadata "$module_name" "$module_file" >/dev/null 2>&1 &
+        ( _load_module_metadata "$module_name" "$module_file" >/dev/null 2>&1 & disown ) 2>/dev/null
         
         # Limit parallel jobs
         ((count++))
@@ -238,11 +242,14 @@ _identify_parallel_groups() {
     
     # Assign levels based on dependencies
     for module in "${sorted_modules[@]}"; do
+        # Skip empty module names
+        [[ -z "$module" ]] && continue
+        
         local level=0
-        local deps="${SENTINEL_MODULE_DEPS_GRAPH[$module]}"
+        local deps="${SENTINEL_MODULE_DEPS_GRAPH[$module]:-}"
         
         for dep in $deps; do
-            if [[ -n "$dep" && -n "${module_level[$dep]}" ]]; then
+            if [[ -n "$dep" && -n "${module_level[$dep]:-}" ]]; then
                 local dep_level="${module_level[$dep]}"
                 if (( dep_level >= level )); then
                     level=$((dep_level + 1))
@@ -261,7 +268,9 @@ _identify_parallel_groups() {
     for ((i=0; i<=max_level; i++)); do
         local group=""
         for module in "${!module_level[@]}"; do
-            if [[ "${module_level[$module]}" -eq $i ]]; then
+            # Skip empty module names
+            [[ -z "$module" ]] && continue
+            if [[ "${module_level[$module]:-}" -eq $i ]]; then
                 group="$group $module"
             fi
         done
@@ -312,7 +321,7 @@ parallel_load_modules() {
     fi
     
     # Build dependency graph
-    _build_dependency_graph
+    _build_dependency_graph "$SENTINEL_MODULES_PATH"
     
     # Get modules to load
     local -A modules_to_load
@@ -326,8 +335,10 @@ parallel_load_modules() {
             fi
             
             # Skip lazy modules during startup
-            if is_lazy_load_module "$module_name"; then
-                create_lazy_proxy "$module_name" "$module_file"
+            if declare -F is_lazy_load_module &>/dev/null && is_lazy_load_module "$module_name"; then
+                if declare -F create_lazy_proxy &>/dev/null; then
+                    create_lazy_proxy "$module_name" "$module_file"
+                fi
                 SENTINEL_LOADED_MODULES["$module_name"]="lazy"
                 continue
             fi
@@ -339,6 +350,30 @@ parallel_load_modules() {
     # Identify parallel groups
     local -a parallel_groups
     mapfile -t parallel_groups < <(_identify_parallel_groups)
+    
+    # Add modules without dependencies to the first group
+    local orphan_modules=""
+    for module_name in "${!modules_to_load[@]}"; do
+        local found=0
+        for group in "${parallel_groups[@]}"; do
+            if [[ " $group " =~ " $module_name " ]]; then
+                found=1
+                break
+            fi
+        done
+        if [[ $found -eq 0 ]]; then
+            orphan_modules="$orphan_modules $module_name"
+        fi
+    done
+    
+    # Add orphan modules to groups
+    if [[ -n "$orphan_modules" ]]; then
+        if [[ ${#parallel_groups[@]} -eq 0 ]]; then
+            parallel_groups=("$orphan_modules")
+        else
+            parallel_groups[0]="${parallel_groups[0]} $orphan_modules"
+        fi
+    fi
     
     echo "Loading modules in ${#parallel_groups[@]} parallel groups..." >&2
     
@@ -355,8 +390,17 @@ parallel_load_modules() {
                 local metadata="${SENTINEL_MODULE_METADATA_CACHE[$module_name]}"
                 local module_file=$(echo "$metadata" | grep "^FILE:" | cut -d':' -f2-)
                 
-                if [[ -n "$module_file" ]]; then
-                    _load_module_with_timing "$module_name" "$module_file" &
+                # If no metadata, try to find the module file directly
+                if [[ -z "$module_file" ]]; then
+                    if [[ -f "$SENTINEL_MODULES_PATH/${module_name}.module" ]]; then
+                        module_file="$SENTINEL_MODULES_PATH/${module_name}.module"
+                    elif [[ -f "$SENTINEL_MODULES_PATH/${module_name}.sh" ]]; then
+                        module_file="$SENTINEL_MODULES_PATH/${module_name}.sh"
+                    fi
+                fi
+                
+                if [[ -n "$module_file" && -f "$module_file" ]]; then
+                    ( _load_module_with_timing "$module_name" "$module_file" & ) 2>/dev/null
                     ((total_loaded++))
                 fi
             fi

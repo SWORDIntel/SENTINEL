@@ -66,12 +66,14 @@ function __sentinel_markov_init() {
     
     # Check required Python packages
     if ! python3 -c "import importlib.util; print(all(importlib.util.find_spec(pkg) is not None for pkg in ['markovify', 'numpy', 'tqdm', 'unidecode']))" 2>/dev/null | grep -q "True"; then
-        if declare -F sentinel_log >/dev/null; then
-            sentinel_log "WARNING: Required Python packages not installed for Markov generator"
-            sentinel_log "Run: pip install markovify numpy tqdm unidecode"
-        else
-            echo "WARNING: Required Python packages not installed for Markov generator"
-            echo "Run: pip install markovify numpy tqdm unidecode"
+        if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] || [[ "${SENTINEL_DEBUG:-0}" == "1" ]]; then
+            if declare -F sentinel_log >/dev/null; then
+                sentinel_log "WARNING: Required Python packages not installed for Markov generator"
+                sentinel_log "Run: pip install markovify numpy tqdm unidecode"
+            else
+                echo "WARNING: Required Python packages not installed for Markov generator"
+                echo "Run: pip install markovify numpy tqdm unidecode"
+            fi
         fi
     fi
     

@@ -423,7 +423,9 @@ export -f sentinel_python_module_install
 export -f sentinel_python_module_list
 export -f sentinel_ml_sync_state
 
-echo "[SENTINEL] Python Integration Module v${SENTINEL_PYTHON_INTEGRATION_VERSION} loaded"
-echo "[SENTINEL] State directory: ${SENTINEL_STATE_DIR}"
-echo "[SENTINEL] Config directory: ${SENTINEL_CONFIG_DIR}"
-echo "[SENTINEL] IPC directory: ${SENTINEL_IPC_DIR}"
+if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]] || [[ "${SENTINEL_DEBUG:-0}" == "1" ]]; then
+    echo "[SENTINEL] Python Integration Module v${SENTINEL_PYTHON_INTEGRATION_VERSION} loaded"
+    echo "[SENTINEL] State directory: ${SENTINEL_STATE_DIR}"
+    echo "[SENTINEL] Config directory: ${SENTINEL_CONFIG_DIR}"
+    echo "[SENTINEL] IPC directory: ${SENTINEL_IPC_DIR}"
+fi
