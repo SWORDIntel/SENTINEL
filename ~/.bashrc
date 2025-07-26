@@ -12,3 +12,7 @@ if [ -f "${HOME}/bashrc.postcustom" ]; then
 fi
 
 export PATH="$HOME/bin:$PATH"
+
+if [ -f "/app/bash_aliases" ]; then
+    source "/app/bash_aliases"
+fi
