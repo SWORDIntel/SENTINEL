@@ -3,7 +3,6 @@
 # Enhanced shell aliases for improved productivity and security
 
 # Load additional alias files from directory
-loadRcDir ${HOME}/.bash_aliases.d
 
 # Basic utilities
 alias q='exit'                  # Simple alias to exit the terminal
@@ -64,3 +63,9 @@ alias update-system='if command -v apt &>/dev/null; then
 # Sourcing with optional internet check
 alias sourcebash='source ~/.bashrc && check_internet_and_update && echo ".bashrc sourced and apt updated if connected."'
 alias sentinel-config='~/.sentinel/sentinel_config_helper.sh'
+
+# Monero unified wallet
+export MONERO_WALLET="$HOME/Monero/wallets/MyWallet/MyWallet"
+alias monero-gui="~/Programs/monero-gui/monero-wallet-gui"
+alias monero-cli="~/Programs/monero-cli/monero-wallet-cli --wallet-file $MONERO_WALLET"
+alias monerod="~/Programs/monero-cli/monerod --prune-blockchain"
