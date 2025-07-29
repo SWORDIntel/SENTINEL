@@ -482,6 +482,94 @@ setup_directories() {
 }
 
 ###############################################################################
+# Wave Terminal Configuration
+###############################################################################
+setup_wave_terminal() {
+    if is_done "WAVE_TERMINAL_CONFIGURED"; then
+        ok "Wave terminal already configured"
+        return
+    fi
+    step "Configuring Wave terminal"
+    
+    local wave_config_dir="${HOME}/.config/wave"
+    safe_mkdir "$wave_config_dir"
+    
+    local wave_shell_init_sh="${wave_config_dir}/shell-init.sh"
+    if [[ ! -f "$wave_shell_init_sh" ]]; then
+        step "Creating Wave terminal shell-init.sh"
+        install -m 644 /dev/null "$wave_shell_init_sh"
+        cat > "$wave_shell_init_sh" <<'EOF'
+# Source .bashrc to get all bash configs
+[ -f ~/.bashrc ] && source ~/.bashrc
+EOF
+        ok "Wave terminal shell-init.sh created"
+    else
+        ok "Wave terminal shell-init.sh already exists"
+    fi
+
+    local wave_config_yaml="${wave_config_dir}/config.yaml"
+    if [[ ! -f "$wave_config_yaml" ]]; then
+        step "Creating Wave terminal config.yaml"
+        install -m 644 /dev/null "$wave_config_yaml"
+        cat > "$wave_config_yaml" <<'EOF'
+# ~/.config/wave/config.yaml
+# Main Wave Terminal Configuration
+
+# Terminal settings
+terminal:
+  font_family: "JetBrains Mono"
+  font_size: 14
+  cursor_style: "block"  # block, underline, bar
+  cursor_blink: true
+  scrollback: 10000
+
+# Shell configuration
+shell:
+  program: "/bin/bash"  # or /bin/zsh, /usr/bin/fish
+  args: ["--login", "-i"]
+  
+  # Custom environment variables
+  env:
+    TERM: "xterm-256color"
+    WAVE_TERMINAL: "1"
+  
+  # Shell initialization script
+  init_script: "~/.config/wave/shell-init.sh"
+
+# Theme settings
+theme:
+  name: "dark"  # or "light", "custom"
+  # For custom themes, create ~/.config/wave/themes/custom.json
+
+# Window settings
+window:
+  opacity: 0.95
+  blur: true
+  decorations: true
+
+# Keybindings (or use keybindings.json)
+keybindings:
+  - { key: "ctrl+shift+t", action: "new_tab" }
+  - { key: "ctrl+shift+w", action: "close_tab" }
+  - { key: "ctrl+shift+c", action: "copy" }
+  - { key: "ctrl+shift+v", action: "paste" }
+
+# Features
+features:
+  gpu_acceleration: true
+  ligatures: true
+  semantic_zoom: true
+EOF
+        ok "Wave terminal config.yaml created"
+    else
+        ok "Wave terminal config.yaml already exists"
+    fi
+
+    mark_done "WAVE_TERMINAL_CONFIGURED"
+    ok "Wave terminal configured"
+}
+
+###############################################################################
 # 3. Python venv and dependencies
 ###############################################################################
 setup_python_venv() {
@@ -616,6 +704,7 @@ setup_python_venv() {
 # ACTUAL CALLS for Steps 2 & 3
 ###############################################################################
 setup_directories
+setup_wave_terminal
 setup_python_venv
 
 ###############################################################################
@@ -1124,7 +1213,7 @@ else
   warn "Post-installation verification script not found at $POSTINSTALL_CHECK_SCRIPT. Skipping."
 fi
 
-# Create a summary file for reference
+# Create a summary file for referencem
 SUMMARY_FILE="${HOME}/SENTINEL_INSTALL_SUMMARY.txt"
 {
   echo "SENTINEL Installation Summary"
