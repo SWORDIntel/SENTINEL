@@ -186,6 +186,20 @@ fi
 
 # Add your customizations below this line
 
+
+# Customizations from user request
+alias claude="/home/john/.claude/local/claude --dangerously-skip-permissions"
+
+export PATH=~/.npm-global/bin:$PATH
+export PATH="$HOME/bin:$PATH"
+export PATH="$HOME/local/go/bin:$HOME/go/bin:$PATH"
+export PATH="$HOME/.local/share/gem/ruby/3.3.0/bin:$PATH"
+
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+
+export ZFORGE_WORKSPACE=/home/john/zforge_workspace
+
 # Silence module status messages
 export SENTINEL_QUIET_STATUS=1
 export SENTINEL_VERBOSE=0
