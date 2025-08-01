@@ -1,0 +1,44 @@
+# Default configuration for the SENTINEL installer
+# Copy this file to config.yaml and modify it to your needs
+
+# Installer version
+installer_version: "2.4.0"
+
+# BLE.sh configuration
+blesh:
+    commit: "1234567890abcdef"
+    tag: "v0.3.4"
+
+# Python configuration
+python:
+    enable_tensorflow: 0
+
+# Shell configuration
+shell:
+    venv_auto: 1
+
+# Modules configuration
+modules:
+    obfuscate: 1
+    fzf: 1
+    ml: 1
+    osint: 1
+    cybersec: 1
+    gitstar: 1
+    chat: 1
+    smallllm: 1
+
+# Obfuscation configuration
+obfuscation:
+    output_dir: "${HOME}/secure/obfuscated_files"
+
+# Hashcat configuration
+hashcat:
+    bin: "/usr/bin/hashcat"
+    wordlists_dir: "/usr/share/wordlists"
+    output_dir: "${HOME}/.hashcat/cracked"
+
+# Distcc configuration
+distcc:
+    hosts: "localhost"
+    ccache_size: "5G"
