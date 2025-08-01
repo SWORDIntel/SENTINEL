@@ -157,7 +157,6 @@ else
     warn "SENTINEL integration not found in .bashrc or .bashrc.sentinel"
 fi
 
-run_test "VENV_AUTO is enabled" "grep -q 'export VENV_AUTO=1' \"${HOME}/bashrc.postcustom\""
 
 ###############################################################################
 # 4. Module Checks

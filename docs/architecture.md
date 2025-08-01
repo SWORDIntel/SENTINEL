@@ -138,16 +138,20 @@ A comprehensive repository analysis and categorization system:
 ### 5. Installation and Configuration
 
 #### Installation System
-- **install.sh**: Hardened installation script (v2.3.0)
-  - Dependency checking
-  - Module installation
-  - Configuration setup
-  - Post-installation verification
+- **install.sh**: A wrapper script that calls the main installer.
+- **installer/**: A directory containing the modularized installer scripts.
+  - **main.sh**: The main entry point for the installer.
+  - **helpers.sh**: Helper functions for logging, file operations, etc.
+  - **dependencies.sh**: Functions for checking dependencies.
+  - **directories.sh**: Functions for setting up the directory structure.
+  - **python.sh**: Functions for setting up the Python virtual environment.
+  - **blesh.sh**: Functions for installing and configuring BLE.sh.
+  - **bash.sh**: Functions for patching the user's bashrc and copying shell files.
 
 #### Configuration Management
-- **config/**: Configuration directory
-- **sentinel_toggles_tui.py**: Terminal UI for configuration
-- **config_cache.module**: Configuration caching for performance
+- **config.yaml.dist**: A template for the configuration file.
+- **config.yaml**: The main configuration file for the installer and the shell environment.
+- **installer/config.py**: A Python script that parses the configuration file and exports the values as environment variables.
 
 ## Data Flow
 
@@ -232,6 +236,16 @@ Command History → Feature Extraction → Model Inference → Suggestions
 3. **Plugin Marketplace**: Community module repository
 4. **API Gateway**: RESTful API for external integrations
 5. **Container Support**: Docker/Kubernetes deployment options
+
+## Testing
+
+SENTINEL uses a combination of unit tests and integration tests to ensure the quality of the code.
+
+### Unit Tests
+Unit tests for Python scripts are located in the `tests/` directory and are written using the `unittest` module.
+
+### Integration Tests
+Integration tests for the installer and the shell environment are located in the `tests/` directory and are written using the `bats-core` testing framework.
 
 ## Conclusion
 

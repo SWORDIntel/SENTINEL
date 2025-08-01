@@ -41,33 +41,7 @@ export SENTINEL_MODULE_VERIFY=1
 
 # SENTINEL Feature Module Toggles
 # -------------------------------
-# Uncomment to enable/disable specific SENTINEL feature modules:
-export SENTINEL_OBFUSCATE_ENABLED=1
-export SENTINEL_FZF_ENABLED=1
-export SENTINEL_ML_ENABLED=1
-export SENTINEL_OSINT_ENABLED=1
-export SENTINEL_CYBERSEC_ENABLED=1
-export SENTINEL_GITSTAR_ENABLED=1
-export SENTINEL_CHAT_ENABLED=1
-export SENTINEL_SMALLLLM_ENABLED=1
-
-
-# Obfuscation Module
-# ------------------
-export OBFUSCATE_OUTPUT_DIR="${HOME}/secure/obfuscated_files"
-# Optional: set a custom temp directory for obfuscation
-# export OBFUSCATE_TEMP_DIR="/tmp/obfuscate_temp"
-
-# Hashcat Configuration
-# --------------------
-export HASHCAT_BIN="/usr/bin/hashcat"
-export HASHCAT_WORDLISTS_DIR="/usr/share/wordlists"
-export HASHCAT_OUTPUT_DIR="${HOME}/.hashcat/cracked"
-
-# Distcc Configuration
-# -------------------
-export DISTCC_HOSTS="localhost"       # Space-separated list of compilation hosts
-export CCACHE_SIZE="5G"               # Maximum size of ccache
+# These are now managed in config.yaml
 
 #========================================================================
 # CUSTOM PROMPT CONFIGURATION (OPTIONAL)
@@ -185,6 +159,20 @@ fi
 
 
 # Add your customizations below this line
+
+
+# Customizations from user request
+alias claude="/home/john/.claude/local/claude --dangerously-skip-permissions"
+
+export PATH=~/.npm-global/bin:$PATH
+export PATH="$HOME/bin:$PATH"
+export PATH="$HOME/local/go/bin:$HOME/go/bin:$PATH"
+export PATH="$HOME/.local/share/gem/ruby/3.3.0/bin:$PATH"
+
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+
+export ZFORGE_WORKSPACE=/home/john/zforge_workspace
 
 # Silence module status messages
 export SENTINEL_QUIET_STATUS=1
