@@ -13,9 +13,6 @@ BLESH_DIR="${HOME}/.local/share/blesh"
 BLESH_LOADER="${HOME}/blesh_loader.sh"
 MODULES_DIR="${HOME}/bash_modules.d"
 
-# Load configuration
-eval "$(${PROJECT_ROOT}/venv/bin/python ${PROJECT_ROOT}/installer/config.py)"
-
 # Source helper scripts
 # shellcheck source=installer/helpers.sh
 source "${PROJECT_ROOT}/installer/helpers.sh"
@@ -30,7 +27,6 @@ source "${PROJECT_ROOT}/installer/blesh.sh"
 # shellcheck source=installer/bash.sh
 source "${PROJECT_ROOT}/installer/bash.sh"
 
-
 # Ensure logs directory exists before any logging
 if [[ ! -d "$LOG_DIR" ]]; then
     mkdir -p "$LOG_DIR"
@@ -42,6 +38,16 @@ trap 'fail "Installer aborted on line $LINENO; see ${LOG_DIR}/install.log"' ERR
 # State management functions
 mark_done()  { echo "$1" >> "${STATE_FILE}"; }
 is_done()    { grep -qxF "$1" "${STATE_FILE:-/dev/null}" 2>/dev/null; }
+
+#
+# Pre-flight checks
+#
+check_python_version
+PYTHON_CMD=$(find_python) || fail "No suitable Python 3.6+ found"
+setup_python_venv
+
+# Load configuration
+eval "$(${HOME}/venv/bin/python ${PROJECT_ROOT}/installer/config.py)"
 
 # Unattended install flag
 INTERACTIVE=1
@@ -57,9 +63,6 @@ done
 create_rollback_script
 
 # Run dependency checks
-check_python_version
-PYTHON_CMD=$(find_python) || fail "No suitable Python 3.6+ found"
-ok "Using Python: $PYTHON_CMD"
 check_dependencies
 check_debian_dependencies
 
@@ -69,9 +72,6 @@ prompt_custom_env
 # Setup directories
 setup_directories
 setup_wave_terminal
-
-# Setup Python venv
-setup_python_venv
 
 # Install BLE.sh
 if ! is_done "BLESH_INSTALLED"; then

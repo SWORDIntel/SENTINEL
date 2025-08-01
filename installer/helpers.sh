@@ -163,3 +163,56 @@ safe_git_clone() {
 
     ok "Repository cloned successfully"
 }
+
+create_rollback_script() {
+    step "Creating rollback script at ${ROLLBACK_SCRIPT}"
+    cat > "${ROLLBACK_SCRIPT}" <<'EOF'
+#!/bin/bash
+# SENTINEL Rollback Script
+# Created: $(date)
+# This script will restore your system to pre-SENTINEL state
+
+echo "Starting SENTINEL rollback..."
+
+# Restore bashrc from most recent backup
+LATEST_BACKUP=$(ls -t "${HOME}"/.bashrc.sentinel.bak.* 2>/dev/null | head -1)
+if [[ -n "$LATEST_BACKUP" && -f "$LATEST_BACKUP" ]]; then
+    cp "$LATEST_BACKUP" "${HOME}/.bashrc"
+    echo "✔ Restored .bashrc from $LATEST_BACKUP"
+else
+    echo "✖ No .bashrc backup found"
+fi
+
+# Remove SENTINEL directories
+for dir in bash_modules.d autocomplete logs; do
+    if [[ -d "${HOME}/$dir" ]]; then
+        rm -rf "${HOME}/$dir"
+        echo "✔ Removed $dir"
+    fi
+done
+
+# Remove SENTINEL files
+for file in .bashrc.sentinel bashrc.postcustom blesh_loader.sh .bash_modules install.state; do
+    if [[ -f "${HOME}/$file" ]]; then
+        rm -f "${HOME}/$file"
+        echo "✔ Removed $file"
+    fi
+done
+
+# Remove Python venv
+if [[ -d "${HOME}/venv" ]]; then
+    rm -rf "${HOME}/venv"
+    echo "✔ Removed Python virtual environment"
+fi
+
+# Remove BLE.sh
+if [[ -d "${HOME}/.local/share/blesh" ]]; then
+    rm -rf "${HOME}/.local/share/blesh"
+    echo "✔ Removed BLE.sh"
+fi
+
+echo "Rollback complete. Please restart your terminal."
+EOF
+    chmod 700 "${ROLLBACK_SCRIPT}"
+    ok "Rollback script created"
+}

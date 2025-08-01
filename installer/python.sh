@@ -128,3 +128,47 @@ setup_python_venv() {
     mark_done "PYTHON_VENV_READY"
     ok "Python dependencies installed in venv"
 }
+
+prompt_custom_env() {
+    if [[ $INTERACTIVE -eq 0 ]]; then
+        log "Non-interactive mode: Skipping custom environment prompt."
+        return
+    fi
+
+    step "Checking for user-defined custom Python environment"
+    local custom_env_activate_script="${HOME}/datascience/envs/dsenv/bin/activate"
+
+    # Check if already in the datascience environment
+    if [[ -n "${VIRTUAL_ENV:-}" ]] && [[ "$VIRTUAL_ENV" == *"datascience"* ]]; then
+        ok "Already using datascience environment: $VIRTUAL_ENV"
+        export USING_DATASCIENCE_ENV=1
+        return
+    fi
+
+    # Auto-detect if datascience environment exists
+    if [[ -f "$custom_env_activate_script" ]]; then
+        step "Found datascience environment at $custom_env_activate_script"
+        read -r -t 30 -p "Use optimized datascience environment? This is recommended. [Y/n]: " confirm_custom_env || confirm_custom_env="y"
+
+        if [[ ! "$confirm_custom_env" =~ ^[Nn]([Oo])?$ ]]; then
+            step "Activating datascience environment"
+            # shellcheck source=/dev/null
+            if source "$custom_env_activate_script"; then
+                ok "Successfully activated datascience environment"
+                export USING_DATASCIENCE_ENV=1
+
+                # Show environment info
+                if command -v python &>/dev/null; then
+                    local py_version=$(python --version 2>&1 | cut -d' ' -f2)
+                    log "Using Python $py_version from datascience environment"
+                fi
+            else
+                warn "Failed to activate datascience environment, continuing with system Python"
+            fi
+        else
+            log "User declined to use datascience environment"
+        fi
+    else
+        log "No datascience environment found at $custom_env_activate_script"
+    fi
+}
