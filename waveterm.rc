@@ -178,6 +178,24 @@ fi
 
 # Add your customizations below this line
 
+# ============================================================
+# Meteor Lake C Toolchain - GCC 13.2.0
+# ============================================================
+if [ -f /home/john/c-toolchain/activate-enhanced.sh ]; then
+    source /home/john/c-toolchain/activate-enhanced.sh
+elif [ -f /home/john/c-toolchain/activate.sh ]; then
+    source /home/john/c-toolchain/activate.sh
+fi
+
+# Quick aliases
+alias mgcc='meteor-gcc 2>/dev/null || gcc'
+alias mprofile='meteor_profile 2>/dev/null || echo "Enhanced features not installed"'
+
+# Show toolchain info on login (optional)
+if command -v gcc &> /dev/null; then
+    echo "Toolchain: $(gcc --version | head -1)"
+fi
+
 # Silence module status messages
 export SENTINEL_QUIET_STATUS=1
 
