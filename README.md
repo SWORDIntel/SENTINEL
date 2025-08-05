@@ -82,3 +82,7 @@ Contributions are welcome! Please see the `CONTRIBUTING.md` file for more inform
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Disclaimer
+
+This shell environment is highly customized for a specific system and workflow. While it can serve as a template or inspiration, you will likely need to modify the configuration files, scripts, and paths to suit your own needs.

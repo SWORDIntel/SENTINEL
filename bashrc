@@ -632,6 +632,24 @@ export LD_LIBRARY_PATH="$HOME/datascience/mtl/lib:/usr/local/lib:$LD_LIBRARY_PAT
 # Activate data science environment by default (as in original)
 source ~/datascience/envs/dsenv/bin/activate 2>/dev/null || true
 
+# ============================================================
+# Meteor Lake C Toolchain - GCC 13.2.0
+# ============================================================
+if [ -f /home/john/c-toolchain/activate-enhanced.sh ]; then
+    source /home/john/c-toolchain/activate-enhanced.sh
+elif [ -f /home/john/c-toolchain/activate.sh ]; then
+    source /home/john/c-toolchain/activate.sh
+fi
+
+# Quick aliases
+alias mgcc='meteor-gcc 2>/dev/null || gcc'
+alias mprofile='meteor_profile 2>/dev/null || echo "Enhanced features not installed"'
+
+# Show toolchain info on login (optional)
+if command -v gcc &> /dev/null; then
+    echo "Toolchain: $(gcc --version | head -1)"
+fi
+
 # ============================================================================
 # SECTION 11: POSTCUSTOM LOADING (LAST)
 # ============================================================================
