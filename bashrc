@@ -2,10 +2,9 @@
 # MINIMAL BASHRC with proper organization and no duplicates
 # Version: 2.1 - With AI/NPU Stack Integration
 
-# Determine SENTINEL_ROOT dynamically
-# This script is located at SENTINEL_ROOT/bashrc
-# So, SENTINEL_ROOT is the directory containing this script.
-export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SENTINEL_ROOT is expected to be set by the installer.
+# If it's not set, we'll fall back to a reasonable default.
+export SENTINEL_ROOT="${SENTINEL_ROOT:-$HOME/.sentinel}"
 
 # ============================================================================
 # SECTION 1: EARLY EXITS AND CORE SETUP

@@ -102,6 +102,11 @@ patch_bashrc() {
   if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
     if [[ -f "$sentinel_bashrc" ]]; then
       safe_cp "$sentinel_bashrc" "$rc"
+      {
+        echo ''
+        echo '# SENTINEL Framework Root'
+        echo "export SENTINEL_ROOT=\"${PROJECT_ROOT}\""
+      } >> "$rc"
       chmod 644 "$rc"
       ok "SENTINEL bashrc installed as $rc"
       log "Replaced $rc with SENTINEL bashrc at $(date)"
@@ -114,6 +119,7 @@ patch_bashrc() {
       {
         echo ''
         echo '# SENTINEL Framework Integration'
+        echo "export SENTINEL_ROOT=\"${PROJECT_ROOT}\""
         echo "if [[ -f \"\${HOME}/waveterm.rc\" ]]; then"
         echo "    # Safe loading mechanism that won't crash the terminal"
         echo "    source \"\${HOME}/waveterm.rc\" 2>/dev/null || echo \"[bashrc] Warning: Failed to load waveterm.rc\" >&2"
