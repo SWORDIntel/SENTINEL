@@ -6,7 +6,9 @@
 echo "=== SENTINEL Module Dependency Analysis ==="
 echo
 
-MODULES_DIR="/opt/github/SENTINEL/bash_modules.d"
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
+MODULES_DIR="${SENTINEL_ROOT}/bash_modules.d"
 ISSUES_FOUND=0
 
 # Colors for output
@@ -87,7 +89,7 @@ done
 # Check module load order
 echo -e "${BLUE}Checking module load order...${NC}"
 
-if [[ -f "/opt/github/SENTINEL/.bash_modules" ]]; then
+if [[ -f "${SENTINEL_ROOT}/.bash_modules" ]]; then
     echo "Module load order from .bash_modules:"
     
     # Check that dependencies are loaded before modules that need them
@@ -115,7 +117,7 @@ if [[ -f "/opt/github/SENTINEL/.bash_modules" ]]; then
         fi
         
         loaded_modules+=("$module")
-    done < "/opt/github/SENTINEL/.bash_modules"
+    done < "${SENTINEL_ROOT}/.bash_modules"
 else
     echo -e "${YELLOW}No .bash_modules file found${NC}"
 fi

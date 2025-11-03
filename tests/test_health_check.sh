@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Test script for SENTINEL health check module
 
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
 # Source the module system
-source /opt/github/SENTINEL/bash_modules
+source "${SENTINEL_ROOT}/bash_modules"
 
 # Enable health check module
 echo "Loading health check module..."

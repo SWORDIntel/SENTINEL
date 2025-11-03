@@ -42,6 +42,29 @@ The configuration file allows you to:
 
 For more information on the available configuration options, please see the `config.yaml.dist` file.
 
+## Path Handling and Customization
+
+To enhance flexibility and portability, hardcoded paths within SENTINEL's scripts have been replaced with dynamic resolution or configurable environment variables. This allows users to adapt the environment to their specific system layouts without modifying core scripts.
+
+Key environment variables for customization include:
+
+-   `SENTINEL_ROOT`: Automatically determined, but can be explicitly set to the project's root directory.
+-   `PYTHON_INSTALL_DIR`: Specifies the base directory for Python installations (e.g., `/opt/python`).
+-   `CODE_DIR`: Defines the default directory for code projects (e.g., `/opt/code`).
+-   `HOMEBREW_PATH`: Path to the Homebrew executable if installed in a non-standard location.
+-   `OPENVINO_SETUPVARS`: Path to the OpenVINO `setupvars.sh` script.
+-   `C_TOOLCHAIN_PATH`: Base directory for custom C/C++ toolchains.
+-   `WAVETERM_PATH`: Path to the Waveterm executable.
+-   `ZFS_BUILD_DIR`, `ZFS_AI_DIR`, `ZFS_CODE_DIR`, etc.: Base directories for ZFS-enforced paths, allowing customization of where specific command types are expected to run.
+
+These variables can be set in your `~/.bashrc.postcustom` or other shell configuration files. If not set, reasonable defaults (often `/opt/` based paths) are used.
+
+## Graceful Fallbacks
+
+Features dependent on specific hardware or external tools (e.g., ZFS, NPU) now include graceful fallbacks. If a required tool or hardware component is not detected, SENTINEL will either provide informative warnings, disable the related functionality, or use a default behavior without causing critical errors.
+
+For example, the `zfssnapshot` function now checks for the presence of the `zfs` command and will inform the user if it's not available, preventing script errors.
+
 ## Usage Examples
 
 ### Intelligent Command Completion

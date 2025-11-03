@@ -110,13 +110,15 @@ EOF
     chmod +x "$TEST_DIR/modules/"*.module
 }
 
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
 # Test 1: Module metadata extraction
 test_metadata_extraction() {
     info "Test 1: Module metadata extraction"
     
     # Source the parallel loader
     export SENTINEL_MODULES_PATH="$TEST_DIR/modules"
-    source /opt/github/SENTINEL/bash_modules.d/parallel_loader.module
+    source "${SENTINEL_ROOT}/bash_modules.d/parallel_loader.module"
     
     # Test metadata loading
     _load_module_metadata "module_a" "$TEST_DIR/modules/module_a.module"

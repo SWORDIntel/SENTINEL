@@ -4,8 +4,7 @@
 
 set -euo pipefail
 
-SENTINEL_BASE="${SENTINEL_BASE:-/opt/github/SENTINEL}"
-MODULES_DIR="$SENTINEL_BASE/bash_modules.d"
+MODULES_DIR="${SENTINEL_ROOT}/bash_modules.d"
 ENABLED_MODULES="$HOME/.enabled_modules"
 
 if [[ "${SENTINEL_QUIET_MODE:-0}" != "1" && "${SENTINEL_SUPPRESS_MODULE_MESSAGES:-0}" != "1" ]]; then
@@ -70,8 +69,8 @@ export SENTINEL_MODULE_CACHE_DIR="$HOME/.cache/sentinel/modules"
 # Use parallel loading if available
 if [[ -f "$HOME/.enabled_modules" ]] && grep -q "parallel_loader" "$HOME/.enabled_modules" 2>/dev/null; then
     # Source the parallel loader first
-    if [[ -f "/opt/github/SENTINEL/bash_modules.d/parallel_loader.module" ]]; then
-        source "/opt/github/SENTINEL/bash_modules.d/parallel_loader.module"
+    if [[ -f "${SENTINEL_ROOT}/bash_modules.d/parallel_loader.module" ]]; then
+        source "${SENTINEL_ROOT}/bash_modules.d/parallel_loader.module"
         # Use parallel loading for remaining modules
         parallel_load_modules "$HOME/.enabled_modules"
     fi
@@ -139,8 +138,8 @@ cat << 'USAGE'
    $ export SENTINEL_PARALLEL_LOADING=0
 
 For more information, see:
-  /opt/github/SENTINEL/docs/improvement_project/team1_performance/parallel_loading.md
-  /opt/github/SENTINEL/docs/improvement_project/team1_performance/caching.md
+  "${SENTINEL_ROOT}/docs/improvement_project/team1_performance/parallel_loading.md"
+  "${SENTINEL_ROOT}/docs/improvement_project/team1_performance/caching.md"
 
 USAGE
 

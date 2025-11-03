@@ -373,7 +373,7 @@ DEPENDENCIES:
     Optional: ${MODULE_OPTIONAL_DEPS[*]}
 
 For more information, see the module documentation in:
-    /opt/github/SENTINEL/.claude/guides/module_development.md
+    "${SENTINEL_ROOT:-$(dirname "$(dirname "${BASH_SOURCE[0]}")")}/.claude/guides/module_development.md"
 EOF
 }
 

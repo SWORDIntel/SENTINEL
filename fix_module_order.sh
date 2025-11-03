@@ -5,8 +5,10 @@
 echo "=== Fixing SENTINEL Module Load Order ==="
 echo
 
-MODULES_DIR="/opt/github/SENTINEL/bash_modules.d"
-MODULES_FILE="/opt/github/SENTINEL/.bash_modules"
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
+MODULES_DIR="${SENTINEL_ROOT}/bash_modules.d"
+MODULES_FILE="${SENTINEL_ROOT}/.bash_modules"
 
 # Create a dependency graph
 declare -A MODULE_DEPS

@@ -5,8 +5,10 @@
 echo "=== SENTINEL Clean Module Loading Test ==="
 echo
 
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
 # Set up environment
-export SENTINEL_MODULES_PATH="/opt/github/SENTINEL/bash_modules.d"
+export SENTINEL_MODULES_PATH="${SENTINEL_ROOT}/bash_modules.d"
 export MODULES_DIR="$SENTINEL_MODULES_PATH"
 export SENTINEL_DEBUG_MODULES=0
 export SENTINEL_QUIET_MODULES=0
@@ -14,7 +16,7 @@ export SENTINEL_SKIP_AUTO_LOAD=1  # Prevent automatic loading
 
 # Source only the module functions without loading any modules
 echo "Loading module system functions only..."
-source /opt/github/SENTINEL/bash_modules
+source "${SENTINEL_ROOT}/bash_modules"
 
 echo
 echo "=== Testing Individual Module Loading with Dependencies ==="

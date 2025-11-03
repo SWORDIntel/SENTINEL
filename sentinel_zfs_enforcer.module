@@ -13,12 +13,12 @@ SENTINEL_MODULE_DEPENDENCIES="logging config_cache" # Assumed to be handled by S
 # Directory mapping configuration: Maps target directories to regex patterns for commands.
 # Users can extend this array in their own config files if the SENTINEL framework supports module config overrides.
 declare -A ZFS_DIRECTORY_RULES=(
-    ["/opt/build"]="make|gcc|g\+\+|clang|cmake|\./configure|ninja|meson|cargo build|go build|mvn |gradle"
-    ["/opt/ai"]="python.*(train|model|eval|predict|dataset|inference)\.py|jupyter .*notebook|tensorboard|python -m torch|python -m tensorflow"
-    ["/opt/code"]="git|hg|svn|vim|nvim|emacs|code|nano|subl|gedit .*\.(c|cpp|h|hpp|py|js|ts|go|rs|java|scala|php|rb|pl|sh|md|txt)"
-    ["/opt/config"]="edit .*\.(conf|cfg|ini|yaml|yml|toml)|systemctl edit|crontab -e|visudo|manage-dotfiles" # 'edit' is a placeholder for common config editing
-    ["/opt/docker"]="docker build|docker-compose up|docker-compose build|dockerfile"
-    ["/opt/kernel"]="make (menuconfig|oldconfig|xconfig|bzImage|modules)|dkms|mkinitcpio|dracut"
+    ["${ZFS_BUILD_DIR:-/opt/build}"]="make|gcc|g\+\+|clang|cmake|\./configure|ninja|meson|cargo build|go build|mvn |gradle"
+    ["${ZFS_AI_DIR:-/opt/ai}"]="python.*(train|model|eval|predict|dataset|inference)\.py|jupyter .*notebook|tensorboard|python -m torch|python -m tensorflow"
+    ["${ZFS_CODE_DIR:-/opt/code}"]="git|hg|svn|vim|nvim|emacs|code|nano|subl|gedit .*\.(c|cpp|h|hpp|py|js|ts|go|rs|java|scala|php|rb|pl|sh|md|txt)"
+    ["${ZFS_CONFIG_DIR:-/opt/config}"]="edit .*\.(conf|cfg|ini|yaml|yml|toml)|systemctl edit|crontab -e|visudo|manage-dotfiles" # 'edit' is a placeholder for common config editing
+    ["${ZFS_DOCKER_DIR:-/opt/docker}"]="docker build|docker-compose up|docker-compose build|dockerfile"
+    ["${ZFS_KERNEL_DIR:-/opt/kernel}"]="make (menuconfig|oldconfig|xconfig|bzImage|modules)|dkms|mkinitcpio|dracut"
     # Add more rules as needed, e.g.:
     # ["/opt/data/ml"]="scp .*my_dataset.* /opt/data/ml/" # Example for data operations
 )

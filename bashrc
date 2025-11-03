@@ -2,6 +2,11 @@
 # MINIMAL BASHRC with proper organization and no duplicates
 # Version: 2.1 - With AI/NPU Stack Integration
 
+# Determine SENTINEL_ROOT dynamically
+# This script is located at SENTINEL_ROOT/bashrc
+# So, SENTINEL_ROOT is the directory containing this script.
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # ============================================================================
 # SECTION 1: EARLY EXITS AND CORE SETUP
 # ============================================================================
@@ -81,7 +86,7 @@ export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 [[ -d "$HOME/datascience" ]] && PATH="$HOME/datascience:$PATH"
 
 # Add common Python locations
-for python_dir in "/usr/local/bin" "/opt/python/bin" "${HOME}/.local/bin"; do
+for python_dir in "/usr/local/bin" "${PYTHON_INSTALL_DIR:-/opt/python}/bin" "${HOME}/.local/bin"; do
     if [[ -d "$python_dir" ]] && [[ ":$PATH:" != *":$python_dir:"* ]]; then
         export PATH="$python_dir:$PATH"
     fi
@@ -166,7 +171,7 @@ alias du='du -h'
 alias free='free -m'
 
 # Special aliases
-alias gradle='/usr/local/bin/gradle'
+
 alias @aliases='alias'
 
 # AI/ML Stack aliases
@@ -330,10 +335,10 @@ datascience() {
     export OV_NPU_PLATFORM=3800  # Meteor Lake
 
     # Change to code directory
-    if [ -d /opt/code ]; then
-        cd /opt/code
+    if [ -d "${CODE_DIR:-/opt/code}" ]; then
+        cd "${CODE_DIR:-/opt/code}"
     else
-        echo "Warning: Code directory /opt/code not found."
+        echo "Warning: Code directory ${CODE_DIR:-/opt/code} not found."
     fi
 
     # Get Python version safely
@@ -417,6 +422,12 @@ aibench() {
 
 # ZFS snapshot function
 zfssnapshot() {
+  # Check if zfs command is available
+  if ! command -v zfs &> /dev/null; then
+    echo "Error: zfs command not found. ZFS tools are not installed or not in PATH." >&2
+    return 1
+  fi
+
   # Check if a snapshot name prefix is provided
   if [ -z "$1" ]; then
     echo "Usage: zfssnapshot <snapshot_name_prefix>"
@@ -475,7 +486,7 @@ export SENTINEL_SKIP_AUTO_LOAD=1
 export _SENTINEL_MODULES_LOADED=0
 
 # Set MODULES_DIR for module installer scripts
-export MODULES_DIR="/opt/github/SENTINEL/bash_modules.d"
+export MODULES_DIR="${SENTINEL_ROOT}/bash_modules.d"
 
 # Create cache directories
 mkdir -p "${SENTINEL_CACHE_DIR}/config" "${SENTINEL_CACHE_DIR}/modules" 2>/dev/null || true
@@ -494,7 +505,7 @@ safe_load_module_once() {
   fi
 
   # Find and load the module
-  for dir in "/opt/github/SENTINEL/bash_modules.d" "$HOME/bash_modules.d" "$HOME/.bash_modules.d" "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"; do
+  for dir in "${SENTINEL_ROOT}/bash_modules.d" "$HOME/bash_modules.d" "$HOME/.bash_modules.d" "$HOME/Documents/GitHub/SENTINEL/bash_modules.d"; do
     if [[ -f "$dir/${module}.module" ]]; then
       # Special cases
       [[ "$module" == "fzf" ]] && export SENTINEL_FZF_ENABLED=1
@@ -525,7 +536,7 @@ load_module() {
 
   # Find and load module
   local locations=(
-    "/opt/github/SENTINEL/bash_modules.d/${module_name}.module"
+    "${SENTINEL_ROOT}/bash_modules.d/${module_name}.module"
     "$HOME/bash_modules.d/${module_name}.module"
     "$HOME/.bash_modules.d/${module_name}.module"
     "$HOME/Documents/GitHub/SENTINEL/bash_modules.d/${module_name}.module"
@@ -572,7 +583,7 @@ fi
 
 # Source the main bash_modules file
 for bash_modules_path in \
-    "/opt/github/SENTINEL/bash_modules" \
+    "${SENTINEL_ROOT}/bash_modules" \
     "$HOME/Documents/GitHub/SENTINEL/bash_modules" \
     "$HOME/bash_modules"; do
   if [[ -f "$bash_modules_path" ]]; then
@@ -603,13 +614,13 @@ if [[ -f "$HOME/bash_functions.d/venv_helpers" ]]; then
 fi
 
 # Initialize Homebrew if available
-if [ -x "/home/linuxbrew/.linuxbrew/bin/brew" ]; then
-  eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+if [ -x "${HOMEBREW_PATH:-/home/linuxbrew/.linuxbrew/bin/brew}" ]; then
+  eval "$("${HOMEBREW_PATH:-/home/linuxbrew/.linuxbrew/bin/brew}" shellenv)"
 fi
 
 # OpenVINO 2025.2.0 Environment
-if [ -f /usr/local/setupvars.sh ]; then
-    source /usr/local/setupvars.sh
+if [ -f "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}" ]; then
+    source "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}"
 fi
 
 # Custom AI Stack Environment Setup
@@ -635,10 +646,10 @@ source ~/datascience/envs/dsenv/bin/activate 2>/dev/null || true
 # ============================================================
 # Meteor Lake C Toolchain - GCC 13.2.0
 # ============================================================
-if [ -f /home/john/c-toolchain/activate-enhanced.sh ]; then
-    source /home/john/c-toolchain/activate-enhanced.sh
-elif [ -f /home/john/c-toolchain/activate.sh ]; then
-    source /home/john/c-toolchain/activate.sh
+if [ -f "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate-enhanced.sh" ]; then
+    source "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate-enhanced.sh"
+elif [ -f "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate.sh" ]; then
+    source "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate.sh"
 fi
 
 # Quick aliases

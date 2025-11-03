@@ -15,9 +15,14 @@ export MAGENTA="\033[0;35m"
 export CYAN="\033[0;36m"
 export NC="\033[0m" # No Color
 
+# Determine SENTINEL_ROOT dynamically
+# This script is located at SENTINEL_ROOT/bash_modules
+# So, SENTINEL_ROOT is the directory containing this script.
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Module directory path - check multiple locations
-if [[ -d "/opt/github/SENTINEL/bash_modules.d" ]]; then
-    export SENTINEL_MODULES_PATH="/opt/github/SENTINEL/bash_modules.d"
+if [[ -d "${SENTINEL_ROOT}/bash_modules.d" ]]; then
+    export SENTINEL_MODULES_PATH="${SENTINEL_ROOT}/bash_modules.d"
 elif [[ -d "$HOME/Documents/GitHub/SENTINEL/bash_modules.d" ]]; then
     export SENTINEL_MODULES_PATH="$HOME/Documents/GitHub/SENTINEL/bash_modules.d"
 elif [[ -d "$HOME/bash_modules.d" ]]; then
@@ -41,9 +46,8 @@ declare -A SENTINEL_LAZY_MODULES
 declare -A SENTINEL_MODULE_LOADING_STRATEGY
 
 # Load lazy loading configuration if it exists
-if [[ -f "$SENTINEL_MODULES_PATH/lazy_loading.conf" ]]; then
-    source "$SENTINEL_MODULES_PATH/lazy_loading.conf"
-else
+    if [[ -f "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf" ]]; then
+        source "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf"else
     # Default list of core modules that should always be loaded eagerly
     SENTINEL_CORE_MODULES=(
         "blesh_installer"

@@ -2,11 +2,10 @@
 # SENTINEL Error Recovery and Graceful Degradation Test Suite
 # Tests circuit breakers, fallbacks, and degradation modes
 
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
 # Source required modules
-SENTINEL_MODULES_PATH="${SENTINEL_MODULES_PATH:-$HOME/.bash_modules.d}"
-if [[ ! -d "$SENTINEL_MODULES_PATH" ]]; then
-    SENTINEL_MODULES_PATH="/opt/github/SENTINEL/bash_modules.d"
-fi
+SENTINEL_MODULES_PATH="${SENTINEL_MODULES_PATH:-${SENTINEL_ROOT}/bash_modules.d}"
 
 # Load core modules
 source "${SENTINEL_MODULES_PATH}/logging.module" 2>/dev/null || {

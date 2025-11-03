@@ -5,15 +5,17 @@
 echo "=== SENTINEL Module Loading Test ==="
 echo
 
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
+
 # Set up environment
-export SENTINEL_MODULES_PATH="/opt/github/SENTINEL/bash_modules.d"
+export SENTINEL_MODULES_PATH="${SENTINEL_ROOT}/bash_modules.d"
 export MODULES_DIR="$SENTINEL_MODULES_PATH"
 export SENTINEL_DEBUG_MODULES=1
 export SENTINEL_QUIET_MODULES=0
 
 # Source the bash_modules loader
 echo "Loading module system..."
-source /opt/github/SENTINEL/bash_modules
+source "${SENTINEL_ROOT}/bash_modules"
 
 echo
 echo "=== Testing Module Dependencies ==="
