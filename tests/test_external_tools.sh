@@ -48,6 +48,8 @@ test_setup() {
     export SENTINEL_MCP_ENABLED=0
     
     # Source the module
+    source "$(dirname "$0")/../bash_modules.d/logging.module"
+    source "$(dirname "$0")/../bash_modules.d/config_cache.module"
     source "$(dirname "$0")/../bash_modules.d/external_tools.module"
 }
 
