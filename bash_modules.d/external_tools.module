@@ -113,7 +113,7 @@ EOF
 sentinel_tool_register() {
     local tool_name="$1"
     local tool_path="$2"
-    local metadata="${3:-{}}"
+    local metadata="${3:-{\}}"
     
     [[ -z "$tool_name" || -z "$tool_path" ]] && {
         sentinel_log_error "external_tools" "Tool name and path required for registration"
@@ -163,7 +163,14 @@ sentinel_tool_verify() {
     local tool_name=$(basename "$tool_path")
     
     # Check if tool is in allowed list
-    if [[ ! " $SENTINEL_TOOLS_ALLOWED_COMMANDS " =~ " $tool_name " ]]; then
+    local allowed=0
+    for cmd in $(echo "$SENTINEL_TOOLS_ALLOWED_COMMANDS" | tr "," " "); do
+        if [ "$cmd" = "$tool_name" ]; then
+            allowed=1
+            break
+        fi
+    done
+    if [ $allowed -eq 0 ]; then
         sentinel_log_warning "external_tools" "Tool not in allowed list: $tool_name"
         return 1
     fi
