@@ -1,44 +1,116 @@
-# Default configuration for the SENTINEL installer
-# Copy this file to config.yaml and modify it to your needs
+# SENTINEL Configuration File
+# This file centralizes all user-configurable settings for the SENTINEL environment.
+# You can copy this file to `config.yaml` and modify it to your needs.
 
-# Installer version
-installer_version: "2.4.0"
+# --- General Settings ---
+general:
+  # The root directory of the SENTINEL installation.
+  # It is recommended to let the installer set this.
+  sentinel_root: ""
+  # The directory for your data science projects.
+  sentinel_datascience_dir: "$HOME/datascience"
 
-# BLE.sh configuration
-blesh:
-    commit: "1234567890abcdef"
-    tag: "v0.3.4"
+# --- Performance Settings ---
+performance:
+  # Enable or disable lazy loading for development tools like pyenv, nvm, etc.
+  lazy_load: 1
+  # Enable or disable parallel loading of modules.
+  parallel_loading: 1
+  # The maximum number of parallel jobs to use for module loading.
+  parallel_max_jobs: 4
 
-# Python configuration
-python:
-    enable_tensorflow: 0
+# --- Security Settings ---
+security:
+  # Enable or disable HMAC verification of module integrity.
+  module_verify: 1
+  # A comma-separated list of allowed commands for the external tools module.
+  tools_allowed_commands: "git,docker,kubectl,terraform,ansible,mocktool,infotest"
+  # Secure logout settings
+  secure_bash_history: 1
+  secure_ssh_known_hosts: 0
+  secure_clean_cache: 1
+  secure_browser_cache: 0
+  secure_recent: 1
+  secure_vim_undo: 1
+  secure_clipboard: 1
+  clear_screen_on_logout: 1
+  # A comma-separated list of additional directories to secure on logout.
+  secure_dirs: ""
+  # A temporary workspace to be cleared on logout.
+  workspace_temp: ""
 
-# Shell configuration
-shell:
-    venv_auto: 1
-
-# Modules configuration
+# --- Module System Settings ---
 modules:
-    obfuscate: 1
-    fzf: 1
-    ml: 1
-    osint: 1
-    cybersec: 1
-    gitstar: 1
-    chat: 1
-    smallllm: 1
+  # Enable or disable debug mode for the module system.
+  debug: 0
+  # Enable or disable automatic loading of required modules.
+  autoload: 1
+  # Enable or disable caching of module paths and dependencies.
+  cache_enabled: 1
+  # A list of core modules that should always be loaded eagerly.
+  core_modules:
+    - blesh_installer
+    - autocomplete
+    - logging
+    - shell_security
+    - config_cache
+    - module_manager
+    - bash_logout
+  # A list of heavy modules that should be lazy loaded.
+  lazy_load_modules:
+    - sentinel_ml
+    - sentinel_ml_enhanced
+    - sentinel_osint
+    - sentinel_cybersec_ml
+    - sentinel_chat
+    - sentinel_gitstar
+    - sentinel_context
+    - sentinel_markov
+    - sentinel_smallllm
+    - hashcat
+    - obfuscate
 
-# Obfuscation configuration
+# --- Path Settings ---
+paths:
+  # The base directory for Python installations.
+  python_install_dir: "/opt/python"
+  # The default directory for code projects.
+  code_dir: "/opt/code"
+  # The path to the Homebrew executable.
+  homebrew_path: "/home/linuxbrew/.linuxbrew/bin/brew"
+  # The path to the OpenVINO setupvars.sh script.
+  openvino_setupvars: "/usr/local/setupvars.sh"
+  # The base directory for custom C/C++ toolchains.
+  c_toolchain_path: "/home/john/c-toolchain"
+  # The path to the Waveterm executable.
+  waveterm_path: ""
+  # ZFS-enforced paths
+  zfs_build_dir: "/opt/build"
+  zfs_ai_dir: "/opt/ai"
+  zfs_code_dir: "/opt/code"
+  zfs_config_dir: "/opt/config"
+  zfs_docker_dir: "/opt/docker"
+  zfs_kernel_dir: "/opt/kernel"
+
+# --- Obfuscation Settings ---
 obfuscation:
-    output_dir: "${HOME}/secure/obfuscated_files"
+  # Enable or disable the obfuscation module.
+  enabled: 1
+  # The output directory for obfuscated files.
+  output_dir: "$HOME/secure/obfuscated_files"
 
-# Hashcat configuration
+# --- Hashcat Settings ---
 hashcat:
-    bin: "/usr/bin/hashcat"
-    wordlists_dir: "/usr/share/wordlists"
-    output_dir: "${HOME}/.hashcat/cracked"
+  # The path to the hashcat binary.
+  bin: "/usr/bin/hashcat"
+  # The directory containing your wordlists.
+  wordlists_dir: "/usr/share/wordlists"
+  # The output directory for cracked hashes.
+  output_dir: "$HOME/.hashcat/cracked"
 
-# Distcc configuration
+# --- Distcc Settings ---
 distcc:
-    hosts: "localhost"
-    ccache_size: "5G"
+  # A space-separated list of distcc hosts.
+  hosts: "localhost"
+  # The size of the ccache.
+  ccache_size: "5G"

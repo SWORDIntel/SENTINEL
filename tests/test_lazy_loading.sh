@@ -5,7 +5,10 @@ echo "=== SENTINEL Module Lazy Loading Test ==="
 echo
 
 # Source the module system
-source /opt/github/SENTINEL/bash_modules
+export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${SENTINEL_ROOT}/bash_modules.d/module_manager.module"
+source "${SENTINEL_ROOT}/bash_modules"
+_load_enabled_modules
 
 echo "1. Checking lazy loading configuration..."
 echo "   Lazy loading enabled: ${SENTINEL_LAZY_LOADING_ENABLED:-1}"
