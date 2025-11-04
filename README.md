@@ -17,6 +17,7 @@ A hardened, optimized, security-focused shell environment for advanced users, re
   - [ZFS Snapshots](#zfs-snapshots)
   - [Module System](#module-system)
   - [Cybersecurity](#cybersecurity)
+  - [Script Helper](#script-helper)
 - [Usage Examples](#usage-examples)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -162,6 +163,10 @@ The `vault_integration.module` provides helper functions for interacting with Ha
 
 -   `vault_read <secret_path>`: Reads a secret from Vault.
 -   `vault_exec <secret_path> <command>`: Wraps a command and injects secrets as environment variables.
+
+### Script Helper
+
+The `script_helper.module` automatically makes scripts executable after they are created or edited. It wraps common text editors (`vim`, `nano`, `code`, `emacs`) and file operations (`cp`, `mv`) to check for a shebang (e.g., `#!/bin/bash`) and make the file executable if it has one.
 
 ## Usage Examples
 
