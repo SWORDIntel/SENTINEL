@@ -6,6 +6,11 @@
 # If it's not set, we'll fall back to a reasonable default.
 export SENTINEL_ROOT="${SENTINEL_ROOT:-$HOME/.sentinel}"
 
+# Load configuration from YAML file
+if [ -f "${SENTINEL_ROOT}/config.yaml" ]; then
+    eval "$(${HOME}/venv/bin/python ${SENTINEL_ROOT}/installer/config.py)"
+fi
+
 # ============================================================================
 # SECTION 1: EARLY EXITS AND CORE SETUP
 # ============================================================================

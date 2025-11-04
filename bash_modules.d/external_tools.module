@@ -113,6 +113,7 @@ EOF
 sentinel_tool_register() {
     local tool_name="$1"
     local tool_path="$2"
+    local metadata="${3:-'{}'}"
     local metadata="${3:-{\}}"
     
     [[ -z "$tool_name" || -z "$tool_path" ]] && {
