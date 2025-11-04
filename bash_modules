@@ -46,9 +46,25 @@ declare -A SENTINEL_LAZY_MODULES
 declare -A SENTINEL_MODULE_LOADING_STRATEGY
 
 # Load lazy loading configuration if it exists
+    if [[ -f "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf" ]]; then
+        source "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf";
+    fi
     # Default list of core modules that should always be loaded eagerly
 
     # Default list of heavy modules that should be lazy loaded
+    SENTINEL_LAZY_LOAD_MODULES=(
+        "sentinel_ml"
+        "sentinel_ml_enhanced"
+        "sentinel_osint"
+        "sentinel_cybersec_ml"
+        "sentinel_chat"
+        "sentinel_gitstar"
+        "sentinel_context"
+        "sentinel_markov"
+        "sentinel_smallllm"
+        "hashcat"
+        "obfuscate"
+    )
 
 # Initialize modules directory if it doesn't exist
 if [[ ! -d "$SENTINEL_MODULES_PATH" ]]; then

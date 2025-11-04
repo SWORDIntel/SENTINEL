@@ -22,3 +22,7 @@ fi
 if [ $DRY_RUN -eq 0 ]; then
     source "${PROJECT_ROOT}/installer/lib/finalize.sh"
 fi
+source "${PROJECT_ROOT}/installer/lib/install_core.sh"
+
+# Source the finalization script
+source "${PROJECT_ROOT}/installer/lib/finalize.sh"
