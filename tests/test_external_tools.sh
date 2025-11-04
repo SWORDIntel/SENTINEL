@@ -38,16 +38,20 @@ source "$(dirname "$0")/test_framework.sh" 2>/dev/null || {
 
 # Test setup
 test_setup() {
+    set -x
     # Create test directory
     export SENTINEL_TOOLS_DIR="/tmp/sentinel_tools_test_$$"
     export SENTINEL_TOOLS_REGISTRY="$SENTINEL_TOOLS_DIR/registry.json"
     export SENTINEL_TOOLS_SANDBOX_DIR="$SENTINEL_TOOLS_DIR/sandbox"
     export SENTINEL_TOOLS_PLUGINS_DIR="$SENTINEL_TOOLS_DIR/plugins"
+    export SENTINEL_TOOLS_ALLOWED_COMMANDS="git,docker,kubectl,terraform,ansible,mocktool,infotest"
     
     # Disable MCP for testing
     export SENTINEL_MCP_ENABLED=0
     
     # Source the module
+    source "$(dirname "$0")/../bash_modules.d/logging.module"
+    source "$(dirname "$0")/../bash_modules.d/config_cache.module"
     source "$(dirname "$0")/../bash_modules.d/external_tools.module"
 }
 
@@ -96,13 +100,13 @@ test_tool_registration() {
     test_case "tool registration"
     
     # Create a mock tool
-    local mock_tool="/tmp/mock_tool_$$"
+    local mock_tool="/tmp/mocktool"
     echo '#!/bin/bash' > "$mock_tool"
     echo 'echo "mock tool"' >> "$mock_tool"
     chmod +x "$mock_tool"
     
     # Register the tool
-    if sentinel_tool_register "mocktool" "$mock_tool" '{"type": "test"}' >/dev/null 2>&1; then
+    if sentinel_tool_register "mocktool" "$mock_tool" '{"type":"test"}'; then
         # Check if registered
         local registered=$(jq -r '.tools.mocktool.path' "$SENTINEL_TOOLS_REGISTRY" 2>/dev/null)
         if [[ "$registered" == "$mock_tool" ]]; then
@@ -169,11 +173,11 @@ test_tool_info() {
     test_case "tool info retrieval"
     
     # Register a test tool first
-    local mock_tool="/tmp/mock_info_$$"
+    local mock_tool="/tmp/infotest"
     touch "$mock_tool"
     chmod +x "$mock_tool"
     
-    sentinel_tool_register "infotest" "$mock_tool" '{"type": "test"}' >/dev/null 2>&1
+    sentinel_tool_register "infotest" "$mock_tool" '{"type":"test"}' >/dev/null 2>&1
     
     local info=$(sentinel_tool_info "infotest")
     if [[ -n "$info" ]] && [[ "$info" != *"error"* ]]; then

@@ -8,6 +8,12 @@ SENTINEL_MODULE_DESCRIPTION="Enforces ZFS directory conventions for commands"
 SENTINEL_MODULE_VERSION="1.0.0"
 SENTINEL_MODULE_DEPENDENCIES="logging config_cache" # Assumed to be handled by SENTINEL framework
 
+# Check for ZFS command
+if ! command -v zfs &> /dev/null; then
+    export ZFS_ENFORCER_ENABLED=0
+    return 0
+fi
+
 # --- Configuration ---
 
 # Directory mapping configuration: Maps target directories to regex patterns for commands.

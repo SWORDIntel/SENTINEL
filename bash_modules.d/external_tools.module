@@ -113,7 +113,7 @@ EOF
 sentinel_tool_register() {
     local tool_name="$1"
     local tool_path="$2"
-    local metadata="${3:-{}}"
+    local metadata="${3:-'{}'}"
     
     [[ -z "$tool_name" || -z "$tool_path" ]] && {
         sentinel_log_error "external_tools" "Tool name and path required for registration"
@@ -163,7 +163,14 @@ sentinel_tool_verify() {
     local tool_name=$(basename "$tool_path")
     
     # Check if tool is in allowed list
-    if [[ ! " $SENTINEL_TOOLS_ALLOWED_COMMANDS " =~ " $tool_name " ]]; then
+    local allowed=0
+    for cmd in $(echo "$SENTINEL_TOOLS_ALLOWED_COMMANDS" | tr "," " "); do
+        if [ "$cmd" = "$tool_name" ]; then
+            allowed=1
+            break
+        fi
+    done
+    if [ $allowed -eq 0 ]; then
         sentinel_log_warning "external_tools" "Tool not in allowed list: $tool_name"
         return 1
     fi
@@ -196,8 +203,15 @@ TOOL_PATH="TOOL_PATH_PLACEHOLDER"
 TOOL_NAME="TOOL_NAME_PLACEHOLDER"
 
 # Load SENTINEL security functions
-if [[ -f "$HOME/.sentinel/modules/shell_security.module" ]]; then
-    source "$HOME/.sentinel/modules/shell_security.module"
+_sentinel_root="${SENTINEL_ROOT:-$HOME/.sentinel}"
+_security_module_path=""
+if [[ -f "$_sentinel_root/bash_modules.d/shell_security.module" ]]; then
+    _security_module_path="$_sentinel_root/bash_modules.d/shell_security.module"
+elif [[ -f "$HOME/bash_modules.d/shell_security.module" ]]; then
+    _security_module_path="$HOME/bash_modules.d/shell_security.module"
+fi
+if [[ -n "$_security_module_path" ]]; then
+    source "$_security_module_path"
 fi
 
 # Pre-execution checks
