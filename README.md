@@ -16,6 +16,8 @@ A hardened, optimized, security-focused shell environment for advanced users, re
   - [AI/ML Stack](#aiml-stack)
   - [ZFS Snapshots](#zfs-snapshots)
   - [Module System](#module-system)
+  - [Cybersecurity](#cybersecurity)
+  - [Script Helper](#script-helper)
 - [Usage Examples](#usage-examples)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -134,6 +136,37 @@ SENTINEL's functionality is organized into a modular system that allows you to e
 -   `module_disable <module_name>`: Disables a module.
 -   `module_list`: Lists all available modules and their status.
 -   `module_sign <module_name>`: Signs a module with an HMAC signature for integrity verification.
+
+### Cybersecurity
+
+SENTINEL includes a set of modules designed to streamline security operations.
+
+#### AWS Security
+
+The `aws_security.module` provides helper functions and aliases for AWS security operations.
+
+-   `assume_role <role_arn> [role_session_name]`: Assumes an IAM role and exports the temporary credentials.
+-   `aws-whoami`: An alias for `aws sts get-caller-identity`.
+-   `aws-list-users`: An alias for `aws iam list-users`.
+-   `aws-list-roles`: An alias for `aws iam list-roles`.
+-   `aws-access-key-summary`: An alias for `aws iam get-account-summary | grep AccessKeys`.
+
+#### Docker Security
+
+The `docker_security.module` provides helper functions for Docker security operations.
+
+-   `scan_image <image_name>`: Scans a Docker image for vulnerabilities using `trivy`.
+
+#### Vault Integration
+
+The `vault_integration.module` provides helper functions for interacting with HashiCorp Vault.
+
+-   `vault_read <secret_path>`: Reads a secret from Vault.
+-   `vault_exec <secret_path> <command>`: Wraps a command and injects secrets as environment variables.
+
+### Script Helper
+
+The `script_helper.module` automatically makes scripts executable after they are created or edited. It wraps common text editors (`vim`, `nano`, `code`, `emacs`) and file operations (`cp`, `mv`) to check for a shebang (e.g., `#!/bin/bash`) and make the file executable if it has one.
 
 ## Usage Examples
 

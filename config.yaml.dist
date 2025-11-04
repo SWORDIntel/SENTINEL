@@ -69,6 +69,10 @@ modules:
     - sentinel_smallllm
     - hashcat
     - obfuscate
+    - aws_security
+    - docker_security
+    - vault_integration
+    - script_helper
 
 # --- Path Settings ---
 paths:
