@@ -46,6 +46,9 @@ declare -A SENTINEL_LAZY_MODULES
 declare -A SENTINEL_MODULE_LOADING_STRATEGY
 
 # Load lazy loading configuration if it exists
+    if [[ -f "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf" ]]; then
+        source "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf";
+    fi
     # Default list of core modules that should always be loaded eagerly
     SENTINEL_CORE_MODULES=(
         "blesh_installer"
