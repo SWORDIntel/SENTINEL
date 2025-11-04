@@ -2,10 +2,9 @@
 # MINIMAL BASHRC with proper organization and no duplicates
 # Version: 2.1 - With AI/NPU Stack Integration
 
-# Determine SENTINEL_ROOT dynamically
-# This script is located at SENTINEL_ROOT/bashrc
-# So, SENTINEL_ROOT is the directory containing this script.
-export SENTINEL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# SENTINEL_ROOT is expected to be set by the installer.
+# If it's not set, we'll fall back to a reasonable default.
+export SENTINEL_ROOT="${SENTINEL_ROOT:-$HOME/.sentinel}"
 
 # ============================================================================
 # SECTION 1: EARLY EXITS AND CORE SETUP
@@ -48,6 +47,9 @@ export VISUAL="vim"
 export PAGER="less"
 export LESS="-R"
 
+#SENTINEL-specific directories
+export SENTINEL_DATASCIENCE_DIR="${SENTINEL_DATASCIENCE_DIR:-$HOME/datascience}"
+
 # ============================================================================
 # SECTION 3: PATH MANAGEMENT
 # ============================================================================
@@ -82,8 +84,8 @@ export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 [[ -d "$HOME/go/go/bin" ]] && PATH="$HOME/go/go/bin:$PATH"
 
 # Add custom AI/ML build paths
-[[ -d "$HOME/datascience/mtl/bin" ]] && PATH="$HOME/datascience/mtl/bin:$PATH"
-[[ -d "$HOME/datascience" ]] && PATH="$HOME/datascience:$PATH"
+[[ -d "$SENTINEL_DATASCIENCE_DIR/mtl/bin" ]] && PATH="$SENTINEL_DATASCIENCE_DIR/mtl/bin:$PATH"
+[[ -d "$SENTINEL_DATASCIENCE_DIR" ]] && PATH="$SENTINEL_DATASCIENCE_DIR:$PATH"
 
 # Add common Python locations
 for python_dir in "/usr/local/bin" "${PYTHON_INSTALL_DIR:-/opt/python}/bin" "${HOME}/.local/bin"; do
@@ -175,16 +177,16 @@ alias free='free -m'
 alias @aliases='alias'
 
 # AI/ML Stack aliases
-alias ai-env='source ~/datascience/activate_ai_env.sh'
-alias npu-test='python ~/datascience/test_custom_openvino_npu.py'
-alias ai-bench='python ~/datascience/benchmark_ai_stack.py'
-alias numpy-p='~/datascience/numpy_select.py p'
-alias numpy-e='~/datascience/numpy_select.py e'
-alias numpy-auto='~/datascience/numpy_select.py auto'
+alias ai-env='source $SENTINEL_DATASCIENCE_DIR/activate_ai_env.sh'
+alias npu-test='python $SENTINEL_DATASCIENCE_DIR/test_custom_openvino_npu.py'
+alias ai-bench='python $SENTINEL_DATASCIENCE_DIR/benchmark_ai_stack.py'
+alias numpy-p='$SENTINEL_DATASCIENCE_DIR/numpy_select.py p'
+alias numpy-e='$SENTINEL_DATASCIENCE_DIR/numpy_select.py e'
+alias numpy-auto='$SENTINEL_DATASCIENCE_DIR/numpy_select.py auto'
 
 # Benchmark shortcuts
-alias bench-p='~/datascience/numpy_select.py p ~/datascience/benchmark_ai_stack.py'
-alias bench-e='~/datascience/numpy_select.py e ~/datascience/benchmark_ai_stack.py'
+alias bench-p='$SENTINEL_DATASCIENCE_DIR/numpy_select.py p $SENTINEL_DATASCIENCE_DIR/benchmark_ai_stack.py'
+alias bench-e='$SENTINEL_DATASCIENCE_DIR/numpy_select.py e $SENTINEL_DATASCIENCE_DIR/benchmark_ai_stack.py'
 alias bench-both='echo "[P-Core Benchmark]" && bench-p && echo -e "\n[E-Core Benchmark]" && bench-e'
 
 # NPU monitoring
@@ -300,10 +302,10 @@ datascience() {
     echo "Activating optimized data science environment..."
 
     # Activate virtual environment
-    if [ -f ~/datascience/envs/dsenv/bin/activate ]; then
-        source ~/datascience/envs/dsenv/bin/activate
+    if [ -f $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate ]; then
+        source $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate
     else
-        echo "Warning: Data science virtual environment not found at ~/datascience/envs/dsenv/bin/activate"
+        echo "Warning: Data science virtual environment not found at $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate"
         return 1
     fi
 
@@ -325,14 +327,16 @@ datascience() {
     export RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C lto=fat"
 
     # Custom AI/ML library paths
-    export LD_LIBRARY_PATH="$HOME/datascience/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
-    export PYTHONPATH="$HOME/datascience/mtl/lib/python3.13/site-packages:$PYTHONPATH"
+    export LD_LIBRARY_PATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
+    export PYTHONPATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib/python3.13/site-packages:$PYTHONPATH"
 
     # NPU environment
-    export ZE_ENABLE_NPU_DRIVER=1
-    export NEO_CACHE_PERSISTENT=1
-    export OV_NPU_COMPILER_TYPE=DRIVER
-    export OV_NPU_PLATFORM=3800  # Meteor Lake
+    if [ -e /dev/accel/accel0 ]; then
+        export ZE_ENABLE_NPU_DRIVER=1
+        export NEO_CACHE_PERSISTENT=1
+        export OV_NPU_COMPILER_TYPE=DRIVER
+        export OV_NPU_PLATFORM=3800  # Meteor Lake
+    fi
 
     # Change to code directory
     if [ -d "${CODE_DIR:-/opt/code}" ]; then
@@ -372,23 +376,29 @@ datascience() {
 # AI Stack Test Function
 aitest() {
     echo "=== AI Stack Test ==="
-    echo "[1] NPU Status Check"
-    ls -la /dev/accel/accel0 2>/dev/null || echo "NPU device not found"
-    lsmod | grep intel_vpu || echo "Intel VPU module not loaded"
-    
-    echo -e "\n[2] Library Check"
-    echo -n "Custom Level Zero: "
-    [ -f "$HOME/datascience/mtl/lib/libze_loader.so" ] && echo "Found" || echo "Not found"
-    echo -n "NPU Plugin: "
-    [ -f "$HOME/datascience/mtl/lib/libze_intel_npu.so" ] && echo "Found" || echo "Not found"
+    if [ -e /dev/accel/accel0 ]; then
+        echo "[1] NPU Status Check"
+        ls -la /dev/accel/accel0 2>/dev/null || echo "NPU device not found"
+        lsmod | grep intel_vpu || echo "Intel VPU module not loaded"
+
+        echo -e "\n[2] Library Check"
+        echo -n "Custom Level Zero: "
+        [ -f "$SENTINEL_DATASCIENCE_DIR/mtl/lib/libze_loader.so" ] && echo "Found" || echo "Not found"
+        echo -n "NPU Plugin: "
+        [ -f "$SENTINEL_DATASCIENCE_DIR/mtl/lib/libze_intel_npu.so" ] && echo "Found" || echo "Not found"
+    else
+        echo "[1] NPU Status Check: NPU device not found"
+    fi
     
     echo -e "\n[3] Python Environment"
     python --version
     python -c "import numpy; print(f'NumPy: {numpy.__version__}')" 2>/dev/null || echo "NumPy not found"
     python -c "import openvino; print(f'OpenVINO: {openvino.__version__}')" 2>/dev/null || echo "OpenVINO not found"
     
-    echo -e "\n[4] NPU Detection"
-    python -c "import openvino as ov; print(f'Devices: {ov.Core().available_devices}')" 2>/dev/null || echo "Failed to detect devices"
+    if [ -e /dev/accel/accel0 ]; then
+        echo -e "\n[4] NPU Detection"
+        python -c "import openvino as ov; print(f'Devices: {ov.Core().available_devices}')" 2>/dev/null || echo "Failed to detect devices"
+    fi
 }
 
 # Benchmark helper function
@@ -398,18 +408,18 @@ aibench() {
     case "$mode" in
         p|P|pcores)
             echo "[Running P-Core Benchmark (AVX-512)]"
-            ~/datascience/numpy_select.py p ~/datascience/benchmark_ai_stack.py
+            $SENTINEL_DATASCIENCE_DIR/numpy_select.py p $SENTINEL_DATASCIENCE_DIR/benchmark_ai_stack.py
             ;;
         e|E|ecores)
             echo "[Running E-Core Benchmark (AVX2)]"
-            ~/datascience/numpy_select.py e ~/datascience/benchmark_ai_stack.py
+            $SENTINEL_DATASCIENCE_DIR/numpy_select.py e $SENTINEL_DATASCIENCE_DIR/benchmark_ai_stack.py
             ;;
         both|all)
             echo "[Running Both P-Core and E-Core Benchmarks]"
             echo "=== P-Core (AVX-512) ==="
-            ~/datascience/numpy_select.py p ~/datascience/benchmark_ai_stack.py
+            $SENTINEL_DATASCIENCE_DIR/numpy_select.py p $SENTINEL_DATASCIENCE_DIR/benchmark_ai_stack.py
             echo -e "\n=== E-Core (AVX2) ==="
-            ~/datascience/numpy_select.py e ~/datascience/benchmark_ai_stack.py
+            $SENTINEL_DATASCIENCE_DIR/numpy_select.py e $SENTINEL_DATASCIENCE_DIR/benchmark_ai_stack.py
             ;;
         *)
             echo "Usage: aibench [p|e|both]"
@@ -624,24 +634,26 @@ if [ -f "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}" ]; then
 fi
 
 # Custom AI Stack Environment Setup
-if [ -f ~/datascience/mtl/setup_npu_env.sh ]; then
-    source ~/datascience/mtl/setup_npu_env.sh 2>/dev/null || true
+if [ -f $SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh ]; then
+    source $SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh 2>/dev/null || true
 fi
 
-if [ -f ~/datascience/mtl/setup_openvino.sh ]; then
-    source ~/datascience/mtl/setup_openvino.sh 2>/dev/null || true
+if [ -f $SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh ]; then
+    source $SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh 2>/dev/null || true
 fi
 
 # Set NPU environment variable for Meteor Lake
-export ZE_ENABLE_NPU_DRIVER=1
-export NEO_CACHE_PERSISTENT=1
-export OV_NPU_COMPILER_TYPE=DRIVER
+if [ -e /dev/accel/accel0 ]; then
+    export ZE_ENABLE_NPU_DRIVER=1
+    export NEO_CACHE_PERSISTENT=1
+    export OV_NPU_COMPILER_TYPE=DRIVER
+fi
 
 # Add Level Zero library path
-export LD_LIBRARY_PATH="$HOME/datascience/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
 
 # Activate data science environment by default (as in original)
-source ~/datascience/envs/dsenv/bin/activate 2>/dev/null || true
+source $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate 2>/dev/null || true
 
 # ============================================================
 # Meteor Lake C Toolchain - GCC 13.2.0

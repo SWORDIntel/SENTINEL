@@ -46,8 +46,6 @@ declare -A SENTINEL_LAZY_MODULES
 declare -A SENTINEL_MODULE_LOADING_STRATEGY
 
 # Load lazy loading configuration if it exists
-    if [[ -f "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf" ]]; then
-        source "${SENTINEL_ROOT}/bash_modules.d/lazy_loading.conf"else
     # Default list of core modules that should always be loaded eagerly
     SENTINEL_CORE_MODULES=(
         "blesh_installer"
@@ -73,7 +71,6 @@ declare -A SENTINEL_MODULE_LOADING_STRATEGY
         "hashcat"
         "obfuscate"
     )
-fi
 
 # Initialize modules directory if it doesn't exist
 if [[ ! -d "$SENTINEL_MODULES_PATH" ]]; then
@@ -566,11 +563,11 @@ _load_enabled_modules() {
     
     [[ "$debug_mode" == "1" ]] && echo "DEBUG: Loading enabled modules from $HOME/.enabled_modules" >&2 2>/dev/null || true
     
-    # Load from ~/.enabled_modules with error handling (changed from .bash_modules)
-    if [[ -f "$HOME/.enabled_modules" ]]; then
+    # Load from ~/.bash_modules with error handling
+    if [[ -f "$HOME/.bash_modules" ]]; then
         # Protect against file reading errors
         local module_list=""
-        module_list=$(cat "$HOME/.enabled_modules" 2>/dev/null) || {
+        module_list=$(cat "$HOME/.bash_modules" 2>/dev/null) || {
             # If file read fails, use a minimal safe approach
             ewarn "Could not read modules list, loading essential modules only" 2>/dev/null || true
             # Removed autocomplete from critical modules as it causes terminal crashes
@@ -591,7 +588,11 @@ _load_enabled_modules() {
             
             # Enable the module if it's not already loaded - with error handling
             if [[ "${SENTINEL_LOADED_MODULES[$module_name]:-}" != "1" ]]; then
-                module_enable "$module_name" "0" "startup" 2>/dev/null || true
+                if is_lazy_load_module "$module_name"; then
+                    create_lazy_proxy "$module_name" "$SENTINEL_MODULES_PATH/$module_name.module"
+                else
+                    module_enable "$module_name" "0" "startup" 2>/dev/null || true
+                fi
             fi
         done
     else
