@@ -26,6 +26,8 @@ def export_variables(config):
                     var_name = f"BLESH_{key.upper()}"
                 elif section == 'terminal':
                     var_name = f"TERMINAL_{key.upper()}"
+                elif section == 'shell':
+                    var_name = f"SHELL_{key.upper()}"
 
                 # Replace ~ with $HOME for shell compatibility
                 if isinstance(value, str):

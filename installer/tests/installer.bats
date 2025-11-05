@@ -41,13 +41,25 @@ teardown() {
 
 @test "installer.sh should select kitty terminal" {
   command -v yq >/dev/null 2>&1 || skip "yq not installed"
-  run bash -c "echo '1' | $BATS_TEST_DIRNAME/../install.sh"
+  run bash -c "$BATS_TEST_DIRNAME/../install.sh <<<'1'"
   [ "$status" -eq 0 ]
   grep -q "preferred: kitty" "$SENTINEL_CONFIG_FILE"
 }
 
 @test "installer.sh should select default terminal" {
-    run bash -c "echo '3' | $BATS_TEST_DIRNAME/../install.sh"
+    run bash -c "$BATS_TEST_DIRNAME/../install.sh <<<'3'"
     [ "$status" -eq 0 ]
     grep -q "preferred: default" "$SENTINEL_CONFIG_FILE"
+}
+
+@test "installer.sh should select zsh shell" {
+    run bash -c "$BATS_TEST_DIRNAME/../install.sh <<<'2'"
+    [ "$status" -eq 0 ]
+    grep -q "preferred: zsh" "$SENTINEL_CONFIG_FILE"
+}
+
+@test "installer.sh should select bash shell" {
+    run bash -c "$BATS_TEST_DIRNAME/../install.sh <<<'1'"
+    [ "$status" -eq 0 ]
+    grep -q "preferred: bash" "$SENTINEL_CONFIG_FILE"
 }

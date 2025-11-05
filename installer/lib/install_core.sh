@@ -6,6 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../bash.sh"
 # Prompt for custom user environment
 prompt_custom_env
 prompt_terminal_selection
+prompt_shell_selection
 
 # Setup directories
 setup_directories

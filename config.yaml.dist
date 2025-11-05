@@ -125,6 +125,12 @@ terminal:
   # Supported values: "kitty", "xfce4-terminal", "default"
   preferred: "default"
 
+# --- Shell Settings ---
+shell:
+  # The preferred shell to use.
+  # Supported values: "bash", "zsh"
+  preferred: "bash"
+
 # --- BLE.sh Settings ---
 ble:
   # The commit hash to use when cloning BLE.sh.

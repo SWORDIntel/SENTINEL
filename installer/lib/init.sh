@@ -32,6 +32,8 @@ source "${PROJECT_ROOT}/installer/blesh.sh"
 source "${PROJECT_ROOT}/installer/bash.sh"
 # shellcheck source=installer/terminal.sh
 source "${PROJECT_ROOT}/installer/terminal.sh"
+# shellcheck source=installer/shell.sh
+source "${PROJECT_ROOT}/installer/shell.sh"
 
 # Ensure logs directory exists before any logging
 if [[ ! -d "$LOG_DIR" ]]; then

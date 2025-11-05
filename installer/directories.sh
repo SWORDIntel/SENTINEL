@@ -70,15 +70,26 @@ EOF
         install -m 644 /dev/null "$wave_config_yaml"
 
         local shell_program
+        if [[ "$SHELL_PREFERRED" == "zsh" ]]; then
+            if ! command -v zsh &> /dev/null; then
+                step "Zsh not found. Installing..."
+                sudo apt-get update && sudo apt-get install -y zsh
+            fi
+            shell_program="/bin/zsh"
+        else
+            shell_program="/bin/bash"
+        fi
+
+        local terminal_program
         case "$TERMINAL_PREFERRED" in
             kitty)
-                shell_program="/usr/bin/kitty"
+                terminal_program="/usr/bin/kitty"
                 ;;
             xfce4-terminal)
-                shell_program="/usr/bin/xfce4-terminal"
+                terminal_program="/usr/bin/xfce4-terminal"
                 ;;
             *)
-                shell_program="/bin/bash"
+                terminal_program="$shell_program"
                 ;;
         esac
 
@@ -96,7 +107,7 @@ terminal:
 
 # Shell configuration
 shell:
-  program: "${shell_program:-/bin/bash}"  # or /bin/zsh, /usr/bin/fish
+  program: "${terminal_program:-/bin/bash}"  # or /bin/zsh, /usr/bin/fish
   args: ["--login", "-i"]
 
   # Custom environment variables
