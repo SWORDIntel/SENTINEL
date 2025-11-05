@@ -168,6 +168,27 @@ copy_bash_modules() {
     fi
 }
 
+copy_bash_functions() {
+    if ! is_done "BASH_FUNCTIONS_COPIED"; then
+      step "Copying bash functions"
+
+      FUNCTIONS_SRC="${PROJECT_ROOT}/bash_functions.d"
+      FUNCTIONS_DST="${SENTINEL_INSTALL_DIR}/bash_functions.d"
+
+      if [[ -d "$FUNCTIONS_SRC" ]]; then
+        step "Copying bash functions from '${FUNCTIONS_SRC}/'"
+        rsync -a --delete "${FUNCTIONS_SRC}/" "${FUNCTIONS_DST}/"
+        chmod 700 "${FUNCTIONS_DST}"
+        find "${FUNCTIONS_DST}" -type f -exec chmod 600 {} \;
+        ok "Bash functions synced → ${FUNCTIONS_DST}"
+      else
+        warn "No bash_functions.d/ directory found – skipping function sync"
+      fi
+
+      mark_done "BASH_FUNCTIONS_COPIED"
+    fi
+}
+
 copy_shell_support_files() {
     if ! is_done "SHELL_SUPPORT_COPIED"; then
       step "Copying shell support files to HOME"

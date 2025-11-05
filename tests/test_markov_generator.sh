@@ -74,10 +74,17 @@ EOF
 
 # Check if Python and required packages are available
 check_python_deps() {
-    if ! command -v python3 &>/dev/null; then
-        log "${RED}Python 3 not found. Skipping tests.${NC}"
-        exit 1
+    if [[ -z "$SENTINEL_INSTALL_DIR" ]]; then
+        export SENTINEL_INSTALL_DIR="$HOME/.sentinel"
     fi
+
+    VENV_DIR="$SENTINEL_INSTALL_DIR/venv"
+    if [ ! -f "$VENV_DIR/bin/activate" ]; then
+        log "${YELLOW}Python venv not found. Running installer...${NC}"
+        bash "$ROOT_DIR/installer/install.sh" --non-interactive
+    fi
+
+    source "$VENV_DIR/bin/activate"
     
     if ! python3 -c "import markovify, numpy" &>/dev/null; then
         log "${YELLOW}Required Python packages not found. Some tests may fail.${NC}"

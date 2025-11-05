@@ -3,7 +3,7 @@
 
 setup_python_venv() {
     if is_done "PYTHON_VENV_READY"; then
-        if [[ -f "${HOME}/venv/bin/activate" ]]; then
+        if [[ -f "${VENV_DIR}/bin/activate" ]]; then
             ok "Python venv already exists"
             return
         else
@@ -11,7 +11,6 @@ setup_python_venv() {
         fi
     fi
     step "Setting up Python virtual environment and dependencies"
-    VENV_DIR="${HOME}/venv"
 
     # Ensure parent directory exists
     safe_mkdir "$(dirname "$VENV_DIR")"
@@ -136,7 +135,7 @@ prompt_custom_env() {
     fi
 
     step "Checking for user-defined custom Python environment"
-    local custom_env_activate_script="${HOME}/datascience/envs/dsenv/bin/activate"
+    local custom_env_activate_script="${SENTINEL_ROOT_DIR}/datascience/envs/dsenv/bin/activate"
 
     # Check if already in the datascience environment
     if [[ -n "${VIRTUAL_ENV:-}" ]] && [[ "$VIRTUAL_ENV" == *"datascience"* ]]; then
