@@ -38,3 +38,16 @@ teardown() {
   [ "$status" -eq 0 ]
   [ -f "$SENTINEL_INSTALL_DIR/blesh_loader.sh" ]
 }
+
+@test "installer.sh should select kitty terminal" {
+  command -v yq >/dev/null 2>&1 || skip "yq not installed"
+  run bash -c "echo '1' | $BATS_TEST_DIRNAME/../install.sh"
+  [ "$status" -eq 0 ]
+  grep -q "preferred: kitty" "$SENTINEL_CONFIG_FILE"
+}
+
+@test "installer.sh should select default terminal" {
+    run bash -c "echo '3' | $BATS_TEST_DIRNAME/../install.sh"
+    [ "$status" -eq 0 ]
+    grep -q "preferred: default" "$SENTINEL_CONFIG_FILE"
+}

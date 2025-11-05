@@ -119,6 +119,12 @@ distcc:
   # The size of the ccache.
   ccache_size: "5G"
 
+# --- Terminal Settings ---
+terminal:
+  # The preferred terminal to use.
+  # Supported values: "kitty", "xfce4-terminal", "default"
+  preferred: "default"
+
 # --- BLE.sh Settings ---
 ble:
   # The commit hash to use when cloning BLE.sh.

@@ -68,7 +68,21 @@ EOF
     if [[ ! -f "$wave_config_yaml" ]]; then
         step "Creating Wave terminal config.yaml"
         install -m 644 /dev/null "$wave_config_yaml"
-        cat > "$wave_config_yaml" <<'EOF'
+
+        local shell_program
+        case "$TERMINAL_PREFERRED" in
+            kitty)
+                shell_program="/usr/bin/kitty"
+                ;;
+            xfce4-terminal)
+                shell_program="/usr/bin/xfce4-terminal"
+                ;;
+            *)
+                shell_program="/bin/bash"
+                ;;
+        esac
+
+        cat > "$wave_config_yaml" <<EOF
 # ~/.config/wave/config.yaml
 # Main Wave Terminal Configuration
 
@@ -82,7 +96,7 @@ terminal:
 
 # Shell configuration
 shell:
-  program: "/bin/bash"  # or /bin/zsh, /usr/bin/fish
+  program: "${shell_program:-/bin/bash}"  # or /bin/zsh, /usr/bin/fish
   args: ["--login", "-i"]
 
   # Custom environment variables
