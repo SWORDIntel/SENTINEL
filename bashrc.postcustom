@@ -160,7 +160,10 @@ fi
 
 
 # Customizations from user request
-alias claude="/home/john/.claude/local/claude --dangerously-skip-permissions"
+CLAUDE_BIN="${CLAUDE_BIN:-${HOME}/.claude/local/claude}"
+if [[ -x "${CLAUDE_BIN}" ]]; then
+    alias claude="${CLAUDE_BIN} --dangerously-skip-permissions"
+fi
 
 export PATH=~/.npm-global/bin:$PATH
 export PATH="$HOME/bin:$PATH"
@@ -170,7 +173,7 @@ export PATH="$HOME/.local/share/gem/ruby/3.3.0/bin:$PATH"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-export ZFORGE_WORKSPACE=/home/john/zforge_workspace
+export ZFORGE_WORKSPACE="${ZFORGE_WORKSPACE:-${HOME}/zforge_workspace}"
 
 # Silence module status messages
 export SENTINEL_QUIET_STATUS=1

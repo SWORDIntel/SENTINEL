@@ -18,5 +18,13 @@ fi
 # Set the project root
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 
+# Locate the installer entrypoint dynamically
+INSTALLER_ENTRYPOINT="${PROJECT_ROOT}/installer/install.sh"
+if [[ ! -x "${INSTALLER_ENTRYPOINT}" ]]; then
+    echo "Installer entrypoint not found: ${INSTALLER_ENTRYPOINT}" >&2
+    echo "Ensure the installer directory is intact before retrying." >&2
+    exit 1
+fi
+
 # Call the main installer script
-bash "${PROJECT_ROOT}/installer/main.sh" "$@"
+bash "${INSTALLER_ENTRYPOINT}" "$@"
