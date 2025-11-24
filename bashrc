@@ -6,9 +6,20 @@
 # If it's not set, we'll fall back to a reasonable default.
 export SENTINEL_ROOT="${SENTINEL_ROOT:-$HOME/.sentinel}"
 
-# Load configuration from YAML file
+# Load configuration from YAML file using the first available Python
 if [ -f "${SENTINEL_ROOT}/config.yaml" ]; then
-    eval "$(${HOME}/venv/bin/python ${SENTINEL_ROOT}/installer/config.py)"
+    SENTINEL_PYTHON_BIN="${SENTINEL_PYTHON:-}"
+    if [ ! -x "${SENTINEL_PYTHON_BIN}" ]; then
+        SENTINEL_PYTHON_BIN="${HOME}/venv/bin/python"
+    fi
+
+    if [ ! -x "${SENTINEL_PYTHON_BIN}" ]; then
+        SENTINEL_PYTHON_BIN="$(command -v python3 || command -v python || true)"
+    fi
+
+    if [ -x "${SENTINEL_PYTHON_BIN}" ]; then
+        eval "$("${SENTINEL_PYTHON_BIN}" "${SENTINEL_ROOT}/installer/config.py")"
+    fi
 fi
 
 # ============================================================================
@@ -126,7 +137,7 @@ export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 [[ -d "$SENTINEL_DATASCIENCE_DIR" ]] && PATH="$SENTINEL_DATASCIENCE_DIR:$PATH"
 
 # Add common Python locations
-for python_dir in "/usr/local/bin" "${PYTHON_INSTALL_DIR:-/opt/python}/bin" "${HOME}/.local/bin"; do
+for python_dir in "/usr/local/bin" "${PYTHON_INSTALL_DIR:-${HOME}/.python}/bin" "${HOME}/.local/bin"; do
     if [[ -d "$python_dir" ]] && [[ ":$PATH:" != *":$python_dir:"* ]]; then
         export PATH="$python_dir:$PATH"
     fi
@@ -378,8 +389,8 @@ datascience() {
     echo "Activating optimized data science environment..."
 
     # Activate virtual environment
-    if [ -f $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate ]; then
-        source $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate
+    if [ -f "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate" ]; then
+        source "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate"
     else
         echo "Warning: Data science virtual environment not found at $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate"
         return 1
@@ -403,8 +414,27 @@ datascience() {
     export RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C lto=fat"
 
     # Custom AI/ML library paths
-    export LD_LIBRARY_PATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
-    export PYTHONPATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib/python3.13/site-packages:$PYTHONPATH"
+    for lib_dir in "$SENTINEL_DATASCIENCE_DIR/mtl/lib" "/usr/local/lib"; do
+        if [ -d "$lib_dir" ] && [[ ":${LD_LIBRARY_PATH:-}:" != *":$lib_dir:"* ]]; then
+            export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+        fi
+    done
+
+    local mtl_pythonpath="$SENTINEL_DATASCIENCE_DIR/mtl/lib"
+    if command -v python3 >/dev/null 2>&1; then
+        local py_rel="$(python3 - <<'PY'
+from sys import version_info
+print(f"python{version_info.major}.{version_info.minor}")
+PY
+        )"
+        if [ -n "$py_rel" ] && [ -d "$SENTINEL_DATASCIENCE_DIR/mtl/lib/${py_rel}/site-packages" ]; then
+            mtl_pythonpath="$SENTINEL_DATASCIENCE_DIR/mtl/lib/${py_rel}/site-packages"
+        fi
+    fi
+
+    if [ -d "$mtl_pythonpath" ]; then
+        export PYTHONPATH="$mtl_pythonpath:${PYTHONPATH:-}"
+    fi
 
     # NPU environment
     if [ -e /dev/accel/accel0 ]; then
@@ -415,10 +445,11 @@ datascience() {
     fi
 
     # Change to code directory
-    if [ -d "${CODE_DIR:-/opt/code}" ]; then
-        cd "${CODE_DIR:-/opt/code}"
+    local default_code_dir="${CODE_DIR:-${HOME}/code}"
+    if [ -d "${default_code_dir}" ]; then
+        cd "${default_code_dir}"
     else
-        echo "Warning: Code directory ${CODE_DIR:-/opt/code} not found."
+        echo "Warning: Code directory ${default_code_dir} not found."
     fi
 
     # Get Python version safely
@@ -521,8 +552,8 @@ zfssnapshot() {
   fi
 
   PREFIX="$1"
-  POOL_NAME="rpool"
-  DATASET_PATH="${POOL_NAME}/ROOT/LONENOMAD"
+  POOL_NAME="${ZFS_POOL_NAME:-rpool}"
+  DATASET_PATH="${ZFS_DATASET:-${POOL_NAME}/ROOT/LONENOMAD}"
   DATETIME=$(date +"%m-%d-%Y-%H%M")
   SNAPSHOT_NAME="${DATASET_PATH}@${PREFIX}${DATETIME}"
 
@@ -549,11 +580,14 @@ zfssnapshot() {
 
 # Bash completion with error handling
 if ! shopt -oq posix; then
-  if [[ -f /usr/share/bash-completion/bash_completion ]]; then
-    { source /usr/share/bash-completion/bash_completion; } 2>/dev/null || true
-  elif [[ -f /etc/bash_completion ]]; then
-    { source /etc/bash_completion; } 2>/dev/null || true
-  fi
+  for bc_file in \
+    "${BASH_COMPLETION_FILE:-}" \
+    "/usr/share/bash-completion/bash_completion" \
+    "/etc/bash_completion"; do
+    [[ -n "$bc_file" && -f "$bc_file" ]] || continue
+    { source "$bc_file"; } 2>/dev/null || true
+    break
+  done
 
   # Load personal completion settings if they exist
   if [[ -f ~/.bash_completion ]]; then
@@ -700,22 +734,29 @@ if [[ -f "$HOME/bash_functions.d/venv_helpers" ]]; then
 fi
 
 # Initialize Homebrew if available
-if [ -x "${HOMEBREW_PATH:-/home/linuxbrew/.linuxbrew/bin/brew}" ]; then
-  eval "$("${HOMEBREW_PATH:-/home/linuxbrew/.linuxbrew/bin/brew}" shellenv)"
+if command -v brew >/dev/null 2>&1; then
+  eval "$(brew shellenv)"
+elif [ -x "${HOMEBREW_PATH:-}" ]; then
+  eval "$("${HOMEBREW_PATH}" shellenv)"
 fi
 
 # OpenVINO 2025.2.0 Environment
-if [ -f "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}" ]; then
-    source "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}"
-fi
+for openvino_setup in "${OPENVINO_SETUPVARS:-}" \
+    "/opt/intel/openvino/setupvars.sh" \
+    "/usr/local/setupvars.sh"; do
+    if [ -n "$openvino_setup" ] && [ -f "$openvino_setup" ]; then
+        source "$openvino_setup"
+        break
+    fi
+done
 
 # Custom AI Stack Environment Setup
-if [ -f $SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh ]; then
-    source $SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh 2>/dev/null || true
+if [ -f "$SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh" ]; then
+    source "$SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh" 2>/dev/null || true
 fi
 
-if [ -f $SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh ]; then
-    source $SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh 2>/dev/null || true
+if [ -f "$SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh" ]; then
+    source "$SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh" 2>/dev/null || true
 fi
 
 # Set NPU environment variable for Meteor Lake
@@ -725,19 +766,25 @@ if [ -e /dev/accel/accel0 ]; then
     export OV_NPU_COMPILER_TYPE=DRIVER
 fi
 
-# Add Level Zero library path
-export LD_LIBRARY_PATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
+# Add Level Zero library path when available
+for lib_dir in "$SENTINEL_DATASCIENCE_DIR/mtl/lib" "/usr/local/lib"; do
+    if [ -d "$lib_dir" ] && [[ ":${LD_LIBRARY_PATH:-}:" != *":$lib_dir:"* ]]; then
+        export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+    fi
+done
 
 # Activate data science environment by default (as in original)
-source $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate 2>/dev/null || true
+if [ -f "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate" ]; then
+    source "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate" 2>/dev/null || true
+fi
 
 # ============================================================
 # Meteor Lake C Toolchain - GCC 13.2.0
 # ============================================================
-if [ -f "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate-enhanced.sh" ]; then
-    source "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate-enhanced.sh"
-elif [ -f "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate.sh" ]; then
-    source "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate.sh"
+if [ -f "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate-enhanced.sh" ]; then
+    source "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate-enhanced.sh"
+elif [ -f "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate.sh" ]; then
+    source "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate.sh"
 fi
 
 # Quick aliases
