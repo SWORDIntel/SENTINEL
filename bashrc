@@ -6,9 +6,20 @@
 # If it's not set, we'll fall back to a reasonable default.
 export SENTINEL_ROOT="${SENTINEL_ROOT:-$HOME/.sentinel}"
 
-# Load configuration from YAML file
+# Load configuration from YAML file using the first available Python
 if [ -f "${SENTINEL_ROOT}/config.yaml" ]; then
-    eval "$(${HOME}/venv/bin/python ${SENTINEL_ROOT}/installer/config.py)"
+    SENTINEL_PYTHON_BIN="${SENTINEL_PYTHON:-}"
+    if [ ! -x "${SENTINEL_PYTHON_BIN}" ]; then
+        SENTINEL_PYTHON_BIN="${HOME}/venv/bin/python"
+    fi
+
+    if [ ! -x "${SENTINEL_PYTHON_BIN}" ]; then
+        SENTINEL_PYTHON_BIN="$(command -v python3 || command -v python || true)"
+    fi
+
+    if [ -x "${SENTINEL_PYTHON_BIN}" ]; then
+        eval "$("${SENTINEL_PYTHON_BIN}" "${SENTINEL_ROOT}/installer/config.py")"
+    fi
 fi
 
 # ============================================================================
@@ -34,17 +45,50 @@ export SENTINEL_DISABLE_FANCY_OUTPUT=1
 export SENTINEL_DEBUG=0
 
 # ============================================================================
-# SECTION 2: OS DETECTION AND CORE EXPORTS
+# SECTION 2: OS/PLATFORM DETECTION AND CORE EXPORTS
 # ============================================================================
 
-# OS detection for platform-specific commands
-case "$(uname -s)" in
-  Linux*)  export OS_TYPE="Linux" ;;
-  Darwin*) export OS_TYPE="MacOS" ;;
-  CYGWIN*) export OS_TYPE="Cygwin" ;;
-  MINGW*)  export OS_TYPE="MinGw" ;;
-  *)       export OS_TYPE="Unknown" ;;
-esac
+# Broad OS detection with server-friendly defaults
+sentinel_detect_platform() {
+  local uname_out os_id os_like pkg_manager=""
+  uname_out=$(uname -s 2>/dev/null || echo "Unknown")
+
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    os_id=${ID:-"unknown"}
+    os_like=${ID_LIKE:-""}
+    export OS_NAME=${PRETTY_NAME:-$os_id}
+    export OS_VERSION=${VERSION_ID:-""}
+  else
+    os_id=$(echo "$uname_out" | tr '[:upper:]' '[:lower:]')
+    os_like=""
+    export OS_NAME="$uname_out"
+    export OS_VERSION=""
+  fi
+
+  case "$uname_out" in
+    Linux*)  export OS_TYPE="Linux" ;;
+    Darwin*) export OS_TYPE="MacOS" ;;
+    CYGWIN*) export OS_TYPE="Cygwin" ;;
+    MINGW*)  export OS_TYPE="MinGw" ;;
+    *)       export OS_TYPE="Unknown" ;;
+  esac
+
+  # Detect package manager for servers and minimal systems
+  for candidate in apt-get apt dnf yum zypper pacman apk brew; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      pkg_manager="$candidate"
+      break
+    fi
+  done
+
+  export OS_ID="$os_id"
+  export OS_LIKE="$os_like"
+  export PKG_MGR="${pkg_manager:-none}"
+}
+
+sentinel_detect_platform
 
 # Editor and pager settings
 export EDITOR="vim"
@@ -93,7 +137,7 @@ export PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 [[ -d "$SENTINEL_DATASCIENCE_DIR" ]] && PATH="$SENTINEL_DATASCIENCE_DIR:$PATH"
 
 # Add common Python locations
-for python_dir in "/usr/local/bin" "${PYTHON_INSTALL_DIR:-/opt/python}/bin" "${HOME}/.local/bin"; do
+for python_dir in "/usr/local/bin" "${PYTHON_INSTALL_DIR:-${HOME}/.python}/bin" "${HOME}/.local/bin"; do
     if [[ -d "$python_dir" ]] && [[ ":$PATH:" != *":$python_dir:"* ]]; then
         export PATH="$python_dir:$PATH"
     fi
@@ -118,9 +162,6 @@ fi
 # SECTION 5: SHELL OPTIONS AND HISTORY
 # ============================================================================
 
-# Basic prompt
-PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-
 # History configuration with security features
 HISTCONTROL=ignoreboth:erasedups
 HISTSIZE=10000
@@ -144,10 +185,51 @@ shopt -s direxpand 2>/dev/null  # Expand variables in directory completion
 umask 027
 
 # ============================================================================
-# SECTION 6: COLOR SUPPORT AND ALIASES
+# SECTION 6: TERMINAL CAPABILITIES, COLOR SUPPORT, AND ALIASES
 # ============================================================================
 
-# Enable color support
+# Detect terminal capabilities and set high-contrast prompt colors for dark themes
+sentinel_set_colors() {
+    local term=${TERM:-dumb}
+    local color_cap=0
+
+    export SENTINEL_COLORS_ENABLED=0
+    if [[ -t 1 && "$term" != "dumb" ]]; then
+        color_cap=$(tput colors 2>/dev/null || echo 0)
+    fi
+
+    if (( color_cap >= 8 )); then
+        export SENTINEL_COLORS_ENABLED=1
+        C_RESET='\[\e[0m\]'
+        C_BOLD_WHITE='\[\e[1;97m\]'
+        C_BOLD_CYAN='\[\e[1;36m\]'
+        C_BOLD_BLUE='\[\e[1;34m\]'
+        C_BOLD_GREEN='\[\e[1;32m\]'
+        C_BOLD_YELLOW='\[\e[1;33m\]'
+    else
+        C_RESET=''
+        C_BOLD_WHITE=''
+        C_BOLD_CYAN=''
+        C_BOLD_BLUE=''
+        C_BOLD_GREEN=''
+        C_BOLD_YELLOW=''
+    fi
+
+    # Fallback LS_COLORS for servers without dircolors
+    if [[ ${SENTINEL_COLORS_ENABLED} -eq 1 && -z "${LS_COLORS:-}" ]]; then
+        export LS_COLORS='di=1;36:ln=1;35:so=1;32:pi=1;33:ex=1;92:bd=1;93:cd=1;94:su=41;30:sg=46;30:tw=42;30:ow=43;30'
+    fi
+
+    if [[ ${SENTINEL_COLORS_ENABLED} -eq 1 ]]; then
+        PS1="${C_BOLD_GREEN}\u${C_RESET}@${C_BOLD_CYAN}\h${C_RESET}:${C_BOLD_BLUE}\w${C_RESET}\\$ "
+    else
+        PS1='\u@\h:\w\$ '
+    fi
+}
+
+sentinel_set_colors
+
+# Enable color support via dircolors if available (overrides LS_COLORS when set)
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
 fi
@@ -307,8 +389,8 @@ datascience() {
     echo "Activating optimized data science environment..."
 
     # Activate virtual environment
-    if [ -f $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate ]; then
-        source $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate
+    if [ -f "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate" ]; then
+        source "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate"
     else
         echo "Warning: Data science virtual environment not found at $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate"
         return 1
@@ -332,8 +414,27 @@ datascience() {
     export RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C lto=fat"
 
     # Custom AI/ML library paths
-    export LD_LIBRARY_PATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
-    export PYTHONPATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib/python3.13/site-packages:$PYTHONPATH"
+    for lib_dir in "$SENTINEL_DATASCIENCE_DIR/mtl/lib" "/usr/local/lib"; do
+        if [ -d "$lib_dir" ] && [[ ":${LD_LIBRARY_PATH:-}:" != *":$lib_dir:"* ]]; then
+            export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+        fi
+    done
+
+    local mtl_pythonpath="$SENTINEL_DATASCIENCE_DIR/mtl/lib"
+    if command -v python3 >/dev/null 2>&1; then
+        local py_rel="$(python3 - <<'PY'
+from sys import version_info
+print(f"python{version_info.major}.{version_info.minor}")
+PY
+        )"
+        if [ -n "$py_rel" ] && [ -d "$SENTINEL_DATASCIENCE_DIR/mtl/lib/${py_rel}/site-packages" ]; then
+            mtl_pythonpath="$SENTINEL_DATASCIENCE_DIR/mtl/lib/${py_rel}/site-packages"
+        fi
+    fi
+
+    if [ -d "$mtl_pythonpath" ]; then
+        export PYTHONPATH="$mtl_pythonpath:${PYTHONPATH:-}"
+    fi
 
     # NPU environment
     if [ -e /dev/accel/accel0 ]; then
@@ -344,10 +445,11 @@ datascience() {
     fi
 
     # Change to code directory
-    if [ -d "${CODE_DIR:-/opt/code}" ]; then
-        cd "${CODE_DIR:-/opt/code}"
+    local default_code_dir="${CODE_DIR:-${HOME}/code}"
+    if [ -d "${default_code_dir}" ]; then
+        cd "${default_code_dir}"
     else
-        echo "Warning: Code directory ${CODE_DIR:-/opt/code} not found."
+        echo "Warning: Code directory ${default_code_dir} not found."
     fi
 
     # Get Python version safely
@@ -450,8 +552,8 @@ zfssnapshot() {
   fi
 
   PREFIX="$1"
-  POOL_NAME="rpool"
-  DATASET_PATH="${POOL_NAME}/ROOT/LONENOMAD"
+  POOL_NAME="${ZFS_POOL_NAME:-rpool}"
+  DATASET_PATH="${ZFS_DATASET:-${POOL_NAME}/ROOT/LONENOMAD}"
   DATETIME=$(date +"%m-%d-%Y-%H%M")
   SNAPSHOT_NAME="${DATASET_PATH}@${PREFIX}${DATETIME}"
 
@@ -478,11 +580,14 @@ zfssnapshot() {
 
 # Bash completion with error handling
 if ! shopt -oq posix; then
-  if [[ -f /usr/share/bash-completion/bash_completion ]]; then
-    { source /usr/share/bash-completion/bash_completion; } 2>/dev/null || true
-  elif [[ -f /etc/bash_completion ]]; then
-    { source /etc/bash_completion; } 2>/dev/null || true
-  fi
+  for bc_file in \
+    "${BASH_COMPLETION_FILE:-}" \
+    "/usr/share/bash-completion/bash_completion" \
+    "/etc/bash_completion"; do
+    [[ -n "$bc_file" && -f "$bc_file" ]] || continue
+    { source "$bc_file"; } 2>/dev/null || true
+    break
+  done
 
   # Load personal completion settings if they exist
   if [[ -f ~/.bash_completion ]]; then
@@ -629,22 +734,29 @@ if [[ -f "$HOME/bash_functions.d/venv_helpers" ]]; then
 fi
 
 # Initialize Homebrew if available
-if [ -x "${HOMEBREW_PATH:-/home/linuxbrew/.linuxbrew/bin/brew}" ]; then
-  eval "$("${HOMEBREW_PATH:-/home/linuxbrew/.linuxbrew/bin/brew}" shellenv)"
+if command -v brew >/dev/null 2>&1; then
+  eval "$(brew shellenv)"
+elif [ -x "${HOMEBREW_PATH:-}" ]; then
+  eval "$("${HOMEBREW_PATH}" shellenv)"
 fi
 
 # OpenVINO 2025.2.0 Environment
-if [ -f "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}" ]; then
-    source "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}"
-fi
+for openvino_setup in "${OPENVINO_SETUPVARS:-}" \
+    "/opt/intel/openvino/setupvars.sh" \
+    "/usr/local/setupvars.sh"; do
+    if [ -n "$openvino_setup" ] && [ -f "$openvino_setup" ]; then
+        source "$openvino_setup"
+        break
+    fi
+done
 
 # Custom AI Stack Environment Setup
-if [ -f $SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh ]; then
-    source $SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh 2>/dev/null || true
+if [ -f "$SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh" ]; then
+    source "$SENTINEL_DATASCIENCE_DIR/mtl/setup_npu_env.sh" 2>/dev/null || true
 fi
 
-if [ -f $SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh ]; then
-    source $SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh 2>/dev/null || true
+if [ -f "$SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh" ]; then
+    source "$SENTINEL_DATASCIENCE_DIR/mtl/setup_openvino.sh" 2>/dev/null || true
 fi
 
 # Set NPU environment variable for Meteor Lake
@@ -654,19 +766,25 @@ if [ -e /dev/accel/accel0 ]; then
     export OV_NPU_COMPILER_TYPE=DRIVER
 fi
 
-# Add Level Zero library path
-export LD_LIBRARY_PATH="$SENTINEL_DATASCIENCE_DIR/mtl/lib:/usr/local/lib:$LD_LIBRARY_PATH"
+# Add Level Zero library path when available
+for lib_dir in "$SENTINEL_DATASCIENCE_DIR/mtl/lib" "/usr/local/lib"; do
+    if [ -d "$lib_dir" ] && [[ ":${LD_LIBRARY_PATH:-}:" != *":$lib_dir:"* ]]; then
+        export LD_LIBRARY_PATH="$lib_dir:${LD_LIBRARY_PATH:-}"
+    fi
+done
 
 # Activate data science environment by default (as in original)
-source $SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate 2>/dev/null || true
+if [ -f "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate" ]; then
+    source "$SENTINEL_DATASCIENCE_DIR/envs/dsenv/bin/activate" 2>/dev/null || true
+fi
 
 # ============================================================
 # Meteor Lake C Toolchain - GCC 13.2.0
 # ============================================================
-if [ -f "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate-enhanced.sh" ]; then
-    source "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate-enhanced.sh"
-elif [ -f "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate.sh" ]; then
-    source "${C_TOOLCHAIN_PATH:-/home/john/c-toolchain}/activate.sh"
+if [ -f "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate-enhanced.sh" ]; then
+    source "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate-enhanced.sh"
+elif [ -f "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate.sh" ]; then
+    source "${C_TOOLCHAIN_PATH:-${HOME}/c-toolchain}/activate.sh"
 fi
 
 # Quick aliases

@@ -77,24 +77,24 @@ modules:
 # --- Path Settings ---
 paths:
   # The base directory for Python installations.
-  python_install_dir: "/opt/python"
+  python_install_dir: "${PYTHON_INSTALL_DIR:-/opt/python}"
   # The default directory for code projects.
-  code_dir: "/opt/code"
+  code_dir: "${CODE_DIR:-/opt/code}"
   # The path to the Homebrew executable.
-  homebrew_path: "/home/linuxbrew/.linuxbrew/bin/brew"
+  homebrew_path: "${HOMEBREW_PATH:-}"
   # The path to the OpenVINO setupvars.sh script.
-  openvino_setupvars: "/usr/local/setupvars.sh"
+  openvino_setupvars: "${OPENVINO_SETUPVARS:-/usr/local/setupvars.sh}"
   # The base directory for custom C/C++ toolchains.
-  c_toolchain_path: "/home/john/c-toolchain"
+  c_toolchain_path: "${C_TOOLCHAIN_PATH:-}"
   # The path to the Waveterm executable.
   waveterm_path: ""
   # ZFS-enforced paths
-  zfs_build_dir: "/opt/build"
-  zfs_ai_dir: "/opt/ai"
-  zfs_code_dir: "/opt/code"
-  zfs_config_dir: "/opt/config"
-  zfs_docker_dir: "/opt/docker"
-  zfs_kernel_dir: "/opt/kernel"
+  zfs_build_dir: "${ZFS_BUILD_DIR:-/opt/build}"
+  zfs_ai_dir: "${ZFS_AI_DIR:-/opt/ai}"
+  zfs_code_dir: "${ZFS_CODE_DIR:-/opt/code}"
+  zfs_config_dir: "${ZFS_CONFIG_DIR:-/opt/config}"
+  zfs_docker_dir: "${ZFS_DOCKER_DIR:-/opt/docker}"
+  zfs_kernel_dir: "${ZFS_KERNEL_DIR:-/opt/kernel}"
 
 # --- Obfuscation Settings ---
 obfuscation:
