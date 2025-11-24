@@ -24,4 +24,4 @@ create_rollback_script
 
 # Run dependency checks
 check_dependencies
-check_debian_dependencies
+check_platform_dependencies

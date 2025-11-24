@@ -113,38 +113,103 @@ check_dependencies() {
     ok "All required CLI tools present"
 }
 
-# Debian-specific package dependency checking
-check_debian_dependencies() {
-    if command -v apt-get &>/dev/null; then
-      step "Detected Debian-based system, checking for additional dependencies"
-
-      # Check for python3-venv which is not installed by default on Debian
-      if ! dpkg -l python3-venv &>/dev/null; then
-        warn "python3-venv package not detected. It's required for Python virtual environment creation."
-        echo "Please install it with: sudo apt-get install python3-venv"
-
-        if [[ $INTERACTIVE -eq 1 ]]; then
-          read -r -t 30 -p "Would you like to install python3-venv package now? (requires sudo) [y/N]: " confirm || confirm="n"
-          if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            sudo apt-get update && sudo apt-get install -y python3-venv || fail "Failed to install python3-venv"
-            ok "Successfully installed python3-venv"
-          else
-            fail "python3-venv is required. Please install it and re-run the installer."
-          fi
-        else
-          fail "python3-venv is required. Please install it and re-run the installer."
+# Platform-aware package dependency checking
+detect_package_manager() {
+    for mgr in apt-get dnf yum pacman zypper apk brew; do
+        if command -v "$mgr" &>/dev/null; then
+            echo "$mgr"
+            return 0
         fi
-      fi
+    done
+    return 1
+}
 
-      # Check for other helpful packages
-      OPTIONAL_PKGS=()
-      command -v openssl &>/dev/null || OPTIONAL_PKGS+=("openssl")
-      command -v fzf &>/dev/null || OPTIONAL_PKGS+=("fzf")
+attempt_package_install() {
+    local manager="$1"; shift
+    local packages=("$@")
+    [[ ${#packages[@]} -eq 0 ]] && return 1
 
-      if ((${#OPTIONAL_PKGS[@]})); then
-        warn "Optional packages not found: ${OPTIONAL_PKGS[*]}"
-        echo "These packages improve functionality but aren't strictly required."
-        echo "You can install them with: sudo apt-get install ${OPTIONAL_PKGS[*]}"
-      fi
+    case "$manager" in
+        apt-get)
+            sudo apt-get update && sudo apt-get install -y "${packages[@]}" ;;
+        dnf)
+            sudo dnf install -y "${packages[@]}" ;;
+        yum)
+            sudo yum install -y "${packages[@]}" ;;
+        pacman)
+            sudo pacman -S --noconfirm "${packages[@]}" ;;
+        zypper)
+            sudo zypper install -y "${packages[@]}" ;;
+        apk)
+            sudo apk add "${packages[@]}" ;;
+        brew)
+            brew install "${packages[@]}" ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+ensure_venv_support() {
+    local manager="$1"
+    if "$PYTHON_CMD" -c "import venv" &>/dev/null; then
+        ok "Python venv module available"
+        return 0
+    fi
+
+    warn "Python venv module missing; needed for isolated installs"
+    local candidates=()
+    case "$manager" in
+        apt-get) candidates=(python3-venv) ;;
+        dnf|yum) candidates=(python3-virtualenv python3.12-venv python3-venv) ;;
+        pacman)  candidates=(python-virtualenv) ;;
+        zypper)  candidates=(python3-virtualenv python3-venv) ;;
+        apk)     candidates=(py3-virtualenv) ;;
+        brew)    candidates=(python) ;;
+    esac
+
+    if [[ -n "$manager" && ${#candidates[@]} -gt 0 ]]; then
+        echo "Install command suggestion: sudo ${manager} install ${candidates[*]}"
+        if [[ $INTERACTIVE -eq 1 ]]; then
+            read -r -t 30 -p "Install missing Python venv support now? [y/N]: " confirm || confirm="n"
+            if [[ "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+                if attempt_package_install "$manager" "${candidates[@]}"; then
+                    ok "Installed venv support via ${manager}"
+                else
+                    fail "Failed to install venv support via ${manager}"
+                fi
+            fi
+        fi
+    fi
+
+    if ! "$PYTHON_CMD" -c "import venv" &>/dev/null; then
+        fail "Python venv module still unavailable; install the appropriate package and re-run the installer"
+    fi
+}
+
+check_platform_dependencies() {
+    local manager
+    manager=$(detect_package_manager || true)
+
+    if [[ -n "$manager" ]]; then
+        step "Detected package manager: $manager"
+    else
+        warn "No supported package manager detected; continuing with manual checks"
+    fi
+
+    ensure_venv_support "$manager"
+
+    local optional_pkgs=()
+    command -v openssl &>/dev/null || optional_pkgs+=("openssl")
+    command -v fzf &>/dev/null || optional_pkgs+=("fzf")
+
+    if ((${#optional_pkgs[@]})); then
+        warn "Optional packages not found: ${optional_pkgs[*]}"
+        if [[ -n "$manager" ]]; then
+            echo "These improve functionality. Install with: sudo ${manager} install ${optional_pkgs[*]}"
+        else
+            echo "Install the optional packages with your platform package manager for best experience."
+        fi
+    else
+        ok "Optional helpers already present"
     fi
 }

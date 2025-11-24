@@ -1,12 +1,39 @@
 #!/usr/bin/env bash
 # SENTINEL Installer - Helper Functions
 
-# Colour helpers
-c_red=$'\033[1;31m'
-c_green=$'\033[1;32m'
-c_yellow=$'\033[1;33m'
-c_blue=$'\033[1;34m'
-c_reset=$'\033[0m'
+# Colour helpers (safe on dark backgrounds and TTY-agnostic)
+init_colour_palette() {
+    local force_colour="${FORCE_COLOR:-}" # honour common tooling flag
+    local disable_colour="${NO_COLOR:-}"  # standard opt-out
+
+    # Default to no colour until proven safe
+    c_red=""; c_green=""; c_yellow=""; c_blue=""; c_reset=""
+
+    # Skip colouring on non-TTY output unless explicitly forced
+    if [[ ! -t 1 && -z "$force_colour" ]]; then
+        return
+    fi
+
+    # Honour NO_COLOR request
+    if [[ -n "$disable_colour" ]]; then
+        return
+    fi
+
+    local colour_capability
+    colour_capability=$(tput colors 2>/dev/null || echo 0)
+    if [[ -z "$force_colour" && "$colour_capability" -lt 8 ]]; then
+        return
+    fi
+
+    # High-contrast palette tuned for black/dark backgrounds
+    c_red=$'\033[1;91m'
+    c_green=$'\033[1;92m'
+    c_yellow=$'\033[1;93m'
+    c_blue=$'\033[1;96m'
+    c_reset=$'\033[0m'
+}
+
+init_colour_palette
 
 # Safe operation wrappers
 safe_rsync() {
