@@ -34,17 +34,50 @@ export SENTINEL_DISABLE_FANCY_OUTPUT=1
 export SENTINEL_DEBUG=0
 
 # ============================================================================
-# SECTION 2: OS DETECTION AND CORE EXPORTS
+# SECTION 2: OS/PLATFORM DETECTION AND CORE EXPORTS
 # ============================================================================
 
-# OS detection for platform-specific commands
-case "$(uname -s)" in
-  Linux*)  export OS_TYPE="Linux" ;;
-  Darwin*) export OS_TYPE="MacOS" ;;
-  CYGWIN*) export OS_TYPE="Cygwin" ;;
-  MINGW*)  export OS_TYPE="MinGw" ;;
-  *)       export OS_TYPE="Unknown" ;;
-esac
+# Broad OS detection with server-friendly defaults
+sentinel_detect_platform() {
+  local uname_out os_id os_like pkg_manager=""
+  uname_out=$(uname -s 2>/dev/null || echo "Unknown")
+
+  if [[ -r /etc/os-release ]]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    os_id=${ID:-"unknown"}
+    os_like=${ID_LIKE:-""}
+    export OS_NAME=${PRETTY_NAME:-$os_id}
+    export OS_VERSION=${VERSION_ID:-""}
+  else
+    os_id=$(echo "$uname_out" | tr '[:upper:]' '[:lower:]')
+    os_like=""
+    export OS_NAME="$uname_out"
+    export OS_VERSION=""
+  fi
+
+  case "$uname_out" in
+    Linux*)  export OS_TYPE="Linux" ;;
+    Darwin*) export OS_TYPE="MacOS" ;;
+    CYGWIN*) export OS_TYPE="Cygwin" ;;
+    MINGW*)  export OS_TYPE="MinGw" ;;
+    *)       export OS_TYPE="Unknown" ;;
+  esac
+
+  # Detect package manager for servers and minimal systems
+  for candidate in apt-get apt dnf yum zypper pacman apk brew; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      pkg_manager="$candidate"
+      break
+    fi
+  done
+
+  export OS_ID="$os_id"
+  export OS_LIKE="$os_like"
+  export PKG_MGR="${pkg_manager:-none}"
+}
+
+sentinel_detect_platform
 
 # Editor and pager settings
 export EDITOR="vim"
@@ -118,9 +151,6 @@ fi
 # SECTION 5: SHELL OPTIONS AND HISTORY
 # ============================================================================
 
-# Basic prompt
-PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
-
 # History configuration with security features
 HISTCONTROL=ignoreboth:erasedups
 HISTSIZE=10000
@@ -144,10 +174,51 @@ shopt -s direxpand 2>/dev/null  # Expand variables in directory completion
 umask 027
 
 # ============================================================================
-# SECTION 6: COLOR SUPPORT AND ALIASES
+# SECTION 6: TERMINAL CAPABILITIES, COLOR SUPPORT, AND ALIASES
 # ============================================================================
 
-# Enable color support
+# Detect terminal capabilities and set high-contrast prompt colors for dark themes
+sentinel_set_colors() {
+    local term=${TERM:-dumb}
+    local color_cap=0
+
+    export SENTINEL_COLORS_ENABLED=0
+    if [[ -t 1 && "$term" != "dumb" ]]; then
+        color_cap=$(tput colors 2>/dev/null || echo 0)
+    fi
+
+    if (( color_cap >= 8 )); then
+        export SENTINEL_COLORS_ENABLED=1
+        C_RESET='\[\e[0m\]'
+        C_BOLD_WHITE='\[\e[1;97m\]'
+        C_BOLD_CYAN='\[\e[1;36m\]'
+        C_BOLD_BLUE='\[\e[1;34m\]'
+        C_BOLD_GREEN='\[\e[1;32m\]'
+        C_BOLD_YELLOW='\[\e[1;33m\]'
+    else
+        C_RESET=''
+        C_BOLD_WHITE=''
+        C_BOLD_CYAN=''
+        C_BOLD_BLUE=''
+        C_BOLD_GREEN=''
+        C_BOLD_YELLOW=''
+    fi
+
+    # Fallback LS_COLORS for servers without dircolors
+    if [[ ${SENTINEL_COLORS_ENABLED} -eq 1 && -z "${LS_COLORS:-}" ]]; then
+        export LS_COLORS='di=1;36:ln=1;35:so=1;32:pi=1;33:ex=1;92:bd=1;93:cd=1;94:su=41;30:sg=46;30:tw=42;30:ow=43;30'
+    fi
+
+    if [[ ${SENTINEL_COLORS_ENABLED} -eq 1 ]]; then
+        PS1="${C_BOLD_GREEN}\u${C_RESET}@${C_BOLD_CYAN}\h${C_RESET}:${C_BOLD_BLUE}\w${C_RESET}\\$ "
+    else
+        PS1='\u@\h:\w\$ '
+    fi
+}
+
+sentinel_set_colors
+
+# Enable color support via dircolors if available (overrides LS_COLORS when set)
 if [ -x /usr/bin/dircolors ]; then
     test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
 fi
