@@ -4,13 +4,24 @@
 install_blesh() {
   step "Installing BLE.sh to ${BLESH_DIR}"
   mkdir -p "${BLESH_DIR}"
-  safe_git_clone --depth=1 --verify-commit="$BLESH_COMMIT" https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
 
-  if git -C "${BLESH_DIR}" rev-parse "$BLESH_TAG" >/dev/null 2>&1; then
-    git -C "${BLESH_DIR}" checkout "$BLESH_TAG"
-    ok "Checked out BLE.sh tag $BLESH_TAG"
+  # Clone BLE.sh with optional commit verification
+  if [[ -n "${BLESH_COMMIT:-}" ]]; then
+    safe_git_clone --depth=1 --verify-commit="$BLESH_COMMIT" https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
   else
-    warn "BLE.sh tag $BLESH_TAG not found; using default branch."
+    safe_git_clone --depth=1 https://github.com/akinomyoga/ble.sh.git "${BLESH_DIR}"
+  fi
+
+  # Checkout specific tag if specified
+  if [[ -n "${BLESH_TAG:-}" ]]; then
+    if git -C "${BLESH_DIR}" rev-parse "$BLESH_TAG" >/dev/null 2>&1; then
+      git -C "${BLESH_DIR}" checkout "$BLESH_TAG"
+      ok "Checked out BLE.sh tag $BLESH_TAG"
+    else
+      warn "BLE.sh tag $BLESH_TAG not found; using default branch."
+    fi
+  else
+    log "Using default BLE.sh branch (no specific tag configured)"
   fi
 
   # Check various potential locations for ble.sh
