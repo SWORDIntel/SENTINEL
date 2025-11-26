@@ -198,6 +198,16 @@ check_platform_dependencies() {
 
     ensure_venv_support "$manager"
 
+    # Auto-install fzf if possible; keep other optional helpers as warnings only
+    if ! command -v fzf &>/dev/null && [[ -n "$manager" ]]; then
+        step "fzf not found; attempting install via $manager"
+        if attempt_package_install "$manager" "fzf"; then
+            ok "Installed fzf via $manager"
+        else
+            warn "Failed to install fzf automatically; install manually with: sudo ${manager} install fzf"
+        fi
+    fi
+
     local optional_pkgs=()
     command -v openssl &>/dev/null || optional_pkgs+=("openssl")
     command -v fzf &>/dev/null || optional_pkgs+=("fzf")

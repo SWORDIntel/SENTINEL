@@ -9,7 +9,6 @@ hf-transfer>=0.1.5  # For faster downloads from HuggingFace
 # Terminal UI
 npyscreen>=4.10.5
 rich>=13.7.1
-readline; platform_system != 'Windows'
 
 # Markov chain text generation
 markovify>=0.9.4

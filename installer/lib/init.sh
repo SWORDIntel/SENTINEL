@@ -6,6 +6,14 @@ set -euo pipefail
 
 # Define critical variables
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+if [[ -z "${INSTALLER_VERSION:-}" ]]; then
+    if INSTALLER_VERSION="$(git -C "$PROJECT_ROOT" describe --tags --always 2>/dev/null)"; then
+        :
+    else
+        INSTALLER_VERSION="unknown"
+    fi
+fi
+export INSTALLER_VERSION
 LOG_DIR="${HOME}/logs"
 STATE_FILE="${HOME}/install.state"
 ROLLBACK_SCRIPT="${HOME}/.sentinel_rollback.sh"
