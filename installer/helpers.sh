@@ -191,6 +191,48 @@ safe_git_clone() {
     ok "Repository cloned successfully"
 }
 
+# Detect if running in headless/VPS environment
+detect_headless_environment() {
+    # Multiple detection methods for headless environments
+    local is_headless=0
+
+    # Check 1: No DISPLAY variable (common on servers)
+    if [[ -z "${DISPLAY:-}" ]]; then
+        is_headless=1
+    fi
+
+    # Check 2: SSH session without X11 forwarding
+    if [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_CLIENT:-}" ]] && [[ -z "${DISPLAY:-}" ]]; then
+        is_headless=1
+    fi
+
+    # Check 3: Check if running under systemd --user without a display manager
+    if systemctl --user is-active --quiet graphical-session.target 2>/dev/null; then
+        is_headless=0
+    elif [[ -z "${XDG_SESSION_TYPE:-}" ]] || [[ "${XDG_SESSION_TYPE}" == "tty" ]]; then
+        is_headless=1
+    fi
+
+    # Check 4: No GPU/display devices (common on VPS)
+    if ! command -v xrandr &>/dev/null && ! command -v xdpyinfo &>/dev/null; then
+        is_headless=1
+    fi
+
+    # Check 5: Common VPS/cloud provider detection
+    if [[ -f /sys/class/dmi/id/product_name ]]; then
+        local product_name
+        product_name=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "")
+        case "$product_name" in
+            *"Google Compute Engine"* | *"Droplet"* | *"Amazon EC2"* | *"Virtual Machine"* | *"VirtualBox"* | *"KVM"*)
+                is_headless=1
+                ;;
+        esac
+    fi
+
+    # Return headless status
+    return $is_headless
+}
+
 create_rollback_script() {
     step "Creating rollback script at ${ROLLBACK_SCRIPT}"
     cat > "${ROLLBACK_SCRIPT}" <<'EOF'

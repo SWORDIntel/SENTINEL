@@ -9,6 +9,19 @@ setup_python_venv
 # Load configuration
 eval "$(${HOME}/venv/bin/python ${PROJECT_ROOT}/installer/config.py)"
 
+# Detect headless environment and auto-configure
+if detect_headless_environment; then
+    export SENTINEL_HEADLESS=1
+    export SENTINEL_SKIP_BLESH=1
+    export SENTINEL_SKIP_WAVE=1
+    step "Headless VPS environment detected"
+    log "Auto-configuring for server environment (no GUI)"
+    log "BLE.sh and Wave Terminal configuration will be skipped"
+else
+    export SENTINEL_HEADLESS=0
+    log "GUI environment detected - enabling full features"
+fi
+
 # Unattended install flag
 INTERACTIVE=1
 for arg in "$@"; do
@@ -16,8 +29,19 @@ for arg in "$@"; do
     --non-interactive)
       INTERACTIVE=0
       ;;
+    --headless)
+      SENTINEL_HEADLESS=1
+      SENTINEL_SKIP_BLESH=1
+      SENTINEL_SKIP_WAVE=1
+      ;;
   esac
 done
+
+# Auto-enable non-interactive mode in headless environments
+if [[ "${SENTINEL_HEADLESS}" == "1" ]] && [[ "${INTERACTIVE}" == "1" ]]; then
+    log "Headless environment detected - enabling non-interactive mode"
+    INTERACTIVE=0
+fi
 
 # Create rollback script before any changes
 create_rollback_script
