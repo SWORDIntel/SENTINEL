@@ -27,9 +27,10 @@ if [[ "${SENTINEL_SKIP_BLESH:-0}" != "1" ]]; then
   create_blesh_loader
 else
   log "Skipping BLE.sh installation (headless mode - not needed for server environments)"
-  # Mark as done to prevent future attempts
+  # Mark as done to prevent future attempts but still ensure the loader stub exists
   mark_done "BLESH_INSTALLED"
-  mark_done "BLESH_LOADER_DROPPED"
+  mark_done "BLESH_SKIPPED"
+  create_blesh_loader
 fi
 
 # Setup bash

@@ -18,6 +18,7 @@ VENV_DIR="${HOME}/venv"
 MODULES_DIR="${HOME}/bash_modules.d"
 LOG_DIR="${HOME}/logs"
 VERIFICATION_LOG="${LOG_DIR}/verification.log"
+INSTALL_STATE_FILE="${HOME}/install.state"
 
 # Ensure log directory exists
 mkdir -p "${LOG_DIR}"
@@ -46,6 +47,14 @@ info() { log "${c_blue}[INFO]${c_reset} $*"; }
 # Initialize counter for failed tests
 FAILED_TESTS=0
 TOTAL_TESTS=0
+BLESH_SKIPPED=0
+
+# Detect if BLE.sh installation was intentionally skipped (e.g., headless install)
+if [[ "${SENTINEL_SKIP_BLESH:-0}" == "1" ]]; then
+    BLESH_SKIPPED=1
+elif grep -qxF "BLESH_SKIPPED" "${INSTALL_STATE_FILE}" 2>/dev/null; then
+    BLESH_SKIPPED=1
+fi
 
 # Create temporary test environment
 TESTDIR=$(mktemp -d)
@@ -179,17 +188,22 @@ done
 ###############################################################################
 # 5. BLE.sh Installation Tests
 ###############################################################################
-header "BLE.sh Installation Tests"
+if [[ $BLESH_SKIPPED -eq 1 ]]; then
+    header "BLE.sh Installation Tests (Skipped)"
+    warn "BLE.sh installation was skipped (headless/server mode). Skipping BLE.sh verification tests."
+else
+    header "BLE.sh Installation Tests"
 
-run_test "BLE.sh is installed" "[[ -d \"${HOME}/.local/share/blesh\" ]]"
-run_test "BLE.sh main script exists" "[[ -f \"${HOME}/.local/share/blesh/ble.sh\" ]]"
+    run_test "BLE.sh is installed" "[[ -d \"${HOME}/.local/share/blesh\" ]]"
+    run_test "BLE.sh main script exists" "[[ -f \"${HOME}/.local/share/blesh/ble.sh\" ]]"
 
-# Check cache directory, create if doesn't exist
-if [[ ! -d "${HOME}/.cache/blesh" ]]; then
-    mkdir -p "${HOME}/.cache/blesh" 
-    warn "Created missing BLE.sh cache directory"
+    # Check cache directory, create if doesn't exist
+    if [[ ! -d "${HOME}/.cache/blesh" ]]; then
+        mkdir -p "${HOME}/.cache/blesh" 
+        warn "Created missing BLE.sh cache directory"
+    fi
+    run_test "BLE.sh cache directory exists" "[[ -d \"${HOME}/.cache/blesh\" ]]"
 fi
-run_test "BLE.sh cache directory exists" "[[ -d \"${HOME}/.cache/blesh\" ]]"
 
 ###############################################################################
 # 6. Environment Sourcing Tests
