@@ -77,8 +77,22 @@ def export_variables(config) -> list[str]:
         value_str = value_str.replace("~", "$HOME")
         lines.append(f"export {safe_name}={_shell_single_quote(value_str)}")
 
-    for _section, settings in (config or {}).items():
+    for section, settings in (config or {}).items():
         if not isinstance(settings, dict):
+            continue
+
+        # SECURITY/COMPAT: Fabric config is exported with a FABRIC_ prefix to
+        # prevent collisions with other sections (many have "enabled", etc.).
+        if str(section) == "fabric":
+            base = "FABRIC"
+            for key, value in settings.items():
+                k = str(key)
+                if isinstance(value, dict):
+                    for flat_key, flat_val in _iter_kv(value, prefix=f"{base}_{k}"):
+                        if flat_key:
+                            emit(flat_key, flat_val)
+                else:
+                    emit(f"{base}_{k}", value)
             continue
 
         for key, value in settings.items():

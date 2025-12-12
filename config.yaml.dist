@@ -118,3 +118,20 @@ distcc:
   hosts: "localhost"
   # The size of the ccache.
   ccache_size: "5G"
+
+# --- Fabric Integration Settings (optional) ---
+# Integrates SENTINEL with an outbound-only, non-blocking multi-service ecosystem ("the Fabric").
+fabric:
+  enabled: false
+  identity:
+    node_id: ""        # optional tag for telemetry
+    device_id: ""      # optional tag for telemetry
+    layer_id: ""       # optional tag for telemetry
+  docs_root: ""        # path to docs root
+  telemetry:
+    enabled: false
+    transport: "unix"  # unix | http (unix preferred)
+    unix_socket: ""    # e.g., /tmp/fabric-events.sock
+    http_endpoint: ""  # e.g., http://127.0.0.1:PORT/events
+    timeout_ms: 50
+    drop_on_fail: true

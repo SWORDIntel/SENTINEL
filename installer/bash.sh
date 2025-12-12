@@ -14,13 +14,15 @@ ensure_local_bin_in_path() {
         {
             echo ''
             echo '# Ensure ~/.local/bin is in PATH for pip-installed tools'
+            # shellcheck disable=SC2016
             echo 'if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then'
+            # shellcheck disable=SC2016
             echo '    export PATH="$HOME/.local/bin:$PATH"'
             echo 'fi'
         } >> "$postcustom"
         ok "Added ~/.local/bin to PATH in bashrc.postcustom"
     else
-        ok "~/.local/bin already in PATH configuration"
+        ok "${HOME}/.local/bin already in PATH configuration"
     fi
 }
 
@@ -29,7 +31,7 @@ patch_bashrc() {
   local sentinel_bashrc="${PROJECT_ROOT}/bashrc"
 
   # Check if .bashrc is owned by root or not writable
-  if [[ ! -w "$rc" ]]; then
+  if [[ -e "$rc" && ! -w "$rc" ]]; then
     warn "Cannot write to $rc (permission denied, may be owned by root)"
     step "Creating a new bashrc file and requesting to source it from your existing .bashrc"
 
@@ -237,6 +239,150 @@ enable_fzf_module() {
     fi
 }
 
+_sentinel_kitty_gui_available() {
+  # kitty must exist AND a GUI session must be available
+  command -v kitty >/dev/null 2>&1 || return 1
+  [[ -n "${WAYLAND_DISPLAY:-}" || -n "${DISPLAY:-}" ]] || return 1
+  return 0
+}
+
+_sentinel_write_kitty_conf_block() {
+  local kitty_conf="$1"
+  local tmp
+  tmp="$(mktemp "${HOME}/.kitty.conf.sentinel.XXXXXX")"
+
+  # Preserve existing file, but replace our managed block if present.
+  if [[ -f "$kitty_conf" ]]; then
+    awk '
+      BEGIN {inblk=0}
+      /^# SENTINEL KITTY BEGIN$/ {inblk=1; next}
+      /^# SENTINEL KITTY END$/ {inblk=0; next}
+      inblk==0 {print}
+    ' "$kitty_conf" > "$tmp"
+  fi
+
+  {
+    echo ""
+    echo "# SENTINEL KITTY BEGIN"
+    echo "# Managed by SENTINEL installer. Safe to delete to disable."
+    echo "# Conservative settings focused on TUI responsiveness."
+    echo "update_check_interval 0"
+    echo "enable_audio_bell no"
+    echo "sync_to_monitor no"
+    echo "repaint_delay 5"
+    echo "input_delay 1"
+    echo "confirm_os_window_close 0"
+    echo "allow_remote_control no"
+    echo "# SENTINEL KITTY END"
+  } >> "$tmp"
+
+  install -m 600 "$tmp" "$kitty_conf"
+  rm -f "$tmp" 2>/dev/null || true
+}
+
+_sentinel_install_sentinel_tty_launcher() {
+  local launcher="${HOME}/.local/bin/sentinel-tty"
+  local tmp
+  tmp="$(mktemp "${HOME}/.sentinel-tty.XXXXXX")"
+
+  cat > "$tmp" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+SENTINEL_ROOT="${SENTINEL_ROOT:-$HOME/.sentinel}"
+
+python_bin="${SENTINEL_PYTHON:-}"
+if [[ -z "${python_bin}" || ! -x "${python_bin}" ]]; then
+  if [[ -x "${HOME}/venv/bin/python3" ]]; then
+    python_bin="${HOME}/venv/bin/python3"
+  else
+    python_bin="$(command -v python3 || true)"
+  fi
+fi
+
+entry="${SENTINEL_ROOT}/sentinel_toggles_tui.py"
+if [[ ! -f "${entry}" ]]; then
+  echo "SENTINEL entrypoint not found: ${entry}" >&2
+  echo "Set SENTINEL_ROOT or install SENTINEL to use sentinel-tty." >&2
+  exit 127
+fi
+
+if [[ -z "${python_bin}" || ! -x "${python_bin}" ]]; then
+  echo "python3 not found; cannot run ${entry}" >&2
+  exit 127
+fi
+
+cmd=( "${python_bin}" "${entry}" "$@" )
+
+if [[ -n "${KITTY_WINDOW_ID:-}" ]]; then
+  exec "${cmd[@]}"
+fi
+
+if command -v kitty >/dev/null 2>&1 && [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]]; then
+  # Run in kitty; use safe quoting for bash -lc
+  quoted="$(printf '%q ' "${cmd[@]}")"
+  exec kitty -e bash -lc "${quoted}"
+fi
+
+exec "${cmd[@]}"
+EOF
+
+  install -m 755 "$tmp" "$launcher"
+  rm -f "$tmp" 2>/dev/null || true
+}
+
+setup_kitty_integration() {
+  # Optional feature; never required; safe to rerun
+  if is_done "KITTY_INTEGRATION_DONE"; then
+    return 0
+  fi
+
+  # Skip automatically in headless / non-interactive installs
+  if [[ "${SENTINEL_HEADLESS:-0}" == "1" ]]; then
+    log "Skipping Kitty integration (headless mode)"
+    mark_done "KITTY_INTEGRATION_DONE"
+    return 0
+  fi
+  if [[ "${INTERACTIVE:-1}" -eq 0 ]]; then
+    log "Skipping Kitty integration (non-interactive mode)"
+    mark_done "KITTY_INTEGRATION_DONE"
+    return 0
+  fi
+
+  step "Enable Kitty GPU-accelerated terminal integration? (optional)"
+  local confirm="n"
+  read -r -t 30 -p "Enable Kitty GPU-accelerated terminal integration? [y/N]: " confirm || confirm="n"
+  if [[ ! "$confirm" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+    log "Kitty integration not enabled"
+    mark_done "KITTY_INTEGRATION_DONE"
+    return 0
+  fi
+
+  if ! _sentinel_kitty_gui_available; then
+    warn "Kitty integration requested, but kitty/GUI session not detected. Continuing without enabling."
+    warn "Requirement: kitty must be in PATH and DISPLAY or WAYLAND_DISPLAY must be set."
+    mark_done "KITTY_INTEGRATION_DONE"
+    return 0
+  fi
+
+  local xdg_conf="${XDG_CONFIG_HOME:-${HOME}/.config}"
+  local kitty_dir="${xdg_conf%/}/kitty"
+  local kitty_conf="${kitty_dir}/kitty.conf"
+
+  step "Configuring Kitty for low-latency TUI"
+  safe_mkdir "$kitty_dir" 700
+  _sentinel_write_kitty_conf_block "$kitty_conf"
+  ok "Kitty config updated: $kitty_conf"
+
+  step "Installing sentinel-tty launcher"
+  safe_mkdir "${HOME}/.local/bin" 700
+  _sentinel_install_sentinel_tty_launcher
+  ok "Launcher installed: ${HOME}/.local/bin/sentinel-tty"
+
+  mark_done "KITTY_INTEGRATION_DONE"
+  ok "Kitty integration enabled (optional)"
+}
+
 secure_permissions() {
     if ! is_done "PERMISSIONS_SECURED"; then
       step "Securing permissions on all SENTINEL files and modules"
@@ -419,4 +565,7 @@ final_summary() {
     } > "$SUMMARY_FILE"
 
     ok "Installation summary saved to ${SUMMARY_FILE}"
+
+    # Optional outbound-only telemetry; never blocks installer completion
+    installer_fabric_emit_event "installer_complete" "{\"status\":\"success\",\"version\":\"${INSTALLER_VERSION}\"}" || true
 }

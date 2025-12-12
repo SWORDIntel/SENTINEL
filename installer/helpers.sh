@@ -54,7 +54,6 @@ safe_mkdir() {
 
     if ! mkdir -p "$dir"; then
         fail "Failed to create directory: $dir"
-        return 1
     fi
 
     # Set proper permissions
@@ -68,6 +67,10 @@ safe_mkdir() {
 
 # Robust error handler for fatal errors (security: prevents silent failures)
 fail() {
+    # Telemetry must never block installer shutdown (outbound-only; drop-on-fail).
+    if type -t installer_fabric_emit_event >/dev/null 2>&1; then
+        installer_fabric_emit_event "installer_complete" "{\"status\":\"fail\",\"version\":\"${INSTALLER_VERSION:-unknown}\"}" || true
+    fi
     echo "${c_red}✖${c_reset}  $*" | tee -a "${LOG_DIR}/install.log" >&2
     echo "Run '${ROLLBACK_SCRIPT}' to restore previous configuration" >&2
     exit 1
@@ -94,6 +97,103 @@ log() {
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local log_file="${LOG_DIR}/install.log"
     echo "[$timestamp] $*" | tee -a "$log_file"
+}
+
+# -----------------------------------------------------------------------------
+# Fabric telemetry (optional, outbound-only, non-blocking, drop-on-fail)
+# -----------------------------------------------------------------------------
+_installer_fabric_bool() {
+    case "${1:-}" in
+        1|true|TRUE|yes|YES|on|ON) echo 1 ;;
+        *) echo 0 ;;
+    esac
+}
+
+_installer_fabric_json_escape() {
+    local s="${1:-}"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/ }"
+    s="${s//$'\r'/ }"
+    s="${s//$'\t'/ }"
+    printf '%s' "$s"
+}
+
+installer_fabric_emit_event() {
+    # installer_fabric_emit_event <type> <payload_json>
+    # IMPORTANT: Keep this best-effort and fast; never block shell startup.
+    local event_type="${1:-}"
+    local payload_json="${2:-{}}"
+
+    local fabric_enabled telemetry_enabled
+    fabric_enabled="$(_installer_fabric_bool "${FABRIC_ENABLED:-0}")"
+    telemetry_enabled="$(_installer_fabric_bool "${FABRIC_TELEMETRY_ENABLED:-0}")"
+    [[ "$fabric_enabled" == "1" && "$telemetry_enabled" == "1" ]] || return 0
+
+    [[ -n "$event_type" && "$event_type" =~ ^[A-Za-z0-9_.-]+$ ]] || return 0
+    payload_json="$(printf '%s' "${payload_json:-{}}" | tr -d '\n' | tr -d '\r')"
+
+    local timeout_ms transport socket endpoint
+    timeout_ms="${FABRIC_TELEMETRY_TIMEOUT_MS:-50}"
+    transport="${FABRIC_TELEMETRY_TRANSPORT:-unix}"
+    socket="${FABRIC_TELEMETRY_UNIX_SOCKET:-}"
+    endpoint="${FABRIC_TELEMETRY_HTTP_ENDPOINT:-}"
+
+    local ts
+    ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')"
+
+    local node_id device_id layer_id
+    node_id="${FABRIC_IDENTITY_NODE_ID:-}"
+    device_id="${FABRIC_IDENTITY_DEVICE_ID:-}"
+    layer_id="${FABRIC_IDENTITY_LAYER_ID:-}"
+
+    local line
+    line=$(
+        printf '{"ts":"%s","type":"%s","identity":{"node_id":"%s","device_id":"%s","layer_id":"%s"},"payload":%s}\n' \
+            "$(_installer_fabric_json_escape "$ts")" \
+            "$(_installer_fabric_json_escape "$event_type")" \
+            "$(_installer_fabric_json_escape "$node_id")" \
+            "$(_installer_fabric_json_escape "$device_id")" \
+            "$(_installer_fabric_json_escape "$layer_id")" \
+            "$payload_json"
+    )
+
+    local timeout_s="0.05"
+    if [[ "$timeout_ms" =~ ^[0-9]+$ ]]; then
+        timeout_s="0.$(printf '%03d' "$timeout_ms")"
+        if (( timeout_ms >= 1000 )); then
+            timeout_s="$((timeout_ms / 1000))"
+        fi
+    fi
+
+    case "$transport" in
+        unix)
+            [[ -n "$socket" ]] || return 0
+            if command -v timeout >/dev/null 2>&1 && command -v nc >/dev/null 2>&1; then
+                (timeout "$timeout_s" nc -U "$socket" >/dev/null 2>&1 <<<"$line" || true) >/dev/null 2>&1 &
+            elif command -v timeout >/dev/null 2>&1 && command -v socat >/dev/null 2>&1; then
+                (timeout "$timeout_s" socat - "UNIX-CONNECT:${socket}" >/dev/null 2>&1 <<<"$line" || true) >/dev/null 2>&1 &
+            fi
+            ;;
+        http)
+            [[ -n "$endpoint" ]] || return 0
+            if command -v curl >/dev/null 2>&1; then
+                (
+                    curl -sS \
+                        --connect-timeout "$timeout_s" \
+                        --max-time "$timeout_s" \
+                        -H 'Content-Type: application/json' \
+                        --data-binary @- \
+                        "$endpoint" >/dev/null 2>&1 <<<"$line" || true
+                ) >/dev/null 2>&1 &
+            fi
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    return 0
 }
 
 # Secure git clone function with integrity checking
@@ -152,7 +252,8 @@ safe_git_clone() {
 
         # Verify commit if specified
         if [[ -n "$expected_commit" ]]; then
-            local actual_commit=$(git -C "$target_dir" rev-parse HEAD)
+            local actual_commit
+            actual_commit=$(git -C "$target_dir" rev-parse HEAD)
             if [[ "$actual_commit" != "$expected_commit"* ]]; then
                 warn "Repository commit mismatch. Expected: $expected_commit, Got: $actual_commit"
                 warn "This may indicate the repository has been updated. Proceeding with caution."
@@ -179,7 +280,8 @@ safe_git_clone() {
 
     # Verify commit if specified
     if [[ -n "$expected_commit" ]]; then
-        local actual_commit=$(git -C "$target_dir" rev-parse HEAD)
+        local actual_commit
+        actual_commit=$(git -C "$target_dir" rev-parse HEAD)
         if [[ "$actual_commit" != "$expected_commit"* ]]; then
             warn "Repository commit mismatch. Expected: $expected_commit, Got: $actual_commit"
             warn "This may indicate the repository has been updated. Proceeding with caution."

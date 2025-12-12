@@ -28,18 +28,21 @@ if [[ "${SENTINEL_SKIP_BLESH:-0}" != "1" ]]; then
 else
   log "Skipping BLE.sh installation (headless mode - not needed for server environments)"
   # Mark as done to prevent future attempts but still ensure the loader stub exists
-  mark_done "BLESH_INSTALLED"
-  mark_done "BLESH_SKIPPED"
+  is_done "BLESH_INSTALLED" || mark_done "BLESH_INSTALLED"
+  is_done "BLESH_SKIPPED" || mark_done "BLESH_SKIPPED"
   create_blesh_loader
 fi
 
+# Optional Kitty GPU-accelerated terminal integration (never required)
+setup_kitty_integration
+
 # Setup bash
-ensure_local_bin_in_path
 if ! is_done "BASHRC_PATCHED"; then
   patch_bashrc "${HOME}/.bashrc"
   mark_done "BASHRC_PATCHED"
 fi
 copy_postcustom_bootstrap
+ensure_local_bin_in_path
 copy_bash_modules
 copy_shell_support_files
 enable_fzf_module

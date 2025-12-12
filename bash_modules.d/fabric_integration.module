@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+### BEGIN MODULE INFO
+# Name:                  fabric_integration
+# Short-Description:     Optional Fabric integration (telemetry, docs, pipelines)
+# Description:           Integrates SENTINEL with a larger multi-service ecosystem ("the Fabric")
+#                        using outbound-only, non-blocking telemetry and standardized helpers.
+# Author:                SENTINEL Team
+# URL:                   https://github.com/SWORDIntel/SENTINEL/
+# Version:               1.0.0
+# Stability:             stable
+# Tags:                  fabric, telemetry, integration
+# Provides:              fabric-status, fabric-env, fabric-open-doc, pipeline-wrappers
+# Requires:              bash
+# Conflicts:             none
+### END MODULE INFO
+
+# Prevent double loading
+[[ -n "${_SENTINEL_FABRIC_INTEGRATION_LOADED:-}" ]] && return 0
+export _SENTINEL_FABRIC_INTEGRATION_LOADED=1
+
+SENTINEL_FABRIC_INTEGRATION_VERSION="1.0.0"
+
+_sentinel_fabric_bool() {
+    # Normalize truthy values to 1, else 0
+    case "${1:-}" in
+        1|true|TRUE|yes|YES|on|ON) echo 1 ;;
+        *) echo 0 ;;
+    esac
+}
+
+_sentinel_fabric_json_escape() {
+    # Minimal JSON string escaper for safe embedding
+    local s="${1:-}"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/ }"
+    s="${s//$'\r'/ }"
+    s="${s//$'\t'/ }"
+    printf '%s' "$s"
+}
+
+_sentinel_fabric_detect_env_hints() {
+    local tty_hint gui_hint headless_hint
+    tty_hint="no"
+    [[ -t 1 ]] && tty_hint="yes"
+
+    gui_hint="no"
+    if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${DISPLAY:-}" ]]; then
+        gui_hint="yes"
+    fi
+
+    headless_hint="no"
+    if [[ "$gui_hint" == "no" ]] && [[ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}" ]]; then
+        headless_hint="yes"
+    elif [[ "$gui_hint" == "no" ]] && [[ "${XDG_SESSION_TYPE:-}" == "tty" ]]; then
+        headless_hint="yes"
+    fi
+
+    printf 'tty=%s gui=%s headless=%s\n' "$tty_hint" "$gui_hint" "$headless_hint"
+}
+
+sentinel_fabric_emit_event() {
+    # emit_event(type, payload_json)
+    # Non-blocking, outbound-only. Drops on failure by default.
+    local event_type="${1:-}"
+    local payload_json="${2:-{}}"
+
+    local fabric_enabled telemetry_enabled
+    fabric_enabled="$(_sentinel_fabric_bool "${FABRIC_ENABLED:-0}")"
+    telemetry_enabled="$(_sentinel_fabric_bool "${FABRIC_TELEMETRY_ENABLED:-0}")"
+    [[ "$fabric_enabled" == "1" && "$telemetry_enabled" == "1" ]] || return 0
+
+    # Validate type to avoid log/transport injection
+    if [[ -z "$event_type" || ! "$event_type" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+        return 0
+    fi
+
+    # Normalize payload
+    [[ -n "$payload_json" ]] || payload_json="{}"
+    payload_json="$(printf '%s' "$payload_json" | tr -d '\n' | tr -d '\r')"
+
+    local timeout_ms drop_on_fail transport socket endpoint
+    timeout_ms="${FABRIC_TELEMETRY_TIMEOUT_MS:-50}"
+    drop_on_fail="$(_sentinel_fabric_bool "${FABRIC_TELEMETRY_DROP_ON_FAIL:-1}")"
+    transport="${FABRIC_TELEMETRY_TRANSPORT:-unix}"
+    socket="${FABRIC_TELEMETRY_UNIX_SOCKET:-}"
+    endpoint="${FABRIC_TELEMETRY_HTTP_ENDPOINT:-}"
+
+    # Timestamp (RFC3339-ish UTC)
+    local ts
+    ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S')"
+
+    # Identity tags (optional)
+    local node_id device_id layer_id
+    node_id="${FABRIC_IDENTITY_NODE_ID:-}"
+    device_id="${FABRIC_IDENTITY_DEVICE_ID:-}"
+    layer_id="${FABRIC_IDENTITY_LAYER_ID:-}"
+
+    local line
+    line=$(
+        printf '{"ts":"%s","type":"%s","identity":{"node_id":"%s","device_id":"%s","layer_id":"%s"},"payload":%s}\n' \
+            "$(_sentinel_fabric_json_escape "$ts")" \
+            "$(_sentinel_fabric_json_escape "$event_type")" \
+            "$(_sentinel_fabric_json_escape "$node_id")" \
+            "$(_sentinel_fabric_json_escape "$device_id")" \
+            "$(_sentinel_fabric_json_escape "$layer_id")" \
+            "$payload_json"
+    )
+
+    # Convert ms -> seconds for `timeout` (supports fractional seconds)
+    local timeout_s
+    timeout_s="0.05"
+    if [[ "$timeout_ms" =~ ^[0-9]+$ ]]; then
+        timeout_s="0.$(printf '%03d' "$timeout_ms")"
+        # If >= 1000ms, fall back to integer seconds
+        if (( timeout_ms >= 1000 )); then
+            timeout_s="$((timeout_ms / 1000))"
+        fi
+    fi
+
+    # Send in background to avoid blocking shell startup
+    case "$transport" in
+        unix)
+            [[ -n "$socket" ]] || return 0
+            if command -v nc >/dev/null 2>&1; then
+                (
+                    timeout "$timeout_s" nc -U "$socket" >/dev/null 2>&1 <<<"$line" || {
+                        [[ "$drop_on_fail" == "1" ]] && exit 0
+                        exit 0
+                    }
+                ) >/dev/null 2>&1 &
+            elif command -v socat >/dev/null 2>&1; then
+                (
+                    timeout "$timeout_s" socat - "UNIX-CONNECT:${socket}" >/dev/null 2>&1 <<<"$line" || {
+                        [[ "$drop_on_fail" == "1" ]] && exit 0
+                        exit 0
+                    }
+                ) >/dev/null 2>&1 &
+            else
+                # No transport tool available; drop silently
+                return 0
+            fi
+            ;;
+        http)
+            [[ -n "$endpoint" ]] || return 0
+            if command -v curl >/dev/null 2>&1; then
+                (
+                    curl -sS \
+                        --connect-timeout "$timeout_s" \
+                        --max-time "$timeout_s" \
+                        -H 'Content-Type: application/json' \
+                        --data-binary @- \
+                        "$endpoint" >/dev/null 2>&1 <<<"$line" || {
+                            [[ "$drop_on_fail" == "1" ]] && exit 0
+                            exit 0
+                        }
+                ) >/dev/null 2>&1 &
+            else
+                return 0
+            fi
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    return 0
+}
+
+fabric-env() {
+    local fabric_enabled telemetry_enabled
+    fabric_enabled="$(_sentinel_fabric_bool "${FABRIC_ENABLED:-0}")"
+    telemetry_enabled="$(_sentinel_fabric_bool "${FABRIC_TELEMETRY_ENABLED:-0}")"
+
+    echo "FABRIC_ENABLED=${fabric_enabled}"
+    echo "FABRIC_DOCS_ROOT=${FABRIC_DOCS_ROOT:-}"
+    echo "FABRIC_IDENTITY_NODE_ID=${FABRIC_IDENTITY_NODE_ID:-}"
+    echo "FABRIC_IDENTITY_DEVICE_ID=${FABRIC_IDENTITY_DEVICE_ID:-}"
+    echo "FABRIC_IDENTITY_LAYER_ID=${FABRIC_IDENTITY_LAYER_ID:-}"
+    echo "FABRIC_TELEMETRY_ENABLED=${telemetry_enabled}"
+    echo "FABRIC_TELEMETRY_TRANSPORT=${FABRIC_TELEMETRY_TRANSPORT:-unix}"
+    echo "FABRIC_TELEMETRY_UNIX_SOCKET=${FABRIC_TELEMETRY_UNIX_SOCKET:-}"
+    echo "FABRIC_TELEMETRY_HTTP_ENDPOINT=${FABRIC_TELEMETRY_HTTP_ENDPOINT:-}"
+    echo "FABRIC_TELEMETRY_TIMEOUT_MS=${FABRIC_TELEMETRY_TIMEOUT_MS:-50}"
+    echo "FABRIC_TELEMETRY_DROP_ON_FAIL=$(_sentinel_fabric_bool "${FABRIC_TELEMETRY_DROP_ON_FAIL:-1}")"
+}
+
+fabric-status() {
+    local fabric_enabled telemetry_enabled transport
+    fabric_enabled="$(_sentinel_fabric_bool "${FABRIC_ENABLED:-0}")"
+    telemetry_enabled="$(_sentinel_fabric_bool "${FABRIC_TELEMETRY_ENABLED:-0}")"
+    transport="${FABRIC_TELEMETRY_TRANSPORT:-unix}"
+
+    echo "Fabric integration: $([[ "$fabric_enabled" == "1" ]] && echo "enabled" || echo "disabled")"
+    echo "Environment: $(_sentinel_fabric_detect_env_hints)"
+    echo "Telemetry: $([[ "$telemetry_enabled" == "1" ]] && echo "enabled" || echo "disabled") (transport=${transport})"
+}
+
+fabric-open-doc() {
+    local alias_name="${1:-}"
+    if [[ -z "$alias_name" ]]; then
+        echo "Usage: fabric-open-doc <alias>" >&2
+        return 2
+    fi
+
+    local docs_root="${FABRIC_DOCS_ROOT:-}"
+    if [[ -z "$docs_root" ]]; then
+        echo "Fabric docs_root is not configured (FABRIC_DOCS_ROOT is empty)." >&2
+        echo "Set fabric.docs_root in config.yaml to enable document aliases." >&2
+        return 1
+    fi
+    docs_root="${docs_root/#\~/$HOME}"
+
+    local rel=""
+    case "$alias_name" in
+        hardware) rel="HARDWARE.md" ;;
+        devices) rel="DEVICES.md" ;;
+        roadmap) rel="ROADMAP.md" ;;
+        security) rel="SECURITY.md" ;;
+        fabric|fabric_integration) rel="FABRIC_INTEGRATION.md" ;;
+        kitty|kitty_accel) rel="KITTY_ACCEL.md" ;;
+        *)
+            echo "Unknown doc alias: $alias_name" >&2
+            echo "Available: hardware, devices, roadmap, security, fabric, kitty" >&2
+            return 2
+            ;;
+    esac
+
+    local target="${docs_root%/}/${rel}"
+    if [[ ! -f "$target" ]]; then
+        echo "Doc not found: $target" >&2
+        return 1
+    fi
+
+    # Prefer GUI open if available; otherwise print path and page it in terminal
+    if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${DISPLAY:-}" ]] && command -v xdg-open >/dev/null 2>&1; then
+        (xdg-open "$target" >/dev/null 2>&1 &) || true
+        echo "$target"
+        return 0
+    fi
+
+    echo "$target"
+    if [[ -t 1 ]]; then
+        "${PAGER:-less}" "$target" 2>/dev/null || cat "$target"
+    else
+        cat "$target"
+    fi
+}
+
+_sentinel_fabric_run_pipeline_stage() {
+    local stage="${1:-}"
+    shift || true
+
+    if [[ "$(_sentinel_fabric_bool "${FABRIC_ENABLED:-0}")" != "1" ]]; then
+        echo "Fabric integration is disabled (FABRIC_ENABLED=0)." >&2
+        return 1
+    fi
+
+    local -a candidates=(
+        "${SENTINEL_ROOT:-$HOME/.sentinel}/fabric/pipeline/${stage}.sh"
+        "${SENTINEL_ROOT:-$HOME/.sentinel}/fabric/${stage}.sh"
+        "${SENTINEL_ROOT:-$HOME/.sentinel}/scripts/fabric_${stage}.sh"
+    )
+
+    local p
+    for p in "${candidates[@]}"; do
+        if [[ -x "$p" ]]; then
+            "$p" "$@"
+            return $?
+        fi
+    done
+
+    echo "Pipeline stage '${stage}' is not installed." >&2
+    return 127
+}
+
+# Standardized lifecycle naming wrappers (only meaningful when fabric is enabled)
+ingest() { _sentinel_fabric_run_pipeline_stage "ingest" "$@"; }
+validate() { _sentinel_fabric_run_pipeline_stage "validate" "$@"; }
+quantize_int8() { _sentinel_fabric_run_pipeline_stage "quantize_int8" "$@"; }
+optimize() { _sentinel_fabric_run_pipeline_stage "optimize" "$@"; }
+map_devices() { _sentinel_fabric_run_pipeline_stage "map_devices" "$@"; }
+compile() { _sentinel_fabric_run_pipeline_stage "compile" "$@"; }
+deploy() { _sentinel_fabric_run_pipeline_stage "deploy" "$@"; }
+monitor() { _sentinel_fabric_run_pipeline_stage "monitor" "$@"; }
+
+export -f fabric-status fabric-env fabric-open-doc sentinel_fabric_emit_event \
+    ingest validate quantize_int8 optimize map_devices compile deploy monitor
+
+# Low-volume hook: module load event (no-op if telemetry disabled)
+sentinel_fabric_emit_event "module_load" "{\"name\":\"fabric_integration\",\"version\":\"${SENTINEL_FABRIC_INTEGRATION_VERSION}\"}"
+

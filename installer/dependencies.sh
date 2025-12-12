@@ -9,11 +9,13 @@ check_python_version() {
     fi
 
     if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3,6) else 1)"; then
-        local py_version=$(python3 --version 2>&1 | cut -d' ' -f2)
+        local py_version
+        py_version=$(python3 --version 2>&1 | cut -d' ' -f2)
         fail "Python 3.6+ is required (found ${py_version})"
     fi
 
-    local py_version=$(python3 --version 2>&1 | cut -d' ' -f2)
+    local py_version
+    py_version=$(python3 --version 2>&1 | cut -d' ' -f2)
     ok "Python ${py_version} meets requirements"
 }
 
@@ -55,7 +57,8 @@ find_python() {
 }
 
 parse_version() {
-    echo "$1" | sed -e 's/\./ /g'
+    # shellcheck disable=SC2001
+    echo "${1//./ }"
 }
 
 check_version() {
@@ -151,7 +154,8 @@ attempt_package_install() {
 
 ensure_venv_support() {
     local manager="$1"
-    if "$PYTHON_CMD" -c "import venv" &>/dev/null; then
+    local python_cmd="${2:-python3}"
+    if "$python_cmd" -c "import venv" &>/dev/null; then
         ok "Python venv module available"
         return 0
     fi
@@ -181,7 +185,7 @@ ensure_venv_support() {
         fi
     fi
 
-    if ! "$PYTHON_CMD" -c "import venv" &>/dev/null; then
+    if ! "$python_cmd" -c "import venv" &>/dev/null; then
         fail "Python venv module still unavailable; install the appropriate package and re-run the installer"
     fi
 }
@@ -196,15 +200,19 @@ check_platform_dependencies() {
         warn "No supported package manager detected; continuing with manual checks"
     fi
 
-    ensure_venv_support "$manager"
+    ensure_venv_support "$manager" "${PYTHON_CMD:-python3}"
 
-    # Auto-install fzf if possible; keep other optional helpers as warnings only
+    # Auto-install fzf only in interactive mode (avoid sudo prompts in CI/tests)
     if ! command -v fzf &>/dev/null && [[ -n "$manager" ]]; then
-        step "fzf not found; attempting install via $manager"
-        if attempt_package_install "$manager" "fzf"; then
-            ok "Installed fzf via $manager"
+        if [[ "${INTERACTIVE:-1}" -eq 1 ]]; then
+            step "fzf not found; attempting install via $manager"
+            if attempt_package_install "$manager" "fzf"; then
+                ok "Installed fzf via $manager"
+            else
+                warn "Failed to install fzf automatically; install manually with: sudo ${manager} install fzf"
+            fi
         else
-            warn "Failed to install fzf automatically; install manually with: sudo ${manager} install fzf"
+            warn "fzf not found; skipping auto-install in non-interactive mode"
         fi
     fi
 
