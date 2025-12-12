@@ -20,7 +20,13 @@ fi
 
 _sent_git_color() {
     local code="$1"; shift
-    printf "\033[%sm%s\033[0m" "$code" "$*"
+    # Optimize colors for kitty if available
+    if type sentinel_is_kitty &>/dev/null && sentinel_is_kitty; then
+        # Use kitty's enhanced color support
+        printf "\033[%sm%s\033[0m" "$code" "$*"
+    else
+        printf "\033[%sm%s\033[0m" "$code" "$*"
+    fi
 }
 
 _sent_git_header() {

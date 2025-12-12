@@ -24,34 +24,18 @@ if ! command -v fzf &>/dev/null; then
     return 0  # Return success even when fzf is missing to prevent terminal crashes
 fi
 
-# --- Check for BLE.sh (being phased out) ---
-# BLE.sh is being removed from SENTINEL, so we'll skip the check and warning
-# to avoid confusion during the transition period.
-{
-    # Only check for BLE.sh if verbose mode is enabled
-    if [[ "${SENTINEL_VERBOSE:-0}" == "1" ]]; then
-        BLESH_MAIN="${HOME}/.local/share/blesh/ble.sh"
-        if ! type -t bleopt &>/dev/null && [[ -f "$BLESH_MAIN" ]]; then
-            # Fix for 'unrecognized attach method' error with robust protection
-            { export BLESH_ATTACH_METHOD="attach"; } 2>/dev/null || true
-            
-            # Try multiple sourcing methods with full error protection
-            {
-                # First try with source and parameters
-                { source "$BLESH_MAIN" --attach=attach; } 2>/dev/null || {
-                    # If that fails, try dot operator
-                    { . "$BLESH_MAIN"; } 2>/dev/null || {
-                        # If all sourcing fails, log but continue silently
-                        { echo "${YELLOW}[fzf] Note: BLE.sh loading skipped (being phased out)${NC}" >&2; } 2>/dev/null || true
-                    }
-                }
-            } 2>/dev/null || true
-        fi
-    fi
+# --- Kitty integration for FZF ---
+# Optimize FZF for kitty's GPU acceleration when available
+if type sentinel_is_kitty &>/dev/null && sentinel_is_kitty; then
+    # Enable kitty-specific FZF optimizations
+    export FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS} --color=bg+:#0d1117,bg:#0d1117,spinner:#30a14e,hl:#30a14e --preview-window=border-sharp"
     
-    # Skip the warning about BLE.sh not being loaded since it's being removed
-    # This prevents confusing warnings during normal operation
-} 2>/dev/null || true
+    # Use kitty's image preview if available
+    if [[ -n "${KITTY_WINDOW_ID:-}" ]]; then
+        # Kitty image preview for file previews
+        export FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS} --preview='if [[ -f {} ]]; then kitty +kitten icat --clear --transfer-mode=memory --stdin=no {} 2>/dev/null || cat {}; else cat {}; fi'"
+    fi
+fi
 
 # --- FZF Integration Scripts (BLE.sh dependent - being phased out) ---
 # Since BLE.sh is being removed, we'll skip trying to load its FZF integration
@@ -77,7 +61,12 @@ fi
 # --- Environment Customization with error protection ---
 {
     export FZF_DEFAULT_COMMAND='fd --type f || find . -type f' 2>/dev/null || true
-    export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border' 2>/dev/null || true
+    
+    # Base FZF options - kitty optimizations added above if in kitty
+    if [[ -z "${FZF_DEFAULT_OPTS:-}" ]] || [[ "${FZF_DEFAULT_OPTS}" != *"--color=bg+:#0d1117"* ]]; then
+        export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border' 2>/dev/null || true
+    fi
+    
     export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND" 2>/dev/null || true
 } 2>/dev/null || true
 

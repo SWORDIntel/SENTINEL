@@ -133,8 +133,15 @@ sentinel_k8s_monitor() {
     echo "Refreshing every ${interval}s (Ctrl+C to stop)"
     echo
     
+    # Optimize for kitty if available
+    local clear_cmd="clear"
+    if type sentinel_is_kitty &>/dev/null && sentinel_is_kitty; then
+        # Use kitty's clear for better performance
+        clear_cmd="clear"
+    fi
+    
     while true; do
-        clear
+        $clear_cmd
         case "$resource_type" in
             pods)
                 kubectl top pods -n "$namespace" 2>/dev/null || kubectl get pods -n "$namespace"

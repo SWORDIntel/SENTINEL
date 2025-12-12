@@ -115,8 +115,15 @@ sentinel_docker_monitor() {
     echo "Refreshing every ${interval}s (Ctrl+C to stop)"
     echo
     
+    # Optimize for kitty if available
+    local clear_cmd="clear"
+    if type sentinel_is_kitty &>/dev/null && sentinel_is_kitty; then
+        # Use kitty's clear for better performance
+        clear_cmd="clear"
+    fi
+    
     while true; do
-        clear
+        $clear_cmd
         echo "=== Container Status ==="
         docker ps --format "table {{.Names}}\t{{.Status}}\t{{.CPUPerc}}\t{{.MemUsage}}"
         
