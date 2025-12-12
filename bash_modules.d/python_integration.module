@@ -40,30 +40,75 @@ declare -A SENTINEL_CONFIG
 _sentinel_load_config() {
     local config_file="${SENTINEL_CONFIG_DIR}/sentinel.json"
     if [[ -f "$config_file" ]]; then
-        while IFS='=' read -r key value; do
+        while IFS=$'\t' read -r key b64; do
+            [[ -z "$key" ]] && continue
+            local value=""
+            if command -v base64 >/dev/null 2>&1; then
+                value="$(printf '%s' "$b64" | base64 --decode 2>/dev/null || true)"
+            else
+                value="$(python3 -c 'import base64,sys; print(base64.b64decode(sys.argv[1].encode()).decode(errors="replace"))' "$b64" 2>/dev/null || true)"
+            fi
             SENTINEL_CONFIG["$key"]="$value"
-        done < <(python3 -c "
-import json
-with open('$config_file', 'r') as f:
-    config = json.load(f)
-    for k, v in config.items():
-        print(f'{k}={v}')
-" 2>/dev/null)
+        done < <(python3 - <<'PY' 2>/dev/null
+import base64, json, os, sys
+config_file = os.environ.get("SENTINEL_CONFIG_DIR", "") + "/sentinel.json"
+try:
+    with open(config_file, "r", encoding="utf-8") as f:
+        config = json.load(f) or {}
+except Exception:
+    config = {}
+for k, v in config.items():
+    s = "" if v is None else str(v)
+    b = base64.b64encode(s.encode("utf-8")).decode("ascii")
+    sys.stdout.write(f"{k}\t{b}\n")
+PY
+)
     fi
 }
 
 # Save configuration to JSON file
 _sentinel_save_config() {
     local config_file="${SENTINEL_CONFIG_DIR}/sentinel.json"
-    python3 -c "
-import json
+    local _tmp_kv
+    _tmp_kv="$(mktemp "${SENTINEL_CONFIG_DIR}/.sentinel_kv.XXXXXX" 2>/dev/null || mktemp)"
+    {
+        local key
+        for key in "${!SENTINEL_CONFIG[@]}"; do
+            local value="${SENTINEL_CONFIG[$key]}"
+            local b64=""
+            if command -v base64 >/dev/null 2>&1; then
+                # GNU coreutils: base64 -w0; Busybox: no -w
+                b64="$(printf '%s' "$value" | base64 -w0 2>/dev/null || printf '%s' "$value" | base64 2>/dev/null || true)"
+            else
+                b64="$(python3 -c 'import base64,sys; print(base64.b64encode(sys.argv[1].encode("utf-8")).decode("ascii"))' "$value" 2>/dev/null || true)"
+            fi
+            printf '%s\t%s\n' "$key" "$b64"
+        done
+    } > "${_tmp_kv}"
+
+    python3 - "$config_file" "${_tmp_kv}" <<'PY' 2>/dev/null
+import base64, json, sys
+path = sys.argv[1]
+kv_path = sys.argv[2]
 config = {}
-$(for key in "${!SENTINEL_CONFIG[@]}"; do
-    echo "config['$key'] = '${SENTINEL_CONFIG[$key]}'"
-done)
-with open('$config_file', 'w') as f:
-    json.dump(config, f, indent=4)
-" 2>/dev/null
+try:
+    with open(kv_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            k, b = line.split("\t", 1)
+            try:
+                v = base64.b64decode(b.encode("ascii")).decode("utf-8", errors="replace")
+            except Exception:
+                v = ""
+            config[k] = v
+except Exception:
+    config = {}
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(config, f, indent=4, sort_keys=True)
+PY
+    rm -f "${_tmp_kv}" 2>/dev/null || true
 }
 
 # Get configuration value
@@ -142,14 +187,14 @@ sentinel_ipc_receive() {
 sentinel_python_exec() {
     local script="$1"
     shift
-    local args="$@"
+    local -a args=("$@")
     
     # Set Python environment variables
     export PYTHONPATH="${PYTHONPATH}:${SENTINEL_ROOT:-${HOME}/.sentinel}/lib"
     export SENTINEL_INTEGRATION_VERSION="${SENTINEL_PYTHON_INTEGRATION_VERSION}"
     
     # Execute Python script with consistent error handling
-    python3 -u "$script" $args 2>&1 | while IFS= read -r line; do
+    python3 -u "$script" "${args[@]}" 2>&1 | while IFS= read -r line; do
         if [[ "$line" =~ ^ERROR: ]]; then
             echo "[PYTHON ERROR] $line" >&2
             sentinel_log "error" "Python execution error: $line"
@@ -161,14 +206,15 @@ sentinel_python_exec() {
         fi
     done
     
-    return ${PIPESTATUS[0]}
+    return "${PIPESTATUS[0]}"
 }
 
 # Logging function for consistent error handling
 sentinel_log() {
     local level="$1"
     local message="$2"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local log_file="${SENTINEL_LOG_DIR}/sentinel.log"
     
     echo "[$timestamp] [$level] $message" >> "$log_file"
@@ -186,6 +232,7 @@ sentinel_python_module_install() {
     fi
     
     # Activate virtual environment and install module
+    # shellcheck disable=SC1091
     source "$venv_path/bin/activate"
     pip install "$module" 2>&1 | while IFS= read -r line; do
         sentinel_log "info" "pip: $line"
@@ -197,6 +244,7 @@ sentinel_python_module_list() {
     local venv_path="${SENTINEL_ROOT:-${HOME}/.sentinel}/venv"
     
     if [[ -d "$venv_path" ]]; then
+        # shellcheck disable=SC1091
         source "$venv_path/bin/activate"
         pip list
         deactivate

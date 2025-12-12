@@ -60,7 +60,7 @@ sentinel_hmac_string() {
         echo -n "${data}${hmac_key}" | sha256sum | cut -d' ' -f1
     else
         _hmac_error "No cryptographic tools available for HMAC calculation"
-        return 0
+        return 1
     fi
 }
 
@@ -71,17 +71,17 @@ sentinel_hmac_file() {
     
     if [[ ! -f "$file" ]]; then
         _hmac_error "File not found: $file"
-        return 0
+        return 1
     fi
     
     if command -v openssl &>/dev/null; then
         openssl dgst -sha256 -hmac "$hmac_key" -binary "$file" | xxd -p
     elif command -v sha256sum &>/dev/null; then
         # Fallback implementation
-        cat "$file" | sha256sum | cut -d' ' -f1
+        sha256sum "$file" | cut -d' ' -f1
     else
         _hmac_error "No cryptographic tools available for HMAC calculation"
-        return 0
+        return 1
     fi
 }
 
@@ -91,13 +91,14 @@ sentinel_verify_hmac_string() {
     local expected_hmac="$2"
     local hmac_key="${3:-$HMAC_KEY}"
     
-    local calculated_hmac=$(sentinel_hmac_string "$data" "$hmac_key")
+    local calculated_hmac
+    calculated_hmac=$(sentinel_hmac_string "$data" "$hmac_key") || return 1
     
     if [[ "$calculated_hmac" == "$expected_hmac" ]]; then
         return 0
     else
         _hmac_warn "HMAC verification failed for string"
-        return 0
+        return 1
     fi
 }
 
@@ -109,16 +110,17 @@ sentinel_verify_hmac_file() {
     
     if [[ ! -f "$file" ]]; then
         _hmac_error "File not found: $file"
-        return 0
+        return 1
     fi
     
-    local calculated_hmac=$(sentinel_hmac_file "$file" "$hmac_key")
+    local calculated_hmac
+    calculated_hmac=$(sentinel_hmac_file "$file" "$hmac_key") || return 1
     
     if [[ "$calculated_hmac" == "$expected_hmac" ]]; then
         return 0
     else
         _hmac_warn "HMAC verification failed for file: $file"
-        return 0
+        return 1
     fi
 }
 
@@ -127,29 +129,50 @@ sentinel_run_verified_command() {
     local command="$1"
     local hmac_key="${2:-$HMAC_KEY}"
     
-    # Very basic security check - prevent dangerous commands
-    local dangerous_patterns=(
-        '([;|&]|\|\||\&\&)\s*(rm|dd|mkfs|wget|curl)\s'
-        'sudo\s'
-        '\brm\s+(-[rf]*\s+)*/'
-        '>\s*/etc'
-        'dd\s+.*\s+of=/dev'
-    )
-    
-    for pattern in "${dangerous_patterns[@]}"; do
-        if [[ "$command" =~ $pattern ]]; then
-            _hmac_error "Potentially dangerous command detected: $command"
-            return 0
-        fi
-    done
-    
-    # Log command execution
-    _hmac_info "Executing verified command: $command"
-    
-    # Execute the command
-    eval "$command"
-    
-    return $?
+    # SECURITY: Do not eval. Only allow simple, space-delimited commands with
+    # conservative characters (no pipes/redirects/subshells/quotes/vars).
+    #
+    # Allowed token chars: alnum + / . _ - : = @ %
+    # Allowed separators: spaces/tabs
+    if [[ -z "$command" ]]; then
+        _hmac_error "Empty command refused"
+        return 1
+    fi
+
+    if [[ "$command" =~ [\;\|\&\<\>\(\)\`\$\\] ]]; then
+        _hmac_error "Refusing command containing shell metacharacters"
+        return 1
+    fi
+
+    if [[ "$command" =~ [\'\"] ]]; then
+        _hmac_error "Refusing command containing quotes"
+        return 1
+    fi
+
+    if [[ ! "$command" =~ ^[[:space:]]*[A-Za-z0-9_./:@%=-]+([[:space:]]+[A-Za-z0-9_./:@%=-]+)*[[:space:]]*$ ]]; then
+        _hmac_error "Refusing command with unsafe characters"
+        return 1
+    fi
+
+    # Split on IFS (space/tab/newline) into argv array
+    local -a argv=()
+    # shellcheck disable=SC2206
+    argv=($command)
+    if [[ "${#argv[@]}" -lt 1 ]]; then
+        _hmac_error "Failed to parse command"
+        return 1
+    fi
+
+    # Basic blocklist on argv[0]
+    case "${argv[0]}" in
+        sudo|su|doas|rm|dd|mkfs*|wget|curl)
+            _hmac_error "Refusing to execute high-risk command: ${argv[0]}"
+            return 1
+            ;;
+    esac
+
+    _hmac_info "Executing verified command: ${argv[*]}"
+    "${argv[@]}"
 }
 
 # Export functions
