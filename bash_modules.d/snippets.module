@@ -65,20 +65,40 @@ EOF
         local snippet_name=$(basename "$snippet" .snippet)
         local snippet_content=$(<"$snippet")
         
-        # Don't register if BLE.sh is not available
-        if ! type -t ble-sabbrev &>/dev/null; then
-            _snippets_log_warning "BLE.sh not available - snippet registration skipped: $snippet_name"
-            continue
-        fi
-        
-        # Register snippet with HMAC verification
-        ble-sabbrev "snippet:$snippet_name=# HMAC-verified snippet: $snippet_name
+        # Register snippet - use kitty integration if available, otherwise use bash function
+        if type sentinel_is_kitty &>/dev/null && sentinel_is_kitty; then
+            # Kitty pathway: use bash function for snippet expansion
+            eval "snippet_${snippet_name}() {
+                if _sentinel_verify_snippet \"$snippet_name\"; then
+                    $snippet_content
+                else
+                    echo \"Snippet verification failed: $snippet_name\"
+                    return 1
+                fi
+            }"
+            # Create alias for easy access
+            alias "snippet:$snippet_name"="snippet_${snippet_name}"
+        elif type -t ble-sabbrev &>/dev/null; then
+            # BLE.sh pathway: use ble-sabbrev
+            ble-sabbrev "snippet:$snippet_name=# HMAC-verified snippet: $snippet_name
 if _sentinel_verify_snippet \"$snippet_name\"; then
   $snippet_content
 else
   echo \"Snippet verification failed: $snippet_name\"
   return 0
 fi"
+        else
+            # Fallback: use bash function
+            eval "snippet_${snippet_name}() {
+                if _sentinel_verify_snippet \"$snippet_name\"; then
+                    $snippet_content
+                else
+                    echo \"Snippet verification failed: $snippet_name\"
+                    return 1
+                fi
+            }"
+            alias "snippet:$snippet_name"="snippet_${snippet_name}"
+        fi
     done
 }
 
@@ -179,6 +199,10 @@ _sentinel_snippet_delete() {
     
     # Delete snippet and hash files
     rm -f "$snippet_file" "$hash_file"
+    
+    # Remove snippet function and alias
+    unset -f "snippet_${name}" 2>/dev/null || true
+    unalias "snippet:$name" 2>/dev/null || true
     
     # If using ble.sh, remove the abbreviation
     if type -t ble-sabbrev &>/dev/null; then

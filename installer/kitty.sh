@@ -319,9 +319,26 @@ fi
 # Load all enabled modules in parallel
 if type parallel_load_modules &>/dev/null; then
     parallel_load_modules "${HOME}/.bash_modules"
+else
+    # Fallback: load modules sequentially if parallel loader not available
+    if [[ -f "${HOME}/.bash_modules" ]]; then
+        while IFS= read -r module_name || [[ -n "$module_name" ]]; do
+            [[ -z "$module_name" || "$module_name" == \#* ]] && continue
+            if [[ -f "${HOME}/bash_modules.d/${module_name}.module" ]]; then
+                source "${HOME}/bash_modules.d/${module_name}.module" 2>/dev/null || true
+            fi
+        done < "${HOME}/.bash_modules"
+    fi
 fi
 
 export PATH="$HOME/bin:$PATH"
+
+# Load plugins if available
+if [[ -d "${HOME}/bash_modules.d/plugins" ]]; then
+    for plugin in "${HOME}/bash_modules.d/plugins"/*.plugin; do
+        [[ -f "$plugin" ]] && source "$plugin" 2>/dev/null || true
+    done
+fi
 
 # ========================================================================
 # Performance Configuration

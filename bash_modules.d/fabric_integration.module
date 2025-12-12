@@ -232,7 +232,18 @@ fabric-open-doc() {
         return 1
     fi
 
-    # Prefer GUI open if available; otherwise print path and page it in terminal
+    # Prefer GUI open if available; use kitty for terminal display if in kitty
+    if type sentinel_is_kitty &>/dev/null && sentinel_is_kitty; then
+        # Use kitty's image display capabilities
+        if [[ -n "${KITTY_WINDOW_ID:-}" ]] && [[ -f "$rel" ]]; then
+            kitty +kitten icat --clear --transfer-mode=memory "$rel" 2>/dev/null || cat "$rel"
+        else
+            cat "$rel"
+        fi
+    else
+        # Fallback to standard terminal display
+        cat "$rel"
+    fi
     if [[ -n "${WAYLAND_DISPLAY:-}" || -n "${DISPLAY:-}" ]] && command -v xdg-open >/dev/null 2>&1; then
         (xdg-open "$target" >/dev/null 2>&1 &) || true
         echo "$target"
