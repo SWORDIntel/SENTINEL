@@ -34,19 +34,42 @@ A hardened, optimized, security-focused shell environment for advanced users, re
 
 ## Installation
 
+SENTINEL supports two installation pathways:
+
+### Bash Pathway (Default)
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/sentinel.git
 cd sentinel
 
 # Run the installer
-bash install.sh
+bash installer/install.sh
 
 # Restart your shell or source the configuration
 source ~/.bashrc
 ```
 
-The installer will guide you through the installation process. It will check for dependencies, create the necessary directory structure, and patch your `~/.bashrc` file.
+### Kitty Primary CLI Pathway
+
+For users who prefer kitty as their terminal emulator:
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/sentinel.git
+cd sentinel
+
+# Run the kitty-specific installer
+bash install_kitty.sh
+
+# Or use the main installer and select kitty pathway
+bash installer/install.sh
+# Select option 2 when prompted
+```
+
+The kitty pathway provides GPU-accelerated terminal rendering and optimized module loading. See [Kitty Primary CLI Documentation](docs/KITTY_PRIMARY_CLI.md) for details.
+
+The installer will guide you through the installation process. It will check for dependencies, create the necessary directory structure, and patch your shell configuration files.
 
 ## Configuration
 
@@ -84,6 +107,7 @@ For more information on the available configuration options, please see the `con
 
 - **Fabric integration (optional)**: see `docs/FABRIC_INTEGRATION.md`
 - **Kitty GPU-accelerated terminal path (optional)**: see `docs/KITTY_ACCEL.md`
+- **Kitty Primary CLI pathway**: see `docs/KITTY_PRIMARY_CLI.md` - Complete kitty-first installation pathway
 
 ## Features
 
