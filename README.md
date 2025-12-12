@@ -80,6 +80,11 @@ The configuration file allows you to:
 
 For more information on the available configuration options, please see the `config.yaml.dist` file.
 
+## Optional Integrations
+
+- **Fabric integration (optional)**: see `docs/FABRIC_INTEGRATION.md`
+- **Kitty GPU-accelerated terminal path (optional)**: see `docs/KITTY_ACCEL.md`
+
 ## Features
 
 SENTINEL provides a rich set of functions and features to enhance your shell experience.

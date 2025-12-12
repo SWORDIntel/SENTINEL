@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1090,SC1091,SC2015,SC2034,SC2086,SC2155,SC2164,SC2181,SC2206
 # MINIMAL BASHRC with proper organization and no duplicates
 # Version: 2.1 - With AI/NPU Stack Integration
 
@@ -6,8 +7,12 @@
 # If it's not set, we'll fall back to a reasonable default.
 export SENTINEL_ROOT="${SENTINEL_ROOT:-$HOME/.sentinel}"
 
+# Cache dir used early for safe config exports
+export SENTINEL_CACHE_DIR="${SENTINEL_CACHE_DIR:-$HOME/.cache/sentinel}"
+mkdir -p "${SENTINEL_CACHE_DIR}/config" 2>/dev/null || true
+
 # Load configuration from YAML file using the first available Python
-if [ -f "${SENTINEL_ROOT}/config.yaml" ]; then
+if [ -f "${SENTINEL_ROOT}/config.yaml" ] || [ -f "${SENTINEL_ROOT}/config.yaml.dist" ]; then
     SENTINEL_PYTHON_BIN="${SENTINEL_PYTHON:-}"
     if [ ! -x "${SENTINEL_PYTHON_BIN}" ]; then
         SENTINEL_PYTHON_BIN="${HOME}/venv/bin/python"
@@ -18,7 +23,27 @@ if [ -f "${SENTINEL_ROOT}/config.yaml" ]; then
     fi
 
     if [ -x "${SENTINEL_PYTHON_BIN}" ]; then
-        eval "$("${SENTINEL_PYTHON_BIN}" "${SENTINEL_ROOT}/installer/config.py")"
+        _sentinel_config_exports="${SENTINEL_CACHE_DIR}/config/config_exports.sh"
+        _sentinel_cfg_src="${SENTINEL_ROOT}/config.yaml"
+        _sentinel_cfg_dist="${SENTINEL_ROOT}/config.yaml.dist"
+        _sentinel_cfg_newest="${_sentinel_cfg_dist}"
+        [[ -f "${_sentinel_cfg_src}" ]] && _sentinel_cfg_newest="${_sentinel_cfg_src}"
+
+        if [[ ! -f "${_sentinel_config_exports}" || "${_sentinel_cfg_newest}" -nt "${_sentinel_config_exports}" ]]; then
+            (
+                umask 077
+                _sentinel_tmp="$(mktemp "${SENTINEL_CACHE_DIR}/config/.config_exports.XXXXXX" 2>/dev/null || mktemp)"
+                if "${SENTINEL_PYTHON_BIN}" "${SENTINEL_ROOT}/installer/config.py" --output "${_sentinel_tmp}" 2>/dev/null; then
+                    chmod 600 "${_sentinel_tmp}" 2>/dev/null || true
+                    mv -f "${_sentinel_tmp}" "${_sentinel_config_exports}" 2>/dev/null || true
+                else
+                    rm -f "${_sentinel_tmp}" 2>/dev/null || true
+                fi
+            ) 2>/dev/null || true
+        fi
+
+        # shellcheck disable=SC1090
+        [[ -f "${_sentinel_config_exports}" ]] && source "${_sentinel_config_exports}" 2>/dev/null || true
     fi
 fi
 
@@ -287,7 +312,7 @@ alias npu-log='sudo dmesg | tail -50 | grep -E "(vpu|npu|accel)" | grep -v Bluet
 # Enhanced cd with listing
 cd() {
   { builtin cd "$@" && ls; } 2>/dev/null || {
-    echo "Error: Could not change to directory $@" >&2
+    echo "Error: Could not change to directory $*" >&2
     return 1
   }
 }
@@ -600,7 +625,7 @@ fi
 # ============================================================================
 
 # SENTINEL environment setup
-export SENTINEL_CACHE_DIR="${HOME}/cache"
+export SENTINEL_CACHE_DIR="${SENTINEL_CACHE_DIR:-${HOME}/cache}"
 export SENTINEL_FZF_ENABLED=1
 export SENTINEL_SKIP_AUTO_LOAD=1
 export _SENTINEL_MODULES_LOADED=0

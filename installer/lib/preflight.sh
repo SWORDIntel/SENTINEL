@@ -4,10 +4,28 @@
 # Pre-flight checks
 check_python_version
 PYTHON_CMD=$(find_python) || fail "No suitable Python 3.6+ found"
-setup_python_venv
+export PYTHON_CMD
+
+# Allow minimal installs/tests to skip heavy venv dependency installation
+if [[ "${SENTINEL_SKIP_PYTHON_VENV:-0}" != "1" ]]; then
+    setup_python_venv
+else
+    log "Skipping Python venv setup (SENTINEL_SKIP_PYTHON_VENV=1)"
+fi
 
 # Load configuration
-eval "$(${HOME}/venv/bin/python ${PROJECT_ROOT}/installer/config.py)"
+{
+    umask 077
+    _sentinel_config_exports="$(mktemp "${HOME}/.sentinel_config_exports.XXXXXX")"
+    _sentinel_cfg_py="${HOME}/venv/bin/python"
+    if [[ ! -x "${_sentinel_cfg_py}" ]]; then
+        _sentinel_cfg_py="${PYTHON_CMD}"
+    fi
+    "${_sentinel_cfg_py}" "${PROJECT_ROOT}/installer/config.py" --output "${_sentinel_config_exports}" || fail "Failed to parse configuration"
+    # shellcheck disable=SC1090
+    source "${_sentinel_config_exports}"
+    rm -f "${_sentinel_config_exports}" 2>/dev/null || true
+}
 
 # Detect headless environment and auto-configure
 if detect_headless_environment; then
