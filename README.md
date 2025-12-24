@@ -3,7 +3,8 @@
 A hardened, optimized, security-focused shell environment for advanced users, researchers, and security professionals, featuring intelligent context-aware assistance, comprehensive autocomplete, environment management, and cybersecurity capabilities.
 
 
-Based upon the work of https://github.com/gitdurandal/bashrc ,a different tool from a more civilized age.
+Based upon the work of https://github.com/gitdurandal/bashrc ,"A more elegant weapon of a civilized age".
+
 
 
 ## Table of Contents
