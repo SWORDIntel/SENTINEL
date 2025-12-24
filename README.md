@@ -1,8 +1,7 @@
 # SENTINEL: Secure ENhanced Terminal INtelligent Layer
 
-![SENTINEL Logo](https://via.placeholder.com/800x200/0d1117/30a14e?text=SENTINEL)
-
 A hardened, optimized, security-focused shell environment for advanced users, researchers, and security professionals, featuring intelligent context-aware assistance, comprehensive autocomplete, environment management, and cybersecurity capabilities.
+
 
 Based upon the work of https://github.com/gitdurandal/bashrc ,a different tool from a more civilized age.
 
