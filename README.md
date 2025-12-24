@@ -240,3 +240,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Disclaimer
 
 This shell environment is highly customized for a specific system and workflow. While it can serve as a template or inspiration, you will likely need to modify the configuration files, scripts, and paths to suit your own needs.
+
+This program was also created before someone introduced me to this "zsh" thing...i thing this is better despite glaring gaps in functionality i will eventually address
